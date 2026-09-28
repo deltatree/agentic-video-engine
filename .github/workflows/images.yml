@@ -1,0 +1,45 @@
+# Baut die offiziellen Images (A44) bei einem Versions-Tag und veröffentlicht sie in GHCR.
+# Tags je Image: ghcr.io/deltatree/openvideo-<ziel>:<version> und :<version>-<git-sha>,
+# mit Provenance-Attestierung und SBOM.
+name: Images
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tag passt zur Version in package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${version}." >&2
+            exit 1
+          fi
+      - uses: docker/setup-buildx-action@v3
+      - name: Login bei GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Images bauen und veröffentlichen
+        env:
+          REGISTRY: ghcr.io/deltatree
+          PUSH: '1'
+        run: bash deploy/docker/build.sh

@@ -1,0 +1,27 @@
+# OpenVideo auf Kubernetes: Basis. Einsatz immer über ein Overlay (overlays/local, overlays/production).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openvideo
+labels:
+  - pairs:
+      app.kubernetes.io/name: openvideo
+      app.kubernetes.io/part-of: openvideo
+    includeSelectors: false
+resources:
+  - namespace.yaml
+  - config.yaml
+  - secret.yaml
+  - object-storage.yaml
+  - coordinator.yaml
+  - api.yaml
+  - studio.yaml
+  - workers.yaml
+  - autoscaling.yaml
+  - networkpolicies.yaml
+images:
+  - { name: ghcr.io/deltatree/openvideo-base, newTag: 0.1.0 }
+  - { name: ghcr.io/deltatree/openvideo-render-cpu, newTag: 0.1.0 }
+  - { name: ghcr.io/deltatree/openvideo-render-gpu, newTag: 0.1.0 }
+  - { name: ghcr.io/deltatree/openvideo-blender, newTag: 0.1.0 }
+  - { name: ghcr.io/deltatree/openvideo-studio, newTag: 0.1.0 }
+  - { name: ghcr.io/deltatree/openvideo-worker, newTag: 0.1.0 }

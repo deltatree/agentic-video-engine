@@ -1,0 +1,44 @@
+# Lokaler Cluster (kind): kleine Ressourcen, lokale Images (Tag "local"), keine GPU.
+# Einsatz: kubectl apply -k deploy/k8s/overlays/local
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - { name: ghcr.io/deltatree/openvideo-base, newTag: local }
+  - { name: ghcr.io/deltatree/openvideo-render-cpu, newTag: local }
+  - { name: ghcr.io/deltatree/openvideo-render-gpu, newTag: local }
+  - { name: ghcr.io/deltatree/openvideo-blender, newTag: local }
+  - { name: ghcr.io/deltatree/openvideo-studio, newTag: local }
+  - { name: ghcr.io/deltatree/openvideo-worker, newTag: local }
+patches:
+  - path: secret.yaml
+  - path: resources.yaml
+  # Keine GPU im lokalen Cluster: GPU-Worker und sein Autoscaling entfallen.
+  - patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: worker-gpu
+  - patch: |-
+      $patch: delete
+      apiVersion: keda.sh/v1alpha1
+      kind: ScaledObject
+      metadata:
+        name: worker-gpu
+  # Höchstens 4 CPU-Worker und schnelleres Verkleinern im Test.
+  - target: { kind: ScaledObject, name: worker-cpu }
+    patch: |-
+      - { op: replace, path: /spec/maxReplicaCount, value: 4 }
+      - { op: replace, path: /spec/cooldownPeriod, value: 60 }
+      - { op: replace, path: /spec/advanced/horizontalPodAutoscalerConfig/behavior/scaleDown/stabilizationWindowSeconds, value: 60 }
+  - target: { kind: ScaledObject, name: worker-blender }
+    patch: |-
+      - { op: replace, path: /spec/maxReplicaCount, value: 1 }
+  - target: { kind: PersistentVolumeClaim }
+    patch: |-
+      - { op: replace, path: /spec/resources/requests/storage, value: 1Gi }
+  - target: { kind: StatefulSet, name: object-storage }
+    patch: |-
+      - { op: replace, path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage, value: 2Gi }

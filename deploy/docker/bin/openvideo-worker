@@ -1,0 +1,3 @@
+#!/bin/sh
+# Startet den OpenVideo-Render-Worker aus dem Image.
+exec node /app/packages/worker/dist/bin.js "$@"

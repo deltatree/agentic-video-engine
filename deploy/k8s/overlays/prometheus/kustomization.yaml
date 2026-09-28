@@ -1,0 +1,25 @@
+# Produktion plus Prometheus: Worker skalieren zusätzlich über die Render-Dauer.
+#
+# Voraussetzung: Prometheus sammelt die OpenVideo-Metrik render_duration (Histogramm in
+# Sekunden) und ist unter der Adresse unten erreichbar (Namespace "monitoring").
+# Einsatz: kubectl apply -k deploy/k8s/overlays/prometheus
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../production
+  - networkpolicy.yaml
+patches:
+  - target: { kind: ScaledObject }
+    patch: |-
+      - op: add
+        path: /spec/triggers/-
+        value:
+          type: prometheus
+          name: render-duration
+          metadata:
+            serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+            # 90. Perzentil der Render-Dauer der letzten 5 Minuten. Über 120 s: ein Worker mehr
+            # je 120 s Render-Dauer.
+            query: histogram_quantile(0.9, sum(rate(render_duration_seconds_bucket{namespace="openvideo"}[5m])) by (le))
+            threshold: "120"
+            activationThreshold: "0"

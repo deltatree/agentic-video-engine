@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": { "title": "Deploy test" },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 320,
+      "height": 180,
+      "fps": 30,
+      "duration": "1s",
+      "background": "#0B0D12",
+      "nodes": [
+        { "id": "box", "type": "rect", "x": 40, "y": 50, "width": 80, "height": 80, "fill": "#FF5A1F", "rotation": { "$keyframes": [{ "t": 0, "v": 0 }, { "t": "1s", "v": 90 }] } },
+        { "id": "title", "type": "text", "text": "OpenVideo", "fontSize": 26, "x": 136, "y": 70, "width": 160, "fill": "#F5F7FF" }
+      ]
+    }
+  ]
+}

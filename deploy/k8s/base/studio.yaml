@@ -1,0 +1,77 @@
+# Studio: Web-Oberfläche mit eigener Agent API (`openvideo serve`), Workspace im emptyDir.
+# Das Studio schickt das Token aus der Adresse mit: http://<studio>/?token=<api-token>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: studio
+  labels:
+    app.kubernetes.io/component: studio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: studio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: studio
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: studio
+          image: ghcr.io/deltatree/openvideo-studio
+          args: [serve, --host, 0.0.0.0, --port, "7788"]
+          env:
+            - name: OPENVIDEO_CACHE_DIR
+              value: /cache
+            - name: OPENVIDEO_API_TOKEN
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: api-token }
+            # Erlaubte Host-Header (Service-Namen). Ingress-Namen im Overlay ergänzen.
+            - name: OPENVIDEO_ALLOWED_HOSTS
+              value: studio,studio.openvideo,studio.openvideo.svc,studio.openvideo.svc.cluster.local
+          ports:
+            - { name: http, containerPort: 7788 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+          readinessProbe:
+            httpGet: { path: /v1/health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /v1/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: cache, mountPath: /cache }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
+        - name: cache
+          emptyDir: { sizeLimit: 5Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: studio
+  labels:
+    app.kubernetes.io/component: studio
+spec:
+  selector:
+    app.kubernetes.io/component: studio
+  ports:
+    - { name: http, port: 7788, targetPort: http }

@@ -1,0 +1,28 @@
+# Build-Kontext für deploy/docker/Dockerfile (Wurzel des Repositorys).
+# Nur Quellen und Lockfile gehen ins Image; alles Erzeugte baut der Build selbst.
+.git
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/coverage
+**/.vite
+**/.openvideo
+**/.openvideo-workspace
+**/out
+**/*.log
+**/test/golden/*.actual.png
+**/test/golden/*.diff.png
+_bmad
+_bmad-output
+memory-bank
+.claude
+.agents
+.codex
+.cursor
+.gemini
+.kiro
+.devin
+.clinerules
+deploy/k8s
+deploy/test
+sbom.cdx.json

@@ -1,0 +1,113 @@
+# Gemeinsamer Speicher: SeaweedFS mit S3-Schnittstelle (Frames, Projekte, Assets).
+# Image per Digest gepinnt (wie in packages/cache/test/cache.test.ts).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: object-storage
+  labels:
+    app.kubernetes.io/component: object-storage
+spec:
+  serviceName: object-storage
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: object-storage
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: object-storage
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # Schreibt die S3-Zugangsdaten aus dem Secret in eine Konfiguration für SeaweedFS.
+        - name: s3-config
+          image: chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+          command:
+            - /bin/sh
+            - -c
+            - >-
+              printf '{"identities":[{"name":"openvideo","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","Write","List","Tagging"]}]}'
+              "$S3_ACCESS_KEY_ID" "$S3_SECRET_ACCESS_KEY" > /config/s3.json
+          env:
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: s3-access-key-id }
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: s3-secret-access-key }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          volumeMounts:
+            - { name: config, mountPath: /config }
+      containers:
+        - name: seaweedfs
+          image: chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+          args:
+            - server
+            - -dir=/data
+            - -ip.bind=0.0.0.0
+            - -s3
+            - -s3.port=8333
+            - -s3.config=/config/s3.json
+          ports:
+            - { name: s3, containerPort: 8333 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "1", memory: 2Gi }
+          # Mit Zugangsdaten verlangt S3 Signaturen; die Probes prüfen daher den Port.
+          readinessProbe:
+            tcpSocket: { port: s3 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: s3 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: config, mountPath: /config, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: config
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 50Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: object-storage
+  labels:
+    app.kubernetes.io/component: object-storage
+spec:
+  selector:
+    app.kubernetes.io/component: object-storage
+  ports:
+    - { name: s3, port: 8333, targetPort: s3 }

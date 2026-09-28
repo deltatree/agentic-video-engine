@@ -1,0 +1,126 @@
+# Koordinator: verteilt Chunks an Worker (Pull), Journal auf einem PVC.
+# Je Worker-Art eine Queue mit eigenem Port (cpu 8080, gpu 8081, blender 8082).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: coordinator-journal
+  labels:
+    app.kubernetes.io/component: coordinator
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coordinator
+  labels:
+    app.kubernetes.io/component: coordinator
+spec:
+  replicas: 1
+  # Ein Journal, ein Schreiber: erst den alten Pod beenden, dann den neuen starten.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: coordinator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: coordinator
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: s3-bucket
+          image: ghcr.io/deltatree/openvideo-base
+          command: [node, /app/deploy/s3-bucket.mjs]
+          envFrom:
+            - configMapRef: { name: openvideo-config }
+          env:
+            - name: OPENVIDEO_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: s3-access-key-id }
+            - name: OPENVIDEO_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: s3-secret-access-key }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+      containers:
+        - name: coordinator
+          image: ghcr.io/deltatree/openvideo-base
+          command: [/usr/bin/tini, --, node, /app/deploy/coordinator.mjs]
+          envFrom:
+            - configMapRef: { name: openvideo-config }
+          env:
+            - name: OPENVIDEO_JOURNAL_DIR
+              value: /data/journal
+            - name: OPENVIDEO_WORKER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: worker-token }
+            - name: OPENVIDEO_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: s3-access-key-id }
+            - name: OPENVIDEO_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: s3-secret-access-key }
+          ports:
+            - { name: queue-cpu, containerPort: 8080 }
+            - { name: queue-gpu, containerPort: 8081 }
+            - { name: queue-blender, containerPort: 8082 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+          # /metrics braucht kein Token und zeigt, dass der Koordinator antwortet.
+          readinessProbe:
+            httpGet: { path: /metrics, port: queue-cpu }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /metrics, port: queue-cpu }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - { name: journal, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+            - { name: cache, mountPath: /cache }
+      volumes:
+        - name: journal
+          persistentVolumeClaim: { claimName: coordinator-journal }
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
+        - name: cache
+          emptyDir: { sizeLimit: 5Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coordinator
+  labels:
+    app.kubernetes.io/component: coordinator
+spec:
+  selector:
+    app.kubernetes.io/component: coordinator
+  ports:
+    - { name: queue-cpu, port: 8080, targetPort: queue-cpu }
+    - { name: queue-gpu, port: 8081, targetPort: queue-gpu }
+    - { name: queue-blender, port: 8082, targetPort: queue-blender }

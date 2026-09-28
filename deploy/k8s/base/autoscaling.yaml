@@ -1,0 +1,147 @@
+# Autoscaling mit KEDA (https://keda.sh), Version siehe deploy/README.md.
+#
+# Jede Worker-Art skaliert über die Queue ihres Koordinators (GET /v1/queue, JSON):
+# - queueLength: wartende Chunks, Ziel 4 je Worker
+# - leasesActive: gerade gerenderte Chunks, Ziel 1 je Worker (hält beschäftigte Worker am Leben)
+# KEDA erzeugt daraus je ScaledObject einen HorizontalPodAutoscaler (keda-hpa-<name>).
+# worker-cpu skaliert zusätzlich über die CPU-Last (HPA-Metrik "cpu").
+#
+# Die URLs nennen den Namespace "openvideo", weil KEDA im eigenen Namespace läuft.
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: coordinator-auth
+spec:
+  secretTargetRef:
+    - parameter: token
+      name: openvideo-secrets
+      key: worker-token
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-cpu
+spec:
+  scaleTargetRef:
+    name: worker-cpu
+  minReplicaCount: 1
+  maxReplicaCount: 20
+  pollingInterval: 10
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          # Langsam verkleinern: ein Worker gibt beim Beenden seinen Chunk zurück.
+          stabilizationWindowSeconds: 300
+          policies:
+            - { type: Pods, value: 1, periodSeconds: 60 }
+  triggers:
+    - type: metrics-api
+      name: queue-length
+      metadata:
+        url: "http://coordinator.openvideo.svc.cluster.local:8080/v1/queue"
+        valueLocation: queueLength
+        targetValue: "4"
+        activationTargetValue: "0"
+        authMode: bearer
+      authenticationRef:
+        name: coordinator-auth
+    - type: metrics-api
+      name: leases-active
+      metadata:
+        url: "http://coordinator.openvideo.svc.cluster.local:8080/v1/queue"
+        valueLocation: leasesActive
+        targetValue: "1"
+        activationTargetValue: "0"
+        authMode: bearer
+      authenticationRef:
+        name: coordinator-auth
+    # HPA auf CPU: mehr Worker, wenn die vorhandenen voll ausgelastet sind.
+    - type: cpu
+      name: cpu
+      metricType: Utilization
+      metadata:
+        value: "75"
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-gpu
+spec:
+  scaleTargetRef:
+    name: worker-gpu
+  minReplicaCount: 0
+  maxReplicaCount: 4
+  pollingInterval: 10
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          # Langsam verkleinern: ein Worker gibt beim Beenden seinen Chunk zurück.
+          stabilizationWindowSeconds: 300
+          policies:
+            - { type: Pods, value: 1, periodSeconds: 60 }
+  triggers:
+    - type: metrics-api
+      name: queue-length
+      metadata:
+        url: "http://coordinator.openvideo.svc.cluster.local:8081/v1/queue"
+        valueLocation: queueLength
+        targetValue: "4"
+        activationTargetValue: "0"
+        authMode: bearer
+      authenticationRef:
+        name: coordinator-auth
+    - type: metrics-api
+      name: leases-active
+      metadata:
+        url: "http://coordinator.openvideo.svc.cluster.local:8081/v1/queue"
+        valueLocation: leasesActive
+        targetValue: "1"
+        activationTargetValue: "0"
+        authMode: bearer
+      authenticationRef:
+        name: coordinator-auth
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-blender
+spec:
+  scaleTargetRef:
+    name: worker-blender
+  minReplicaCount: 0
+  maxReplicaCount: 4
+  pollingInterval: 10
+  cooldownPeriod: 300
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          # Langsam verkleinern: ein Worker gibt beim Beenden seinen Chunk zurück.
+          stabilizationWindowSeconds: 300
+          policies:
+            - { type: Pods, value: 1, periodSeconds: 60 }
+  triggers:
+    - type: metrics-api
+      name: queue-length
+      metadata:
+        url: "http://coordinator.openvideo.svc.cluster.local:8082/v1/queue"
+        valueLocation: queueLength
+        targetValue: "4"
+        activationTargetValue: "0"
+        authMode: bearer
+      authenticationRef:
+        name: coordinator-auth
+    - type: metrics-api
+      name: leases-active
+      metadata:
+        url: "http://coordinator.openvideo.svc.cluster.local:8082/v1/queue"
+        valueLocation: leasesActive
+        targetValue: "1"
+        activationTargetValue: "0"
+        authMode: bearer
+      authenticationRef:
+        name: coordinator-auth

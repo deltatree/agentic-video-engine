@@ -1,0 +1,15 @@
+# Gemeinsame Einstellungen für alle OpenVideo-Pods.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openvideo-config
+data:
+  # Gemeinsamer Speicher (S3-kompatibel). Standard: das mitgelieferte SeaweedFS.
+  OPENVIDEO_S3_ENDPOINT: http://object-storage:8333
+  OPENVIDEO_S3_BUCKET: openvideo
+  OPENVIDEO_S3_REGION: us-east-1
+  # Legt den Bucket beim Start an (Init-Container). Bei fremdem S3 auf "false" setzen.
+  OPENVIDEO_S3_CREATE_BUCKET: "true"
+  # Warteschlangen des Koordinators: je Worker-Art eine eigene Queue mit eigenem Port.
+  OPENVIDEO_COORDINATOR_QUEUES: cpu:8080,gpu:8081,blender:8082
+  OPENVIDEO_LEASE_SECONDS: "120"

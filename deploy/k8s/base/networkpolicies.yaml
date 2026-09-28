@@ -1,0 +1,141 @@
+# Netzwerkregeln. Grundsatz: alles ist verboten, was nicht ausdrücklich erlaubt ist.
+# Damit erreicht kein Pod 169.254.169.254 (Cloud-Metadaten), andere Namespaces oder das Internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Namensauflösung (kube-dns / CoreDNS) für alle Pods.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+---
+# Worker: nur Koordinator und Object Storage. Keine eingehenden Verbindungen.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: worker
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: coordinator
+      ports:
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 8082 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: object-storage
+      ports:
+        - { protocol: TCP, port: 8333 }
+---
+# Koordinator: erreichbar für Worker, API, Studio und KEDA (Namespace "keda"); spricht nur mit S3.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: coordinator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: coordinator
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [worker, api, studio] }
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: keda
+      ports:
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 8082 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: object-storage
+      ports:
+        - { protocol: TCP, port: 8333 }
+---
+# Object Storage: erreichbar für die OpenVideo-Pods. SeaweedFS spricht intern mit sich selbst.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: object-storage
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: object-storage
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - { key: app.kubernetes.io/component, operator: In, values: [worker, coordinator, api, studio] }
+      ports:
+        - { protocol: TCP, port: 8333 }
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: object-storage
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: object-storage
+---
+# API und Studio: von außen nur über ihren Service-Port 7788.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-studio
+spec:
+  podSelector:
+    matchExpressions:
+      - { key: app.kubernetes.io/component, operator: In, values: [api, studio] }
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - { protocol: TCP, port: 7788 }
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: object-storage
+      ports:
+        - { protocol: TCP, port: 8333 }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: coordinator
+      ports:
+        - { protocol: TCP, port: 8080 }
+        - { protocol: TCP, port: 8081 }
+        - { protocol: TCP, port: 8082 }
