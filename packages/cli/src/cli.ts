@@ -29,10 +29,11 @@ import {
   type Diagnostic,
 } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
+import { createTemplateCatalog } from '@agentic-video/templates';
 import { checkProject, createNodeEnvironment, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
 import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
-import { createLocalServices, htmlScriptsAllowed, type LocalServices } from './services.js';
+import { createLocalServices, htmlScriptsAllowed, processRunner, type LocalServices } from './services.js';
 import { createSourceService } from './sources.js';
 
 /** Ein- und Ausgabe der CLI (für Tests austauschbar). */
@@ -52,11 +53,12 @@ const HELP = `${PRODUCT_NAME} ${OPENVIDEO_VERSION} – Video-as-Code for coding 
 Usage: ${CLI_NAME} <command> [options]
 
 Commands:
-  create <dir>          Create a project (--tsx for TypeScript/JSX)
+  create <dir>          Create a project (--tsx for TypeScript/JSX, --template <name>)
+  templates             List the project templates
   dev [dir]             Studio with live preview for a project
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
-  render [path]         Render a video (--format --codec --width --height --fps --out)
+  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>)
   render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
   doctor                Check the environment and suggest fixes
@@ -74,6 +76,7 @@ Server options (serve, dev, studio):
   --port <n>             Port (default 7788)
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
+  --workers <n>          Render videos with n local worker processes
 
 Global options:
   --json      Machine-readable output
@@ -275,14 +278,48 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     }
   };
   try {
+    const serverWorkers = num(values.workers, 'workers');
+    const workersOption = serverWorkers !== undefined && serverWorkers > 1 ? { workers: Math.floor(serverWorkers) } : {};
     switch (command) {
       case 'create': {
         if (rest[0] === undefined) throw new UsageError('Usage: openvideo create <dir> [--tsx] [--template <name>]');
         const name = values.name ?? rest[0].split('/').pop() ?? 'hello';
-        const project = helloProject(name.charAt(0).toUpperCase() + name.slice(1));
-        const source = values.tsx === true ? helloSource(name) : undefined;
-        const dir = await createProjectDir(target, { name, project, ...(source !== undefined ? { source } : {}) });
+        let dir: string;
+        if (values.template !== undefined) {
+          // Template: TSX-Quelle, README und geprüfte IR (project.json) aus dem Katalog.
+          const { project, files } = await createTemplateCatalog().get(values.template);
+          const { ['src/video.tsx']: source, ...other } = files;
+          dir = await createProjectDir(target, { name, project: { ...project }, files: other, ...(source !== undefined ? { source } : {}) });
+        } else {
+          const project = helloProject(name.charAt(0).toUpperCase() + name.slice(1));
+          const source = values.tsx === true ? helloSource(name) : undefined;
+          dir = await createProjectDir(target, { name, project, ...(source !== undefined ? { source } : {}) });
+        }
         out({ projectDir: dir }, `Created ${dir}\n\nNext:\n  cd ${rest[0]}\n  ${CLI_NAME} dev\n`);
+        return 0;
+      }
+      case 'templates': {
+        const list = createTemplateCatalog().list();
+        out({ templates: list }, list.map((t) => `${t.name.padEnd(24)} ${t.description}`).join('\n'));
+        return 0;
+      }
+      case 'worker': {
+        const worker = await import('@agentic-video/worker');
+        if (values.stdio === true) {
+          await worker.runWorkerStdio();
+          return 0;
+        }
+        if (values.coordinator === undefined) throw new UsageError('Usage: openvideo worker --stdio | --coordinator <url> [--token <token>] [--name <worker>]');
+        const stop = new AbortController();
+        // Kubernetes beendet Pods mit SIGTERM: laufenden Chunk abgeben, dann sauber enden.
+        process.once('SIGTERM', () => {
+          stop.abort();
+        });
+        process.once('SIGINT', () => {
+          stop.abort();
+        });
+        const token = values.token ?? io.env['OPENVIDEO_WORKER_TOKEN'];
+        await worker.runWorkerHttp({ coordinatorUrl: values.coordinator, signal: stop.signal, ...(token !== undefined ? { token } : {}), ...(values.name !== undefined ? { worker: values.name } : {}) });
         return 0;
       }
       case 'validate': {
@@ -338,7 +375,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           const outPath = resolve(io.cwd, values.out ?? join(loaded.dir, 'out', `${String(comp['id'])}${ext}`));
           const range = values.start !== undefined || values.end !== undefined ? { start: values.start !== undefined ? frameOf(loaded.project, values.composition, values.start) : 0, end: values.end !== undefined ? frameOf(loaded.project, values.composition, values.end) : compositionDurationFrames(comp) } : undefined;
           let last = '';
+          const workers = num(values.workers, 'workers');
+          const runChunks = workers !== undefined && workers > 1 ? processRunner(env, loaded.project, workers, trusted) : undefined;
           const r = await renderVideo(env, loaded.project, {
+            ...(runChunks !== undefined ? { runChunks } : {}),
             ...(values.composition !== undefined ? { compositionId: values.composition } : {}),
             outPath,
             profile,
@@ -467,14 +507,14 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'serve': {
         const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline });
+        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
         return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env) });
       }
       case 'dev':
       case 'studio': {
         const loaded = await loadProject(target, { sources });
         const { workspaceDir, projectId } = await singleProjectWorkspace(loaded.dir);
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline });
+        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
         // dev/studio schützen die API immer mit einem Token; ohne Vorgabe ein zufälliges (B1).
         const given = values.token ?? io.env['OPENVIDEO_API_TOKEN'];
         const token = given !== undefined && given !== '' ? given : randomBytes(32).toString('base64url');
@@ -482,7 +522,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'mcp': {
         const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
         const { serveStdio } = await import('@agentic-video/mcp');
         await serveStdio(services);
         await new Promise<void>((r) => process.stdin.once('close', r));

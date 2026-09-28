@@ -53,6 +53,15 @@
     },
     {
       "path": "../mcp"
+    },
+    {
+      "path": "../scheduler"
+    },
+    {
+      "path": "../templates"
+    },
+    {
+      "path": "../worker"
     }
   ]
 }

@@ -59,6 +59,8 @@ export interface NodeEnvironmentOptions {
 
 /** Umgebung mit Aufräumfunktion. */
 export interface NodeEnvironment extends RenderEnvironment {
+  /** Projektordner, für den die Umgebung gilt (z. B. für Worker-Prozesse). */
+  readonly projectDir: string;
   dispose(): Promise<void>;
   readonly assetDiagnostics: ProjectAssets['diagnostics'];
 }
@@ -242,6 +244,7 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
     return new Map(result.map((v) => [v.id, { path: v.path, duration: v.duration, hash: v.cacheKey }]));
   };
   return {
+    projectDir,
     registry,
     assets,
     fonts,

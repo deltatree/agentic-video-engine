@@ -9,7 +9,9 @@ import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
 import { OpenVideoError, contentHash, isRecord } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
 import { createNodeEnvironment, type BackendProvider, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
+import { createProcessChunkRunner } from '@agentic-video/scheduler';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
+import { createTemplateCatalog } from '@agentic-video/templates';
 
 /** Optionen für {@link createLocalServices}. */
 export interface LocalServicesOptions {
@@ -24,6 +26,8 @@ export interface LocalServicesOptions {
   /** Backends mit eigenem Prozess (Browser, Blender). */
   readonly providers?: () => readonly BackendProvider[];
   readonly chunkRunner?: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => ChunkRunner;
+  /** Anzahl lokaler Worker-Prozesse für Video-Renders (`--workers`). Ohne Angabe rendert der Server selbst. */
+  readonly workers?: number;
   readonly benchmark?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
   readonly maxConcurrentJobs?: number;
   readonly offline?: boolean;
@@ -155,9 +159,13 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
     isolation,
     withEnvironment,
     encodePng: (image) => encodePng(image),
-    ...(options.templates !== undefined ? { templates: options.templates } : {}),
+    templates: options.templates ?? createTemplateCatalog(),
     ...(options.sources !== undefined ? { sources: options.sources } : {}),
-    ...(options.chunkRunner !== undefined ? { chunkRunner: options.chunkRunner } : {}),
+    ...(options.chunkRunner !== undefined
+      ? { chunkRunner: options.chunkRunner }
+      : options.workers !== undefined
+        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, options.workers ?? 1, isolation === 'trusted') }
+        : {}),
     ...(options.benchmark !== undefined ? { benchmark: options.benchmark } : {}),
     assets: {
       async import(projectDir, input) {
@@ -196,4 +204,20 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
       await telemetry.shutdown();
     },
   };
+}
+
+/**
+ * Chunk-Runner mit lokalen Worker-Prozessen für eine Node-Umgebung (`--workers`).
+ *
+ * @example
+ * ```ts
+ * const runChunks = processRunner(env, project, 4, false);
+ * ```
+ */
+export function processRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, workers: number, trusted: boolean): ChunkRunner {
+  const projectDir = 'projectDir' in env && typeof env.projectDir === 'string' ? env.projectDir : undefined;
+  if (projectDir === undefined) {
+    throw new OpenVideoError({ code: 'OV_SCHEDULER_ENV', errorClass: 'SchedulerError', problem: 'Worker processes need a Node render environment with a project directory.', suggestions: ['Create the environment with createNodeEnvironment({ projectDir, project }).'] });
+  }
+  return createProcessChunkRunner({ concurrency: workers, projectDir, project, cache: env.cache, telemetry: env.telemetry, trusted });
 }
