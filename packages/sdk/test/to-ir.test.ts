@@ -136,6 +136,12 @@ describe('toIR elements and aliases', () => {
     expect(n).toEqual({ id: 'lt', type: 'component', x: 10, component: 'LowerThird', props: { title: 'Ada' } });
   });
 
+  it('gibt name an die Komponente weiter statt ihn als Node-Label zu verlieren', () => {
+    const LowerThird = component('LowerThird');
+    const [n] = nodes(jsx(LowerThird, { id: 'lt', name: 'Ada Lovelace', role: 'Mathematikerin' }));
+    expect(n).toEqual({ id: 'lt', type: 'component', component: 'LowerThird', props: { name: 'Ada Lovelace', role: 'Mathematikerin' } });
+  });
+
   it('rejects functions and non-finite numbers as property values', () => {
     expectCode(() => nodes(jsx(Rect, { width: 1, height: 1, x: () => 1 } as unknown as Parameters<typeof Rect>[0])), 'OV_SDK_INVALID_PROP');
     expectCode(() => nodes(jsx(Rect, { width: 1, height: 1, x: Number.NaN })), 'OV_SDK_INVALID_PROP');

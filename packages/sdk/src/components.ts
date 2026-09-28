@@ -135,7 +135,8 @@ export const Component: ElementFactory<NodeProps<'component'>> = builtin('Compon
 
 /**
  * Fabrik für eine benannte Komponente. Node-Felder (id, x, timing …) bleiben an der Node,
- * alle anderen Props gehen nach `props`.
+ * alle anderen Props gehen nach `props`. Auch `name` geht nach `props`, weil Komponenten
+ * wie `LowerThird` ein Prop `name` haben.
  *
  * @example
  * ```tsx

@@ -167,8 +167,10 @@ export const LIGHT_COMPONENTS: Readonly<Record<string, string>> = {
 
 const CONTAINERS: ReadonlySet<string> = new Set(['group', 'layer', 'component', 'scene3d', 'blender', 'group3d']);
 const FONT_NODES: ReadonlySet<string> = new Set(['text', 'rich-text', 'subtitles']);
+// `name` fehlt bewusst: Bei Komponenten ist `name` fast immer ein Komponenten-Prop
+// (z. B. LowerThird). Das Node-Label ginge sonst still verloren.
 const COMPONENT_NODE_KEYS: ReadonlySet<string> = new Set([
-  'name', 'comment', 'visible', 'locked', 'timing', 'transition', 'renderer', 'meta',
+  'comment', 'visible', 'locked', 'timing', 'transition', 'renderer', 'meta',
   'x', 'y', 'rotation', 'scale', 'skew', 'origin', 'opacity', 'blendMode', 'filters', 'shadow', 'motionPath', 'component', 'props',
 ]);
 const SUBTITLE_TRACK_KEYS: ReadonlySet<string> = new Set(['src', 'cues', 'language', 'fromAudio', 'track']);
