@@ -15,6 +15,11 @@ async function failure(request: SandboxRequest): Promise<OpenVideoError> {
   throw new Error('expected the sandbox run to fail');
 }
 
+/** Fremdtext des ausgeführten Codes aus `details.untrusted`. */
+function untrusted(e: OpenVideoError): string {
+  return String(e.diagnostic.details?.['untrusted']);
+}
+
 describe('docker arguments', () => {
   it('pins the image by digest and sets every isolation flag', () => {
     expect(SANDBOX_IMAGE).toMatch(/^node:22-alpine@sha256:[0-9a-f]{64}$/);
@@ -43,7 +48,7 @@ describe.skipIf(noDocker)('docker sandbox (needs Docker)', () => {
   it('reports thrown errors with the stack', async () => {
     const e = await failure({ code: '\n\nthrow new TypeError("boom")', filename: 'bundle.js' });
     expect(e.diagnostic.code).toBe('OV_SANDBOX_CRASH');
-    expect(String(e.diagnostic.details?.['stack'])).toContain('bundle.js:3');
+    expect(untrusted(e)).toContain('bundle.js:3');
   });
 
   describe('security (NFR-5)', () => {
@@ -51,13 +56,13 @@ describe.skipIf(noDocker)('docker sandbox (needs Docker)', () => {
     it('cannot read host files', async () => {
       const e = await failure({ code: `${fs}.readFileSync(${JSON.stringify(`${process.cwd()}/package.json`)}, 'utf8')` });
       expect(e.diagnostic.code).toBe('OV_SANDBOX_CRASH');
-      expect(e.diagnostic.problem).toContain('ENOENT');
+      expect(untrusted(e)).toContain('ENOENT');
     });
 
     it('cannot reach the internet', async () => {
       const e = await failure({ code: "fetch('https://example.com').then((r) => r.status)", limits: { timeoutMs: 20_000 } });
       expect(e.diagnostic.code).toBe('OV_SANDBOX_CRASH');
-      expect(e.diagnostic.problem).toContain('fetch failed');
+      expect(untrusted(e)).toContain('fetch failed');
     });
 
     it('cannot reach the cloud metadata service', async () => {
@@ -68,13 +73,13 @@ describe.skipIf(noDocker)('docker sandbox (needs Docker)', () => {
     it('has no docker socket', async () => {
       const e = await failure({ code: `${fs}.statSync('/var/run/docker.sock')` });
       expect(e.diagnostic.code).toBe('OV_SANDBOX_CRASH');
-      expect(e.diagnostic.problem).toContain('ENOENT');
+      expect(untrusted(e)).toContain('ENOENT');
     });
 
     it('cannot write to the root file system', async () => {
       const e = await failure({ code: `${fs}.writeFileSync('/evil.txt', 'x')` });
       expect(e.diagnostic.code).toBe('OV_SANDBOX_CRASH');
-      expect(e.diagnostic.problem).toMatch(/EROFS|EACCES/);
+      expect(untrusted(e)).toMatch(/EROFS|EACCES/);
     });
 
     it('stops a fork bomb with the pids limit', async () => {
@@ -89,8 +94,8 @@ describe.skipIf(noDocker)('docker sandbox (needs Docker)', () => {
         started;`;
       const e = await failure({ code, limits: { pids: 32, timeoutMs: 30_000 } });
       expect(e.diagnostic.code).toBe('OV_SANDBOX_CRASH');
-      expect(e.diagnostic.problem).toMatch(/fork blocked after \d+ processes/);
-      const started = Number(/after (\d+)/.exec(e.diagnostic.problem)?.[1]);
+      expect(untrusted(e)).toMatch(/fork blocked after \d+ processes/);
+      const started = Number(/after (\d+)/.exec(untrusted(e))?.[1]);
       expect(started).toBeLessThan(32);
     });
 

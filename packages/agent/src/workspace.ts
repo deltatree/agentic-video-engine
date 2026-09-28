@@ -14,8 +14,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, normalize, relative, resolve } from 'node:path';
+import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { OpenVideoError, isRecord } from '@agentic-video/core';
 
 /** Inhalt von `openvideo.json`. */
@@ -33,19 +33,60 @@ export interface ProjectSummary {
   readonly entry: string;
   readonly kind: 'json' | 'tsx';
   readonly updated: string;
+  /** Fehlercode, wenn das Projekt nicht lesbar ist (z. B. `OV_PROJECT_CONFIG`). */
+  readonly error?: string;
 }
 
 const PROJECT_ID = /^[a-z0-9][a-z0-9-]{0,62}$/u;
 
-/** Liest die Konfiguration eines Projektordners; ohne Datei gilt `project.json`. */
+/**
+ * Ist `entry` eine TypeScript-Quelle (`.tsx` oder `.ts`)? CLI und Agent API nutzen dieselbe Regel.
+ *
+ * @example
+ * ```ts
+ * isSourceEntry('src/video.ts'); // true
+ * isSourceEntry('project.json'); // false
+ * ```
+ */
+export function isSourceEntry(entry: string): boolean {
+  return entry.endsWith('.tsx') || entry.endsWith('.ts');
+}
+
+/** Liegt der relative Pfad sicher im Projektordner (nicht absolut, kein `..`)? */
+function staysInside(path: string): boolean {
+  if (path === '' || isAbsolute(path)) return false;
+  const norm = normalize(path);
+  return norm !== '..' && !norm.startsWith(`..${sep}`);
+}
+
+function configError(problem: string): OpenVideoError {
+  return new OpenVideoError({ code: 'OV_PROJECT_CONFIG', errorClass: 'ProjectError', problem, suggestions: ['{ "name": "hello", "entry": "project.json", "outDir": "out" }'] });
+}
+
+/**
+ * Liest die Konfiguration eines Projektordners; ohne Datei gilt `project.json`.
+ *
+ * @example
+ * ```ts
+ * const cfg = await readProjectConfig('/work/demo'); // { name, entry, outDir }
+ * ```
+ */
 export async function readProjectConfig(dir: string): Promise<ProjectConfig> {
   const file = join(dir, 'openvideo.json');
   if (!existsSync(file)) return { name: dir.split('/').pop() ?? 'project', entry: 'project.json', outDir: 'out' };
-  const raw: unknown = JSON.parse(await readFile(file, 'utf8'));
-  if (!isRecord(raw) || typeof raw['entry'] !== 'string') {
-    throw new OpenVideoError({ code: 'OV_PROJECT_CONFIG', errorClass: 'ProjectError', problem: 'openvideo.json needs an "entry" string.', suggestions: ['{ "name": "hello", "entry": "project.json", "outDir": "out" }'] });
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(file, 'utf8'));
+  } catch (error) {
+    if (error instanceof SyntaxError) throw configError('openvideo.json is not valid JSON.');
+    throw error;
   }
-  return { name: typeof raw['name'] === 'string' ? raw['name'] : 'project', entry: raw['entry'], outDir: typeof raw['outDir'] === 'string' ? raw['outDir'] : 'out' };
+  if (!isRecord(raw) || typeof raw['entry'] !== 'string') throw configError('openvideo.json needs an "entry" string.');
+  const entry = raw['entry'];
+  const outDir = typeof raw['outDir'] === 'string' ? raw['outDir'] : 'out';
+  if (!staysInside(entry)) throw configError(`The entry "${entry}" must be a relative path inside the project.`);
+  if (!staysInside(outDir)) throw configError(`The outDir "${outDir}" must be a relative path inside the project.`);
+  return { name: typeof raw['name'] === 'string' ? raw['name'] : 'project', entry, outDir };
 }
 
 /** Schreibt eine Datei atomar. */
@@ -70,6 +111,36 @@ export function safeJoin(root: string, path: string): string {
     throw new OpenVideoError({ code: 'OV_PATH_OUTSIDE', errorClass: 'SecurityError', problem: `Path "${path}" leaves the project directory.`, suggestions: ['Use a path relative to the project root without "..".'] });
   }
   return full;
+}
+
+/**
+ * Wie {@link safeJoin}, prüft aber zusätzlich den echten Pfad (Symlinks aufgelöst).
+ * Die Datei muss existieren; sonst folgt `OV_FILE_NOT_FOUND` ohne Host-Pfad.
+ *
+ * @example
+ * ```ts
+ * const file = await safeRealPath('/ws/projects/a', 'out/frames/main-0.png');
+ * ```
+ */
+export async function safeRealPath(root: string, path: string): Promise<string> {
+  const notFound = new OpenVideoError({ code: 'OV_FILE_NOT_FOUND', errorClass: 'ApiError', problem: `File "${path}" does not exist in the project.`, suggestions: ['Use the url returned by the operation.'] });
+  const full = safeJoin(root, path);
+  let realRoot: string;
+  let realFile: string;
+  try {
+    realRoot = await realpath(root);
+    realFile = await realpath(full);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error) throw notFound;
+    throw error;
+  }
+  const rel = relative(realRoot, realFile);
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) throw notFound;
+  return realFile;
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return error instanceof Error && 'code' in error && error.code === code;
 }
 
 /**
@@ -99,11 +170,21 @@ export class Workspace {
 
   /**
    * Legt ein Projekt an. `source` (TSX) macht es zu einem TSX-Projekt.
+   * Die ID wird atomar reserviert (exklusives `mkdir`), damit gleichzeitige Aufrufe nie kollidieren.
    */
   async create(name: string, project: Readonly<Record<string, unknown>>, options: { readonly id?: string; readonly source?: string } = {}): Promise<string> {
     const base = (options.id ?? name).toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 40) || 'project';
+    await mkdir(join(this.root, 'projects'), { recursive: true });
     let id = base;
-    for (let i = 2; this.exists(id); i++) id = `${base}-${String(i)}`;
+    for (let i = 2; ; i++) {
+      try {
+        await mkdir(this.projectDir(id));
+        break;
+      } catch (error) {
+        if (!hasCode(error, 'EEXIST')) throw error;
+        id = `${base}-${String(i)}`;
+      }
+    }
     const dir = this.projectDir(id);
     await mkdir(join(dir, 'assets'), { recursive: true });
     await mkdir(join(dir, 'out'), { recursive: true });
@@ -117,14 +198,26 @@ export class Workspace {
     return id;
   }
 
+  /** Entfernt ein Projekt (z. B. wenn `project.create` es wegen Fehlern verwirft). */
+  async remove(id: string): Promise<void> {
+    await rm(this.projectDir(id), { recursive: true, force: true });
+  }
+
   /** Liest die IR eines Projekts (bei TSX-Projekten die zuletzt kompilierte IR). */
   async load(id: string): Promise<Record<string, unknown>> {
     const file = join(this.projectDir(id), 'project.json');
     if (!existsSync(file)) {
       throw new OpenVideoError({ code: 'OV_PROJECT_UNKNOWN', errorClass: 'ProjectError', problem: `Project "${id}" does not exist.`, suggestions: ['Use project.create first, or list projects with project.inspect.'] });
     }
-    const raw: unknown = JSON.parse(await readFile(file, 'utf8'));
-    if (!isRecord(raw)) throw new OpenVideoError({ code: 'OV_PROJECT_INVALID', errorClass: 'ProjectError', problem: `project.json of "${id}" is not an object.`, suggestions: [] });
+    const invalid = (problem: string) => new OpenVideoError({ code: 'OV_PROJECT_INVALID', errorClass: 'ProjectError', problem, suggestions: ['Restore project.json, or replace it with project.update.'] });
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await readFile(file, 'utf8'));
+    } catch (error) {
+      if (error instanceof SyntaxError) throw invalid(`project.json of "${id}" is not valid JSON.`);
+      throw error;
+    }
+    if (!isRecord(raw)) throw invalid(`project.json of "${id}" is not an object.`);
     return raw;
   }
 
@@ -138,16 +231,22 @@ export class Workspace {
     return readProjectConfig(this.projectDir(id));
   }
 
-  /** Listet alle Projekte. */
+  /** Listet alle Projekte; ein unlesbares Projekt erscheint mit `error`, statt die Liste abzubrechen. */
   async list(): Promise<ProjectSummary[]> {
     const dir = join(this.root, 'projects');
     if (!existsSync(dir)) return [];
     const out: ProjectSummary[] = [];
     for (const id of (await readdir(dir)).sort()) {
       if (!PROJECT_ID.test(id) || !this.exists(id)) continue;
-      const cfg = await this.config(id);
-      const s = await stat(join(this.projectDir(id), 'project.json'));
-      out.push({ id, name: cfg.name, entry: cfg.entry, kind: cfg.entry.endsWith('.tsx') ? 'tsx' : 'json', updated: s.mtime.toISOString() });
+      try {
+        const cfg = await this.config(id);
+        const s = await stat(join(this.projectDir(id), 'project.json'));
+        out.push({ id, name: cfg.name, entry: cfg.entry, kind: isSourceEntry(cfg.entry) ? 'tsx' : 'json', updated: s.mtime.toISOString() });
+      } catch (error) {
+        const code = error instanceof OpenVideoError ? error.diagnostic.code : hasCode(error, 'ENOENT') ? 'OV_PROJECT_INVALID' : undefined;
+        if (code === undefined) throw error;
+        out.push({ id, name: id, entry: '', kind: 'json', updated: '', error: code });
+      }
     }
     return out;
   }

@@ -42,6 +42,11 @@ export interface NodeEnvironmentOptions {
   readonly registry?: Registry;
   /** Host-Ausführung nicht vertrauenswürdigen Codes erlaubt (`--trusted`, ADR 0008). */
   readonly trusted?: boolean;
+  /**
+   * Skripte in HTML-Layern ausführen (ADR 0008). Standard `false`: Der Browser-Host sperrt
+   * Skripte per iframe-Sandbox und CSP. Nur im Container oder mit `--trusted` setzen.
+   */
+  readonly allowHtmlScripts?: boolean;
   readonly offline?: boolean;
   readonly allowOutsidePaths?: boolean;
   /** Weitere Backends; Standard: Browser (träge) und Blender. */
@@ -145,7 +150,7 @@ function largestComposition(project: Readonly<Record<string, unknown>>): { width
  * Standard-Provider: Browser-Backends (`browser`, `three`, `pixi`, Chromium startet erst bei Bedarf)
  * und Blender (startet pro Chunk einen Prozess, nur wenn eine `blender`-Node gerendert wird).
  */
-export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>): BackendProvider[] {
+export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>, options: { readonly allowHtmlScripts?: boolean } = {}): BackendProvider[] {
   let lazy: ReturnType<typeof createLazyBrowserBackends> | undefined;
   let blender: ReturnType<typeof createBlenderBackend> | undefined;
   return [
@@ -153,7 +158,7 @@ export function defaultProviders(projectDir: string, project: Readonly<Record<st
       ids: ['browser', 'three', 'pixi'],
       register(registry, ctx) {
         const size = largestComposition(project);
-        lazy = createLazyBrowserBackends({ assets: ctx.assets, fonts: ctx.fonts, width: size.width, height: size.height, ...(process.env['OPENVIDEO_CHROMIUM'] !== undefined ? { executablePath: process.env['OPENVIDEO_CHROMIUM'] } : {}) });
+        lazy = createLazyBrowserBackends({ assets: ctx.assets, fonts: ctx.fonts, width: size.width, height: size.height, allowHtmlScripts: options.allowHtmlScripts === true, ...(process.env['OPENVIDEO_CHROMIUM'] !== undefined ? { executablePath: process.env['OPENVIDEO_CHROMIUM'] } : {}) });
         for (const b of [lazy.browser, lazy.three, lazy.pixi]) if (!registry.backends.has(b.id)) registry.registerBackend(b);
         return Promise.resolve({ chromium: lazy.browser.versions()['chromium'] ?? 'unknown' });
       },
@@ -216,7 +221,7 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   }
   if (registry.voiceProviders.size === 0) await registerLocalSpeech(registry);
   const providers: BackendProvider[] = [...(options.providers ?? [])];
-  if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project));
+  if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project, { allowHtmlScripts: options.allowHtmlScripts === true }));
   for (const provider of providers) Object.assign(versions, await provider.register(registry, { assets, fonts, telemetry }));
   for (const b of registry.backends.values()) {
     versions[`backend:${b.id}`] = Object.values(b.versions()).join('+') || '1';

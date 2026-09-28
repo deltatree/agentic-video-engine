@@ -5,10 +5,10 @@ import { join } from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { importAsset, resolveProjectAssets } from '@agentic-video/assets';
 import { JobManager, Workspace, type AgentServices, type SourceService, type TemplateCatalog } from '@agentic-video/agent';
-import { FileStore, createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
+import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
 import { OpenVideoError, contentHash, isRecord } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
-import { createNodeEnvironment, type BackendProvider, type ChunkRunner, type NodeEnvironment, type RenderEnvironment } from '@agentic-video/render';
+import { createNodeEnvironment, type BackendProvider, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 
 /** Optionen für {@link createLocalServices}. */
@@ -27,7 +27,39 @@ export interface LocalServicesOptions {
   readonly benchmark?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
   readonly maxConcurrentJobs?: number;
   readonly offline?: boolean;
+  /**
+   * Asset-Pfade außerhalb des Projektordners erlauben. Nur für direkte CLI-Befehle mit `--trusted`,
+   * nie für `serve`, `dev`, `studio` oder `mcp` (B6). Standard `false`.
+   */
+  readonly allowOutsidePaths?: boolean;
+  /** Umgebungsvariablen (Standard `process.env`), z. B. `OPENVIDEO_CONTAINER_IMAGE`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Fabrik für Render-Umgebungen (Standard {@link createNodeEnvironment}); Tests ersetzen sie. */
+  readonly createEnvironment?: (options: NodeEnvironmentOptions) => Promise<NodeEnvironment>;
 }
+
+/**
+ * Dürfen HTML-Skripte laufen (ADR 0008)? Nur mit `--trusted` oder im Container
+ * (`OPENVIDEO_CONTAINER_IMAGE` gesetzt).
+ *
+ * @example
+ * ```ts
+ * htmlScriptsAllowed('container', process.env); // true nur im Container-Image
+ * ```
+ */
+export function htmlScriptsAllowed(isolation: 'container' | 'trusted', env: Readonly<Record<string, string | undefined>>): boolean {
+  const image = env['OPENVIDEO_CONTAINER_IMAGE'];
+  return isolation === 'trusted' || (image !== undefined && image !== '');
+}
+
+/** Eine zwischengespeicherte Umgebung mit Referenzzähler. */
+interface EnvEntry {
+  readonly promise: Promise<NodeEnvironment>;
+  refs: number;
+}
+
+/** Höchstzahl ungenutzter Umgebungen im LRU. */
+const MAX_IDLE_ENVIRONMENTS = 4;
 
 /** Dienste mit Aufräumfunktion. */
 export interface LocalServices extends AgentServices {
@@ -47,37 +79,73 @@ export interface LocalServices extends AgentServices {
 export async function createLocalServices(options: LocalServicesOptions): Promise<LocalServices> {
   mkdirSync(options.workspaceDir, { recursive: true });
   const telemetry = options.telemetry ?? createTelemetry({ serviceName: 'openvideo', exporter: 'none' });
-  const cache = options.cache ?? createCache(process.env['OPENVIDEO_S3_ENDPOINT'] !== undefined ? storeFromEnv(process.env, options.workspaceDir) : new FileStore(join(options.workspaceDir, 'cache')));
+  // Immer storeFromEnv: lokal und mit S3 derselbe Pfad (`<workspace>/.openvideo/cache` oder OPENVIDEO_CACHE_DIR).
+  const cache = options.cache ?? createCache(storeFromEnv(options.env ?? process.env, options.workspaceDir));
   const jobs = new JobManager(join(options.workspaceDir, 'jobs'), telemetry, options.maxConcurrentJobs ?? 1);
   await jobs.restore();
-  const envs = new Map<string, Promise<NodeEnvironment>>();
-  const order: string[] = [];
   const isolation = options.isolation ?? 'container';
+  const allowOutsidePaths = options.allowOutsidePaths === true;
+  const allowHtmlScripts = htmlScriptsAllowed(isolation, options.env ?? process.env);
+  const create = options.createEnvironment ?? createNodeEnvironment;
+  // LRU mit Referenzzählung (B14): Die Map-Reihenfolge ist die Nutzungsreihenfolge.
+  const envs = new Map<string, EnvEntry>();
 
-  const environment = (projectDir: string, project: Readonly<Record<string, unknown>>): Promise<RenderEnvironment> => {
+  const disposeEntry = async (key: string, entry: EnvEntry): Promise<void> => {
+    try {
+      await (await entry.promise).dispose();
+    } catch (error) {
+      telemetry.logger.warn('render environment dispose failed', { environment: key, error: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  const evictIdle = (): void => {
+    let idle = 0;
+    for (const e of envs.values()) if (e.refs === 0) idle++;
+    for (const [key, entry] of envs) {
+      if (idle <= MAX_IDLE_ENVIRONMENTS) break;
+      if (entry.refs > 0) continue;
+      envs.delete(key);
+      idle--;
+      void disposeEntry(key, entry);
+    }
+  };
+
+  const withEnvironment = async <T>(projectDir: string, project: Readonly<Record<string, unknown>>, fn: (env: RenderEnvironment) => Promise<T>): Promise<T> => {
     const key = `${projectDir}|${contentHash({ assets: project['assets'] ?? [], fonts: project['fonts'] ?? [], settings: project['settings'] ?? {} })}`;
-    let hit = envs.get(key);
-    if (hit === undefined) {
-      hit = createNodeEnvironment({
+    let entry = envs.get(key);
+    if (entry === undefined) {
+      const promise = create({
         projectDir,
         project,
         cache,
         telemetry,
         trusted: isolation === 'trusted',
+        allowHtmlScripts,
         ...(options.offline !== undefined ? { offline: options.offline } : {}),
         ...(options.providers !== undefined ? { providers: options.providers() } : {}),
       });
-      envs.set(key, hit);
-      order.push(key);
-      while (order.length > 4) {
-        const old = order.shift();
-        if (old === undefined) break;
-        const env = envs.get(old);
-        envs.delete(old);
-        if (env !== undefined) void env.then((e) => e.dispose());
-      }
+      entry = { promise, refs: 0 };
+      envs.set(key, entry);
+    } else {
+      envs.delete(key);
+      envs.set(key, entry);
     }
-    return hit;
+    entry.refs++;
+    const current = entry;
+    try {
+      let env: NodeEnvironment;
+      try {
+        env = await current.promise;
+      } catch (error) {
+        // Eine abgelehnte Umgebung bleibt nicht im Cache; der nächste Aufruf versucht es neu.
+        if (envs.get(key) === current) envs.delete(key);
+        throw error;
+      }
+      return await fn(env);
+    } finally {
+      current.refs--;
+      evictIdle();
+    }
   };
 
   return {
@@ -85,7 +153,7 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
     jobs,
     telemetry,
     isolation,
-    environment,
+    withEnvironment,
     encodePng: (image) => encodePng(image),
     ...(options.templates !== undefined ? { templates: options.templates } : {}),
     ...(options.sources !== undefined ? { sources: options.sources } : {}),
@@ -103,12 +171,12 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
             ...(input.id !== undefined ? { id: input.id } : {}),
             ...(input.type !== undefined ? { type: input.type } : {}),
           },
-          { cache, allowOutsidePaths: isolation === 'trusted' },
+          { cache, allowOutsidePaths, ...(options.offline !== undefined ? { offline: options.offline } : {}) },
         );
         return r;
       },
       async inspect(projectDir, project, assetId) {
-        const resolved = await resolveProjectAssets(projectDir, project, { cache, allowOutsidePaths: isolation === 'trusted' });
+        const resolved = await resolveProjectAssets(projectDir, project, { cache, allowOutsidePaths, ...(options.offline !== undefined ? { offline: options.offline } : {}) });
         try {
           const a = resolved.get(assetId);
           if (a === undefined) {
@@ -122,8 +190,9 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
       },
     },
     async dispose() {
-      for (const env of envs.values()) await (await env).dispose();
+      const all = [...envs.entries()];
       envs.clear();
+      await Promise.all(all.map(([key, entry]) => disposeEntry(key, entry)));
       await telemetry.shutdown();
     },
   };

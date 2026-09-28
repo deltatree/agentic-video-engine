@@ -1,93 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MemoryStore, createCache } from '@agentic-video/cache';
-import { Registry, getNumber, parseColor, type RenderBackend, type RgbaImage } from '@agentic-video/core';
-import { encodePng } from '@agentic-video/png';
-import { createTelemetry } from '@agentic-video/telemetry';
-import type { RenderEnvironment } from '@agentic-video/render';
-import { JobManager, OPERATIONS, Workspace, startAgentServer, type AgentServer, type AgentServices } from '@agentic-video/agent';
-
-function rectBackend(): RenderBackend {
-  return {
-    id: 'skia',
-    nodeTypes: ['rect', 'text'],
-    capabilities: [],
-    fusable: true,
-    versions: () => ({ test: '1' }),
-    check: () => ({ supported: true, diagnostics: [] }),
-    renderLayer: (req) => {
-      const data = new Uint8Array(req.width * req.height * 4);
-      for (const n of req.nodes) {
-        if (n.type !== 'rect') continue;
-        const c = parseColor(typeof n.props['fill'] === 'string' ? n.props['fill'] : '#FFFFFF');
-        for (let y = Math.round(getNumber(n, 'y', 0) * req.scale); y < Math.min(req.height, Math.round((getNumber(n, 'y', 0) + getNumber(n, 'height', 0)) * req.scale)); y++)
-          for (let x = Math.round(getNumber(n, 'x', 0) * req.scale); x < Math.min(req.width, Math.round((getNumber(n, 'x', 0) + getNumber(n, 'width', 0)) * req.scale)); x++) {
-            const o = (y * req.width + x) * 4;
-            data[o] = Math.round(c.r * 255);
-            data[o + 1] = Math.round(c.g * 255);
-            data[o + 2] = Math.round(c.b * 255);
-            data[o + 3] = 255;
-          }
-      }
-      return Promise.resolve({ width: req.width, height: req.height, data });
-    },
-    dispose: () => Promise.resolve(),
-  };
-}
-
-function testServices(root: string): AgentServices {
-  const telemetry = createTelemetry({ serviceName: 'agent-test', exporter: 'memory', logSink: () => undefined });
-  const cache = createCache(new MemoryStore());
-  const registry = new Registry();
-  registry.registerBackend(rectBackend());
-  const env: RenderEnvironment = {
-    registry,
-    assets: { get: () => undefined, bytes: () => Promise.reject(new Error('none')), videoFrame: () => Promise.reject(new Error('none')), all: () => [] },
-    fonts: { all: () => [], has: (f) => f === 'Inter', fallbacks: () => [] },
-    cache,
-    telemetry,
-    composite: (req) => {
-      const img = req.layers.find((l): l is { kind: 'image'; image: RgbaImage } => l.kind === 'image');
-      return img?.image ?? { width: req.width, height: req.height, data: new Uint8Array(req.width * req.height * 4) };
-    },
-    accumulate: (images) => images[0] ?? { width: 1, height: 1, data: new Uint8Array(4) },
-    overlays: {
-      debugOverlay: (_s, _b, _o, size) => ({ width: size.width, height: size.height, data: new Uint8Array(size.width * size.height * 4) }),
-      contactSheet: (frames) => frames[0]?.image ?? { width: 1, height: 1, data: new Uint8Array(4) },
-    },
-    media: {
-      createEncoder: (o) => {
-        let frames = 0;
-        return Promise.resolve({
-          write: () => {
-            frames++;
-            return Promise.resolve();
-          },
-          finish: async () => {
-            await writeFile(o.outPath, new Uint8Array([0]));
-            return { outputs: [o.outPath], frames, encoder: 'test', args: [] };
-          },
-          abort: () => Promise.resolve(),
-        });
-      },
-      info: () => Promise.resolve({ version: 'test', license: 'LGPL-2.1-or-later', configuration: '', codecLicenses: {} }),
-    },
-    versions: { 'backend:skia': '1' },
-    trusted: false,
-    platform: { os: 'linux' },
-  };
-  return {
-    workspace: new Workspace(root),
-    jobs: new JobManager(join(root, 'jobs'), telemetry, 2),
-    telemetry,
-    isolation: 'container',
-    environment: () => Promise.resolve(env),
-    encodePng: (image) => encodePng(image),
-  };
-}
+import { OPERATIONS, startAgentServer, type AgentServer, type AgentServices } from '@agentic-video/agent';
+import { testServices } from './helpers.js';
 
 let server: AgentServer;
 let services: AgentServices;

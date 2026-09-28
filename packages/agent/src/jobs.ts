@@ -35,7 +35,14 @@ export interface JobControl {
 
 const STATES: readonly JobState[] = ['queued', 'running', 'succeeded', 'failed', 'cancelled'];
 
-/** Liest einen Journal-Eintrag geprüft ein. */
+/**
+ * Liest einen Journal-Eintrag geprüft ein.
+ *
+ * @example
+ * ```ts
+ * const info = parseJobInfo(JSON.parse(text)); // undefined bei fremden Daten
+ * ```
+ */
 export function parseJobInfo(raw: unknown): JobInfo | undefined {
   if (!isRecord(raw)) return undefined;
   const { id, kind, projectId, state, progress, createdAt } = raw;
@@ -64,8 +71,13 @@ interface MutableJob {
   abort: { aborted: boolean };
 }
 
+function finished(state: JobState): boolean {
+  return state !== 'queued' && state !== 'running';
+}
+
 /**
  * Führt lang laufende Aufträge aus und hält ihren Zustand (auch über Neustarts, als Journal).
+ * Beendete Jobs bleiben bis `maxFinishedJobs` im Speicher; ältere fallen heraus (das Journal bleibt).
  *
  * @example
  * ```ts
@@ -76,35 +88,81 @@ interface MutableJob {
 export class JobManager {
   private readonly jobs = new Map<string, MutableJob>();
   private running = 0;
-  private readonly queue: (() => void)[] = [];
+  private readonly queue: { readonly id: string; readonly run: () => void }[] = [];
+  /** Alle Journal-Schreibvorgänge laufen nacheinander; so gewinnt immer der letzte Zustand. */
+  private journal: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly dir: string,
     private readonly telemetry: Telemetry,
     private readonly maxConcurrent = 1,
+    private readonly maxFinishedJobs = 1000,
   ) {}
 
-  /** Lädt das Journal; unterbrochene Jobs gelten als fehlgeschlagen. */
+  /** Lädt das Journal; unterbrochene Jobs gelten als fehlgeschlagen, unlesbare Einträge werden übersprungen. */
   async restore(): Promise<void> {
     if (!existsSync(this.dir)) return;
+    const loaded: MutableJob[] = [];
     for (const file of await readdir(this.dir)) {
       if (!file.endsWith('.json')) continue;
-      const raw: unknown = JSON.parse(await readFile(join(this.dir, file), 'utf8'));
+      let raw: unknown;
+      try {
+        raw = JSON.parse(await readFile(join(this.dir, file), 'utf8'));
+      } catch (error) {
+        this.telemetry.logger.warn('job journal entry unreadable, skipped', { file, error: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
       const info = parseJobInfo(raw);
-      if (info === undefined) continue;
-      const interrupted = info.state === 'queued' || info.state === 'running';
-      this.jobs.set(info.id, {
+      if (info === undefined) {
+        this.telemetry.logger.warn('job journal entry has an unknown shape, skipped', { file });
+        continue;
+      }
+      const interrupted = !finished(info.state);
+      loaded.push({
         info: interrupted
           ? { ...info, state: 'failed', error: { code: 'OV_JOB_INTERRUPTED', severity: 'error', errorClass: 'JobError', problem: 'The server stopped while the job was running.', suggestions: ['Start the render again; finished frames come from the cache.'] } }
           : info,
         abort: { aborted: interrupted },
       });
     }
+    loaded.sort((a, b) => a.info.createdAt.localeCompare(b.info.createdAt));
+    for (const job of loaded) this.jobs.set(job.info.id, job);
+    this.prune();
   }
 
-  private async persist(job: MutableJob): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
-    await writeAtomic(join(this.dir, `${job.info.id}.json`), JSON.stringify(job.info));
+  /** Wartet, bis alle Journal-Schreibvorgänge erledigt sind. */
+  flush(): Promise<void> {
+    return this.journal;
+  }
+
+  private persist(job: MutableJob): void {
+    const snapshot = JSON.stringify(job.info);
+    const id = job.info.id;
+    this.journal = this.journal.then(async () => {
+      try {
+        await mkdir(this.dir, { recursive: true });
+        await writeAtomic(join(this.dir, `${id}.json`), snapshot);
+      } catch (error) {
+        this.telemetry.logger.error('job journal write failed', { job: id, error: error instanceof Error ? error.message : String(error) });
+      }
+    });
+  }
+
+  /** Entfernt die ältesten beendeten Jobs, bis höchstens `maxFinishedJobs` übrig sind. */
+  private prune(): void {
+    let count = 0;
+    for (const job of this.jobs.values()) if (finished(job.info.state)) count++;
+    for (const [id, job] of this.jobs) {
+      if (count <= this.maxFinishedJobs) break;
+      if (!finished(job.info.state)) continue;
+      this.jobs.delete(id);
+      count--;
+    }
+  }
+
+  private next(): void {
+    const entry = this.queue.shift();
+    entry?.run();
   }
 
   /** Startet einen Job und gibt seine ID zurück. */
@@ -120,7 +178,7 @@ export class JobManager {
       this.running++;
       this.telemetry.metrics.recordQueueWait((performance.now() - queuedAt) / 1000, { kind });
       job.info = { ...job.info, state: 'running', startedAt: new Date().toISOString() };
-      void this.persist(job);
+      this.persist(job);
       const control: JobControl = {
         signal: job.abort,
         progress: (stage, done, total) => {
@@ -134,10 +192,13 @@ export class JobManager {
             job.info = { ...job.info, state: job.abort.aborted ? 'cancelled' : 'succeeded', result, finishedAt: new Date().toISOString() };
           },
           (error: unknown) => {
-            const diagnostic: Diagnostic =
-              error instanceof OpenVideoError
-                ? error.diagnostic
-                : { code: 'OV_INTERNAL', severity: 'error', errorClass: 'InternalError', problem: error instanceof Error ? error.message : String(error), suggestions: ['Report this bug with the job id.'] };
+            let diagnostic: Diagnostic;
+            if (error instanceof OpenVideoError) diagnostic = error.diagnostic;
+            else {
+              // Rohe Fehlertexte enthalten oft Host-Pfade; sie gehen nur ins Log (B18).
+              this.telemetry.logger.error('job failed', { job: id, kind, project: projectId, error: error instanceof Error ? (error.stack ?? error.message) : String(error) });
+              diagnostic = { code: 'OV_INTERNAL', severity: 'error', errorClass: 'InternalError', problem: `Job ${id} failed with an internal error.`, suggestions: ['Report this bug with the job id; the server log has the details.'] };
+            }
             const cancelled = job.abort.aborted || diagnostic.code === 'OV_RENDER_CANCELLED';
             if (!cancelled) this.telemetry.metrics.workerFailure(diagnostic.code);
             job.info = { ...job.info, state: cancelled ? 'cancelled' : 'failed', error: diagnostic, finishedAt: new Date().toISOString() };
@@ -145,13 +206,14 @@ export class JobManager {
         )
         .finally(() => {
           this.running--;
-          void this.persist(job);
-          this.queue.shift()?.();
+          this.persist(job);
+          this.prune();
+          this.next();
         });
     };
     if (this.running < this.maxConcurrent) run();
-    else this.queue.push(run);
-    void this.persist(job);
+    else this.queue.push({ id, run });
+    this.persist(job);
     return id;
   }
 
@@ -162,13 +224,19 @@ export class JobManager {
     return job.info;
   }
 
-  /** Bricht einen Job ab (wirkt beim nächsten Frame). */
+  /** Bricht einen Job ab: Wartende Jobs starten nie, laufende enden beim nächsten Frame. */
   cancel(id: string): JobInfo {
     const job = this.jobs.get(id);
     if (job === undefined) throw new OpenVideoError({ code: 'OV_JOB_UNKNOWN', errorClass: 'JobError', problem: `Job "${id}" does not exist.`, suggestions: [] });
-    if (job.info.state === 'queued' || job.info.state === 'running') {
+    if (!finished(job.info.state)) {
       job.abort.aborted = true;
-      if (job.info.state === 'queued') job.info = { ...job.info, state: 'cancelled', finishedAt: new Date().toISOString() };
+      if (job.info.state === 'queued') {
+        const index = this.queue.findIndex((q) => q.id === id);
+        if (index >= 0) this.queue.splice(index, 1);
+        job.info = { ...job.info, state: 'cancelled', finishedAt: new Date().toISOString() };
+        this.persist(job);
+        this.prune();
+      }
     }
     return job.info;
   }
@@ -177,12 +245,12 @@ export class JobManager {
   async wait(id: string, pollMs = 50): Promise<JobInfo> {
     for (;;) {
       const info = this.status(id);
-      if (info.state !== 'queued' && info.state !== 'running') return info;
+      if (finished(info.state)) return info;
       await new Promise((r) => setTimeout(r, pollMs));
     }
   }
 
-  /** Alle Jobs. */
+  /** Alle Jobs im Speicher. */
   list(): JobInfo[] {
     return [...this.jobs.values()].map((j) => j.info);
   }

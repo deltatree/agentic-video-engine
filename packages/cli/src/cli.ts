@@ -6,13 +6,14 @@
  * - 1: Das Projekt oder der Render hat Fehler (Diagnosen stehen in der Ausgabe)
  * - 2: Falsche Bedienung (unbekannter Befehl, fehlende Option)
  */
+import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { startAgentServer, type AgentServices } from '@agentic-video/agent';
-import { FileStore, createCache, storeFromEnv, CACHE_TIERS, type CacheTierName } from '@agentic-video/cache';
+import { createCache, storeFromEnv, CACHE_TIERS, type CacheTierName } from '@agentic-video/cache';
 import {
   CLI_NAME,
   OpenVideoError,
@@ -31,7 +32,7 @@ import { encodePng } from '@agentic-video/png';
 import { checkProject, createNodeEnvironment, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
 import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
-import { createLocalServices } from './services.js';
+import { createLocalServices, htmlScriptsAllowed, type LocalServices } from './services.js';
 import { createSourceService } from './sources.js';
 
 /** Ein- und Ausgabe der CLI (für Tests austauschbar). */
@@ -40,6 +41,8 @@ export interface CliIo {
   readonly stderr: (text: string) => void;
   readonly cwd: string;
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** Beendet `serve`, `dev` und `studio`, sobald das Versprechen erfüllt ist (Tests); sonst SIGINT/SIGTERM. */
+  readonly stop?: Promise<void>;
 }
 
 class UsageError extends Error {}
@@ -65,6 +68,12 @@ Commands:
   mcp                   Start the MCP server on stdio
   migrate <file>        Upgrade an older project file (--write)
   worker                Start a render worker (--stdio or --coordinator <url>)
+
+Server options (serve, dev, studio):
+  --host <addr>          Bind address (default 127.0.0.1; others need a token)
+  --port <n>             Port (default 7788)
+  --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
+  --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
 
 Global options:
   --json      Machine-readable output
@@ -107,12 +116,23 @@ function studioDir(env: Readonly<Record<string, string | undefined>>): string | 
 
 const MIME: Readonly<Record<string, string>> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.wasm': 'application/wasm' };
 
-async function serveServices(services: AgentServices, io: CliIo, options: { port: number; host: string; token?: string | undefined; projectId?: string }): Promise<void> {
+interface ServeOptions {
+  readonly port: number;
+  readonly host: string;
+  readonly token?: string | undefined;
+  readonly allowedHosts: readonly string[];
+  readonly projectId?: string;
+  /** Token im Studio-Link ausgeben (dev/studio mit erzeugtem Token). */
+  readonly showToken?: boolean;
+}
+
+async function serveServices(services: AgentServices, io: CliIo, options: ServeOptions): Promise<void> {
   const studio = studioDir(io.env);
   const server = await startAgentServer({
     services,
     port: options.port,
     host: options.host,
+    allowedHosts: options.allowedHosts,
     ...(options.token !== undefined ? { token: options.token } : {}),
     fallback: async (req, res) => {
       if (studio === undefined || req.method !== 'GET') return false;
@@ -120,21 +140,42 @@ async function serveServices(services: AgentServices, io: CliIo, options: { port
       const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
       const file = resolve(studio, rel);
       if (!file.startsWith(studio) || !existsSync(file)) return false;
-      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'x-content-type-options': 'nosniff' });
       res.end(await readFile(file));
       return true;
     },
   });
-  const link = `${server.url}/${options.projectId !== undefined ? `?project=${options.projectId}` : ''}`;
+  const query = new URLSearchParams({ ...(options.projectId !== undefined ? { project: options.projectId } : {}), ...(options.showToken === true && options.token !== undefined ? { token: options.token } : {}) }).toString();
+  const link = `${server.url}/${query !== '' ? `?${query}` : ''}`;
   io.stdout(`${PRODUCT_NAME} API: ${server.url}/v1/operations\n`);
+  if (options.showToken === true && options.token !== undefined) io.stdout(`API token (send as "Authorization: Bearer <token>"): token=${options.token}\n`);
   io.stdout(studio !== undefined ? `${PRODUCT_NAME} Studio: ${link}\n` : 'Studio files not found (build apps/studio or set OPENVIDEO_STUDIO_DIR).\n');
   await new Promise<void>((resolveStop) => {
     const stop = () => {
       void server.close().then(resolveStop);
     };
-    process.once('SIGINT', stop);
-    process.once('SIGTERM', stop);
+    if (io.stop !== undefined) void io.stop.then(stop);
+    else {
+      process.once('SIGINT', stop);
+      process.once('SIGTERM', stop);
+    }
   });
+}
+
+/** Erlaubte Host-Namen aus `--allowed-host` und `OPENVIDEO_ALLOWED_HOSTS` (kommagetrennt). */
+function allowedHostsOf(values: readonly string[] | undefined, env: Readonly<Record<string, string | undefined>>): string[] {
+  const fromEnv = (env['OPENVIDEO_ALLOWED_HOSTS'] ?? '').split(',').map((h) => h.trim()).filter((h) => h !== '');
+  return [...(values ?? []), ...fromEnv];
+}
+
+/** Führt einen Server mit Diensten aus und räumt die Dienste immer auf. */
+async function runServer(services: LocalServices, io: CliIo, options: ServeOptions): Promise<number> {
+  try {
+    await serveServices(services, io, options);
+    return 0;
+  } finally {
+    await services.dispose();
+  }
 }
 
 function printDiagnostics(io: CliIo, diagnostics: readonly Diagnostic[]): void {
@@ -185,6 +226,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         port: { type: 'string' },
         host: { type: 'string' },
         token: { type: 'string' },
+        'allowed-host': { type: 'string', multiple: true },
         workspace: { type: 'string' },
         write: { type: 'boolean' },
         id: { type: 'string' },
@@ -218,9 +260,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   }
   const target = resolve(io.cwd, rest[0] ?? '.');
   const sources = createSourceService({ trusted });
+  const isolation = trusted ? 'trusted' : 'container';
+  const offline = values.offline === true ? { offline: true } : {};
   const withEnv = async <T>(fn: (loaded: Awaited<ReturnType<typeof loadProject>>, env: Awaited<ReturnType<typeof createNodeEnvironment>>) => Promise<T>): Promise<T> => {
     const loaded = await loadProject(target, { sources });
-    const env = await createNodeEnvironment({ projectDir: loaded.dir, project: loaded.project, trusted, ...(values.offline === true ? { offline: true } : {}), allowOutsidePaths: trusted });
+    // Direkte CLI-Befehle dürfen mit --trusted Pfade außerhalb nutzen; Server-Befehle nie (B6).
+    const env = await createNodeEnvironment({ projectDir: loaded.dir, project: loaded.project, trusted, ...offline, allowOutsidePaths: trusted, allowHtmlScripts: htmlScriptsAllowed(isolation, io.env) });
     try {
       return await fn(loaded, env);
     } finally {
@@ -338,7 +383,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       case 'cache': {
         const sub = rest[0] ?? 'stats';
         const projectDir = resolve(io.cwd, rest[1] ?? '.');
-        const cache = createCache(io.env['OPENVIDEO_S3_ENDPOINT'] !== undefined ? storeFromEnv(io.env, projectDir) : new FileStore(io.env['OPENVIDEO_CACHE_DIR'] ?? join(projectDir, '.openvideo', 'cache')));
+        const cache = createCache(storeFromEnv(io.env, projectDir));
         const tier = values.tier !== undefined ? CACHE_TIERS.find((t): t is CacheTierName => t === values.tier) : undefined;
         if (values.tier !== undefined && tier === undefined) throw new UsageError(`Unknown tier "${values.tier}". Use: ${CACHE_TIERS.join(', ')}.`);
         if (sub === 'stats') {
@@ -382,7 +427,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       case 'assets': {
         const sub = rest[0] ?? 'list';
         const projectPath = resolve(io.cwd, sub === 'import' || sub === 'inspect' ? (rest[2] ?? '.') : (rest[1] ?? '.'));
-        const services = await createLocalServices({ workspaceDir: join(projectPath, '.openvideo', 'workspace'), isolation: trusted ? 'trusted' : 'container', sources });
+        const services = await createLocalServices({ workspaceDir: join(projectPath, '.openvideo', 'workspace'), isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline });
         try {
           const loaded = await loadProject(projectPath, { sources });
           if (sub === 'import') {
@@ -401,8 +446,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
             out(info, JSON.stringify(info, null, 2));
             return 0;
           }
-          const env = await services.environment(loaded.dir, loaded.project);
-          const all = env.assets.all();
+          const all = await services.withEnvironment(loaded.dir, loaded.project, (env) => Promise.resolve(env.assets.all()));
           out(all, all.map((a) => `${a.id.padEnd(20)} ${a.type.padEnd(9)} ${a.src}`).join('\n') || 'No assets.');
           return 0;
         } finally {
@@ -421,23 +465,22 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'serve': {
         const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation: trusted ? 'trusted' : 'container', sources });
-        await serveServices(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'] });
-        await services.dispose();
-        return 0;
+        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline });
+        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env) });
       }
       case 'dev':
       case 'studio': {
         const loaded = await loadProject(target, { sources });
         const { workspaceDir, projectId } = await singleProjectWorkspace(loaded.dir);
-        const services = await createLocalServices({ workspaceDir, isolation: trusted ? 'trusted' : 'container', sources });
-        await serveServices(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', projectId });
-        await services.dispose();
-        return 0;
+        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline });
+        // dev/studio schützen die API immer mit einem Token; ohne Vorgabe ein zufälliges (B1).
+        const given = values.token ?? io.env['OPENVIDEO_API_TOKEN'];
+        const token = given !== undefined && given !== '' ? given : randomBytes(32).toString('base64url');
+        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token, allowedHosts: allowedHostsOf(values['allowed-host'], io.env), projectId, showToken: true });
       }
       case 'mcp': {
         const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation: trusted ? 'trusted' : 'container', sources, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
         const { serveStdio } = await import('@agentic-video/mcp');
         await serveStdio(services);
         await new Promise<void>((r) => process.stdin.once('close', r));

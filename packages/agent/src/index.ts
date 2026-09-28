@@ -14,4 +14,5 @@ export * from './services.js';
 export * from './workspace.js';
 export * from './jobs.js';
 export * from './operations.js';
+export * from './guards.js';
 export * from './server.js';

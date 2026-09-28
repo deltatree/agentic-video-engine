@@ -66,7 +66,7 @@ let backends: BrowserBackends;
 
 beforeAll(async () => {
   buildRuntime();
-  backends = await createBrowserBackends({ assets, fonts: testFonts(), width: W, height: H });
+  backends = await createBrowserBackends({ assets, fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
 });
 
 afterAll(async () => {

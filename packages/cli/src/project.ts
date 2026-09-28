@@ -3,9 +3,9 @@
  * Einbinden in einen Ein-Projekt-Workspace (für `dev`, `studio`, `serve`).
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
-import { basename, join, resolve } from 'node:path';
-import { readProjectConfig, type SourceService } from '@agentic-video/agent';
+import { lstat, mkdir, readFile, readlink, symlink, unlink, writeFile } from 'node:fs/promises';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { isSourceEntry, readProjectConfig, safeJoin, type SourceService } from '@agentic-video/agent';
 import { OpenVideoError, SCHEMA_VERSION, isRecord } from '@agentic-video/core';
 
 /** Ein geladenes Projekt. */
@@ -15,13 +15,31 @@ export interface LoadedProject {
   readonly project: Record<string, unknown>;
 }
 
-/** Findet den Projektordner zu einem Pfad (Ordner, `project.json` oder TSX-Datei). */
+/** Wie viele Ordner über einer Datei nach `openvideo.json` gesucht wird. */
+const PROJECT_SEARCH_DEPTH = 4;
+
+/**
+ * Findet den Projektordner zu einem Pfad (Ordner, `project.json` oder TSX-/TS-Datei).
+ * Bei einer Datei ist der Projektordner der nächste Ordner darüber mit `openvideo.json`,
+ * sonst der Ordner der Datei. Der Einstieg ist relativ zum Projektordner.
+ *
+ * @example
+ * ```ts
+ * projectDirOf('/work/demo/src/video.tsx'); // { dir: '/work/demo', entry: 'src/video.tsx' }
+ * ```
+ */
 export function projectDirOf(path: string): { dir: string; entry?: string } {
   const full = resolve(path);
-  if (full.endsWith('.json') || full.endsWith('.tsx') || full.endsWith('.ts')) {
-    const dir = full.slice(0, full.length - basename(full).length - 1);
-    const relEntry = full.slice(dir.length + 1);
-    return { dir: existsSync(join(dir, 'openvideo.json')) || !full.includes('/src/') ? dir : resolve(dir, '..'), entry: relEntry };
+  if (full.endsWith('.json') || isSourceEntry(full)) {
+    let dir = dirname(full);
+    for (let candidate = dir, i = 0; i < PROJECT_SEARCH_DEPTH; i++, candidate = dirname(candidate)) {
+      if (existsSync(join(candidate, 'openvideo.json'))) {
+        dir = candidate;
+        break;
+      }
+      if (dirname(candidate) === candidate) break;
+    }
+    return { dir, entry: relative(dir, full) };
   }
   return { dir: full };
 }
@@ -42,7 +60,7 @@ export async function loadProject(path: string, options: { readonly sources?: So
   if (!existsSync(file)) {
     throw new OpenVideoError({ code: 'OV_PROJECT_UNKNOWN', errorClass: 'ProjectError', problem: `No project found at ${file}.`, suggestions: ['Run `openvideo create <name>` to create a project.', 'Pass the project folder or its project.json.'] });
   }
-  if (entry.endsWith('.tsx') || entry.endsWith('.ts')) {
+  if (isSourceEntry(entry)) {
     if (options.sources === undefined) {
       throw new OpenVideoError({ code: 'OV_SOURCE_UNAVAILABLE', errorClass: 'ProjectError', problem: 'TSX projects need the compiler, which is not available.', suggestions: ['Install @agentic-video/compiler, or use a JSON project.'] });
     }
@@ -143,38 +161,65 @@ Dieses Projekt ist ein OpenVideo-Projekt. Die Composition steht in \`project.jso
  */
 export async function createProjectDir(dir: string, options: { readonly name?: string; readonly project: Record<string, unknown>; readonly source?: string; readonly files?: Readonly<Record<string, string>> }): Promise<string> {
   const full = resolve(dir);
-  if (existsSync(join(full, 'openvideo.json'))) {
-    throw new OpenVideoError({ code: 'OV_PROJECT_EXISTS', errorClass: 'ProjectError', problem: `${full} already contains an OpenVideo project.`, suggestions: ['Choose another directory name.'] });
-  }
   const name = options.name ?? basename(full);
+  const entry = options.source !== undefined ? 'src/video.tsx' : 'project.json';
+  // Alle Zieldateien zuerst prüfen (B15): kein Ausbruch mit "..", keine Nutzerdatei überschreiben.
+  const planned: [string, string][] = [
+    ...(options.source !== undefined ? [[entry, options.source] satisfies [string, string]] : []),
+    ...Object.entries(options.files ?? {}),
+    ['project.json', `${JSON.stringify(options.project, null, 2)}\n`],
+    ['openvideo.json', `${JSON.stringify({ name, entry, outDir: 'out' }, null, 2)}\n`],
+    ['.gitignore', '.openvideo/\nout/\n'],
+    ['AGENTS.md', PROJECT_AGENTS_MD(name)],
+  ];
+  const targets = planned.map(([rel, text]): [string, string] => [safeJoin(full, rel), text]);
+  const taken = targets.map(([file]) => file).filter((file) => existsSync(file));
+  if (taken.length > 0) {
+    throw new OpenVideoError({
+      code: 'OV_PROJECT_EXISTS',
+      errorClass: 'ProjectError',
+      problem: `${full} already contains ${taken.map((f) => relative(full, f)).join(', ')}; nothing was written.`,
+      suggestions: ['Choose another directory name, or move the existing files away.'],
+    });
+  }
   await mkdir(join(full, 'assets'), { recursive: true });
   await mkdir(join(full, 'out'), { recursive: true });
-  const entry = options.source !== undefined ? 'src/video.tsx' : 'project.json';
-  if (options.source !== undefined) {
-    await mkdir(join(full, 'src'), { recursive: true });
-    await writeFile(join(full, entry), options.source);
+  for (const [file, text] of targets) {
+    await mkdir(dirname(file), { recursive: true });
+    // `wx`: schlägt fehl, falls die Datei inzwischen jemand anderes angelegt hat.
+    await writeFile(file, text, { flag: 'wx' });
   }
-  for (const [rel, text] of Object.entries(options.files ?? {})) {
-    const target = join(full, rel);
-    await mkdir(target.slice(0, target.lastIndexOf('/')), { recursive: true });
-    await writeFile(target, text);
-  }
-  await writeFile(join(full, 'project.json'), `${JSON.stringify(options.project, null, 2)}\n`);
-  await writeFile(join(full, 'openvideo.json'), `${JSON.stringify({ name, entry, outDir: 'out' }, null, 2)}\n`);
-  await writeFile(join(full, '.gitignore'), '.openvideo/\nout/\n');
-  await writeFile(join(full, 'AGENTS.md'), PROJECT_AGENTS_MD(name));
   return full;
 }
 
 /**
  * Bindet einen Projektordner als einziges Projekt in einen Workspace ein (Symlink),
  * damit Agent API und Studio ihn bearbeiten. Liefert Workspace-Pfad und Projekt-ID.
+ * Die ID hat höchstens 63 Zeichen; ein veralteter oder hängender Symlink wird ersetzt (B15).
+ *
+ * @example
+ * ```ts
+ * const { workspaceDir, projectId } = await singleProjectWorkspace('/work/demo');
+ * ```
  */
 export async function singleProjectWorkspace(projectDir: string): Promise<{ workspaceDir: string; projectId: string }> {
-  const id = basename(projectDir).toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '') || 'project';
+  const id = basename(projectDir).toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+/gu, '').slice(0, 63).replace(/-+$/gu, '') || 'project';
   const workspaceDir = join(projectDir, '.openvideo', 'workspace');
   await mkdir(join(workspaceDir, 'projects'), { recursive: true });
   const link = join(workspaceDir, 'projects', id);
-  if (!existsSync(link)) await symlink(projectDir, link, 'dir');
+  let current: string | undefined;
+  try {
+    current = (await lstat(link)).isSymbolicLink() ? await readlink(link) : link;
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+  }
+  if (current === projectDir) return { workspaceDir, projectId: id };
+  if (current !== undefined) {
+    if (current === link) {
+      throw new OpenVideoError({ code: 'OV_PROJECT_WORKSPACE', errorClass: 'ProjectError', problem: `${link} exists and is not a link to the project.`, suggestions: ['Delete the .openvideo/workspace folder of the project and start again.'] });
+    }
+    await unlink(link);
+  }
+  await symlink(projectDir, link, 'dir');
   return { workspaceDir, projectId: id };
 }

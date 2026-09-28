@@ -61,8 +61,8 @@ describe('Determinismus', () => {
 
   it('zwei getrennte Hosts, Frames in unterschiedlicher Reihenfolge → gleiche Hashes', async () => {
     const frames = [0, 7, 15, 30, 45];
-    const a = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H });
-    const b = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H });
+    const a = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
+    const b = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
     try {
       const first = await renderAll(a, frames);
       const second = await renderAll(b, [...frames].reverse());
@@ -79,7 +79,7 @@ describe('Sicherheit', () => {
   let host: BrowserHost;
   beforeAll(async () => {
     buildRuntime();
-    host = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: 100, height: 60 });
+    host = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: 100, height: 60, allowHtmlScripts: true });
   });
   afterAll(async () => {
     await host.close();
@@ -103,21 +103,22 @@ describe('Sicherheit', () => {
 });
 
 describe('HTTP-Server', () => {
-  it('liefert nur mit Pfad-Token aus, mit korrektem MIME-Typ', async () => {
+  it('liefert nur mit Token-Header aus, mit korrektem MIME-Typ', async () => {
     const png = new Uint8Array([137, 80, 78, 71]);
     const server = await startHostServer({ runtimeJs: '/* rt */', assets: memoryAssets({ logo: { path: 'store/logo.png', bytes: png } }), fonts: testFonts() });
     try {
+      const headers = server.headers;
       expect((await fetch(`${server.origin}/assets/logo`)).status).toBe(404);
-      expect((await fetch(`${server.origin}/wrongtoken/assets/logo`)).status).toBe(404);
-      const ok = await fetch(`${server.origin}${server.prefix}assets/logo`);
+      expect((await fetch(`${server.origin}/assets/logo`, { headers: { 'x-openvideo-token': 'wrong' } })).status).toBe(404);
+      const ok = await fetch(`${server.origin}/assets/logo`, { headers });
       expect(ok.status).toBe(200);
       expect(ok.headers.get('content-type')).toBe('image/png');
       expect(new Uint8Array(await ok.arrayBuffer())).toEqual(png);
-      expect((await fetch(`${server.origin}${server.prefix}assets/missing`)).status).toBe(404);
-      const css = await (await fetch(`${server.origin}${server.prefix}fonts.css`)).text();
+      expect((await fetch(`${server.origin}/assets/missing`, { headers })).status).toBe(404);
+      const css = await (await fetch(`${server.origin}/fonts.css`, { headers })).text();
       expect(css).toContain(`font-family:"${TEST_FONT}"`);
       const font = testFonts().all()[0];
-      const fontResponse = await fetch(`${server.origin}${server.prefix}fonts/${font?.hash ?? ''}`);
+      const fontResponse = await fetch(`${server.origin}/fonts/${font?.hash ?? ''}`, { headers });
       expect(fontResponse.headers.get('content-type')).toBe('font/ttf');
     } finally {
       await server.close();
@@ -127,15 +128,15 @@ describe('HTTP-Server', () => {
   it('nimmt Pixel per POST /frame/<id> an und prüft die Größe', async () => {
     const server = await startHostServer({ runtimeJs: '', assets: memoryAssets({}), fonts: testFonts() });
     try {
-      const good = server.expectFrame('1', 8);
-      const res = await fetch(`${server.origin}${good.url}`, { method: 'POST', body: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]) });
+      const good = server.expectFrame(8);
+      const res = await fetch(`${server.origin}${good.url}`, { method: 'POST', headers: server.headers, body: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]) });
       expect(res.status).toBe(204);
       expect(await good.bytes).toEqual(new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]));
-      const bad = server.expectFrame('2', 8);
+      const bad = server.expectFrame(8);
       const rejected = expect(bad.bytes).rejects.toThrow(/wrong size/u);
-      expect((await fetch(`${server.origin}${bad.url}`, { method: 'POST', body: new Uint8Array([1, 2]) })).status).toBe(413);
+      expect((await fetch(`${server.origin}${bad.url}`, { method: 'POST', headers: server.headers, body: new Uint8Array([1, 2]) })).status).toBe(413);
       await rejected;
-      expect((await fetch(`${server.origin}${server.prefix}frame/unknown`, { method: 'POST', body: new Uint8Array(8) })).status).toBe(404);
+      expect((await fetch(`${server.origin}/frame/unknown`, { method: 'POST', headers: server.headers, body: new Uint8Array(8) })).status).toBe(404);
     } finally {
       await server.close();
     }

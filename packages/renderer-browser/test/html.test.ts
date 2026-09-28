@@ -27,7 +27,7 @@ async function render(nodes: EvaluatedNode[], frame: number, extra: Partial<Brow
 beforeAll(async () => {
   buildRuntime();
   const blue = new Uint8Array(4 * 4 * 4).map((_, i) => (i % 4 === 2 || i % 4 === 3 ? 255 : 0));
-  host = await createBrowserHost({ assets: memoryAssets({ dot: { path: 'store/dot.png', bytes: encodePng({ width: 4, height: 4, data: blue }) } }), fonts: testFonts(), width: W, height: H });
+  host = await createBrowserHost({ assets: memoryAssets({ dot: { path: 'store/dot.png', bytes: encodePng({ width: 4, height: 4, data: blue }) } }), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
 });
 
 afterAll(async () => {

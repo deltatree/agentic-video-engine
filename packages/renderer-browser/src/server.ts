@@ -2,13 +2,15 @@
  * Lokaler HTTP-Server des Render-Hosts (ADR 0013).
  *
  * - Bindet nur an `127.0.0.1` mit zufälligem Port.
- * - Jede Route liegt unter einem zufälligen Pfad-Token (`/<token>/…`). Fremde Seiten
- *   auf demselben Rechner kennen das Token nicht und bekommen 404.
- *   Der Host schreibt Anfragen der eigenen Seite ohne Token im Route-Handler um,
- *   damit Inhalte `/assets/<id>` nutzen können.
+ * - Jede Anfrage braucht ein zufälliges Token im Header {@link TOKEN_HEADER}. Der Host setzt
+ *   den Header im Route-Handler des Browsers (D2). So steht das Token weder in `location`
+ *   noch in `baseURI` der Seite; Skripte in Layer-Dokumenten können es nicht lesen.
+ *   Andere Prozesse auf demselben Rechner kennen das Token nicht und bekommen 404.
+ * - Frame-Uploads haben zufällige IDs (`crypto.randomUUID`), damit Layer-Skripte keinen
+ *   erwarteten Upload erraten und überschreiben können.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { extname } from 'node:path';
 import { OpenVideoError, type AssetResolver, type FontResolver } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
@@ -17,10 +19,10 @@ import { encodePng } from '@agentic-video/png';
 export interface HostServer {
   /** z. B. `http://127.0.0.1:41234` */
   readonly origin: string;
-  /** Pfad-Präfix mit Token, z. B. `/3f9c…/` */
-  readonly prefix: string;
-  /** Erwartet einen Pixel-Upload `POST <prefix>frame/<id>` mit genau `byteLength` Bytes. */
-  expectFrame(id: string, byteLength: number): { readonly url: string; readonly bytes: Promise<Uint8Array>; cancel(reason: unknown): void };
+  /** Header mit dem Zugangs-Token; der Host hängt ihn an jede Anfrage der Seite an. */
+  readonly headers: Readonly<Record<string, string>>;
+  /** Erwartet einen Pixel-Upload `POST /frame/<zufällige id>` mit genau `byteLength` Bytes. */
+  expectFrame(byteLength: number): { readonly url: string; readonly bytes: Promise<Uint8Array>; cancel(reason: unknown): void };
   close(): Promise<void>;
 }
 
@@ -30,6 +32,9 @@ export interface HostServerOptions {
   readonly assets: AssetResolver;
   readonly fonts: FontResolver;
 }
+
+/** Name des Headers mit dem Zugangs-Token. */
+export const TOKEN_HEADER = 'x-openvideo-token';
 
 const MIME: Readonly<Record<string, string>> = {
   '.png': 'image/png',
@@ -132,23 +137,25 @@ interface PendingFrame {
  * @example
  * ```ts
  * const server = await startHostServer({ runtimeJs, assets, fonts });
- * await page.goto(`${server.origin}${server.prefix}index.html`);
+ * await context.route('**' + '/*', (route) => route.continue({ headers: { ...route.request().headers(), ...server.headers } }));
+ * await page.goto(`${server.origin}/index.html`);
  * ```
  */
 export async function startHostServer(options: HostServerOptions): Promise<HostServer> {
-  const token = randomBytes(16).toString('hex');
-  const prefix = `/${token}/`;
+  const token = Buffer.from(randomBytes(16).toString('hex'));
   const fontsByHash = new Map(options.fonts.all().map((f) => [f.hash, f]));
   const fontCss = fontFaceCss(options.fonts);
   const pending = new Map<string, PendingFrame>();
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    if (!url.pathname.startsWith(prefix)) {
+    const given = req.headers[TOKEN_HEADER];
+    const presented = Buffer.from(typeof given === 'string' ? given : '');
+    if (presented.length !== token.length || !timingSafeEqual(presented, token)) {
       send(res, 404, 'text/plain', 'Not found');
       return;
     }
-    const parts = url.pathname.slice(prefix.length).split('/').map((p) => decodeURIComponent(p));
+    const parts = url.pathname.slice(1).split('/').map((p) => decodeURIComponent(p));
     const [route, a, b] = parts;
     if (req.method === 'POST' && route === 'frame' && a !== undefined && parts.length === 2) {
       const wait = pending.get(a);
@@ -225,8 +232,9 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
   const origin = `http://127.0.0.1:${String(address.port)}`;
   return {
     origin,
-    prefix,
-    expectFrame(id, byteLength) {
+    headers: { [TOKEN_HEADER]: token.toString() },
+    expectFrame(byteLength) {
+      const id = randomUUID();
       let resolve: (bytes: Uint8Array) => void = () => undefined;
       let reject: (reason: unknown) => void = () => undefined;
       const bytes = new Promise<Uint8Array>((res, rej) => {
@@ -235,7 +243,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       });
       pending.set(id, { byteLength, resolve, reject });
       return {
-        url: `${prefix}frame/${encodeURIComponent(id)}`,
+        url: `/frame/${id}`,
         bytes,
         cancel(reason) {
           if (pending.delete(id)) reject(reason);

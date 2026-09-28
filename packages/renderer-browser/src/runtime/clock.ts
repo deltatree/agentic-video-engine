@@ -15,11 +15,15 @@
  */
 import { random } from '@agentic-video/core';
 import { DOCUMENT_NAME_PREFIX, type DocumentConfig, type FrameState, type OpenVideoPageApi } from '../protocol.js';
+import { applyFrame, seekAnimations } from './animations.js';
 
 /** Fester Nullpunkt der virtuellen Uhr: 2000-01-01T00:00:00Z. */
 const VIRTUAL_EPOCH_MS = 946_684_800_000;
-/** Höchstzahl ausgeführter Timer pro Frame (Schutz vor Endlosschleifen). */
-const MAX_TIMER_RUNS = 10_000;
+/**
+ * Höchstzahl ausgeführter Timer pro Frame (Schutz vor Endlosschleifen). Reicht für ein
+ * 1-ms-Intervall über 100 s Sprung. Wird sie erreicht, meldet die Uhr `OV_BROWSER_TIMER_LIMIT`.
+ */
+const MAX_TIMER_RUNS = 100_000;
 
 interface Timer {
   readonly id: number;
@@ -45,13 +49,9 @@ function readConfig(name: string): DocumentConfig | undefined {
   }
 }
 
-/** Sammelt alle Web Animations inklusive offener Shadow Roots. */
-function allAnimations(doc: Document): Animation[] {
-  const out = doc.getAnimations();
-  for (const el of doc.querySelectorAll('*')) {
-    if (el.shadowRoot !== null) out.push(...el.shadowRoot.getAnimations());
-  }
-  return out;
+/** Die Uhr nimmt nur endliche Zeiten an (D5). */
+function checkTime(timeMs: number): void {
+  if (!Number.isFinite(timeMs)) throw new RangeError(`OV_BROWSER_PAYLOAD: virtual time must be a finite number, got ${String(timeMs)}.`);
 }
 
 function install(): void {
@@ -78,6 +78,9 @@ function install(): void {
     },
   });
   win.performance.now = () => now;
+  // Auch `document.timeline.currentTime` und `Event.timeStamp` zeigen die virtuelle Zeit (D5).
+  Object.defineProperty(win.document.timeline, 'currentTime', { configurable: true, get: () => now });
+  Object.defineProperty(win.Event.prototype, 'timeStamp', { configurable: true, get: () => now });
   win.Math.random = () => random(seed, key, counter++);
   const reseed = (s: number, k: string): void => {
     seed = s;
@@ -91,6 +94,7 @@ function install(): void {
         return now;
       },
       frame(state: FrameState) {
+        checkTime(state.timeMs);
         now = state.timeMs;
         reseed(state.seed, `${state.key}:${String(state.frame)}`);
       },
@@ -147,12 +151,16 @@ function install(): void {
   };
 
   const runTimers = (target: number): void => {
-    for (let i = 0; i < MAX_TIMER_RUNS; i++) {
+    for (let i = 0; ; i++) {
       let pick: Timer | undefined;
       for (const t of timers.values()) {
         if (t.due <= target && (pick === undefined || t.due < pick.due || (t.due === pick.due && t.seq < pick.seq))) pick = t;
       }
       if (pick === undefined) return;
+      if (i >= MAX_TIMER_RUNS) {
+        timers.clear();
+        throw new RangeError(`OV_BROWSER_TIMER_LIMIT: more than ${String(MAX_TIMER_RUNS)} timers ran up to ${String(target)} ms virtual time; the document reschedules timers endlessly.`);
+      }
       now = Math.max(now, pick.due);
       if (pick.interval === undefined) timers.delete(pick.id);
       else pick.due += pick.interval;
@@ -192,6 +200,7 @@ function install(): void {
       return now;
     },
     frame(state: FrameState) {
+      checkTime(state.timeMs);
       if (state.timeMs < now) throw new RangeError(`Virtual time cannot go backwards (${String(state.timeMs)} < ${String(now)}).`);
       reseed(state.seed, `${state.key}:${String(state.frame)}`);
       runTimers(state.timeMs);
@@ -200,10 +209,7 @@ function install(): void {
       api.time = state.timeMs / 1000;
       api.fps = state.fps;
       api.progress = state.progress;
-      const root = win.document.documentElement;
-      root.style.setProperty('--ov-time', String(api.time));
-      root.style.setProperty('--ov-frame', String(api.frame));
-      root.style.setProperty('--ov-progress', String(api.progress));
+      applyFrame(win.document, state);
       const pending = [...rafs.values()];
       rafs.clear();
       for (const cb of pending) {
@@ -217,10 +223,7 @@ function install(): void {
           cb(snapshot);
         });
       }
-      for (const animation of allAnimations(win.document)) {
-        animation.pause();
-        animation.currentTime = state.timeMs;
-      }
+      seekAnimations(win.document, state.timeMs);
     },
     reseed,
   };

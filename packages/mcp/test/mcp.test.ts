@@ -21,8 +21,8 @@ function services(): AgentServices {
     telemetry,
     isolation: 'container',
     encodePng,
-    environment: () =>
-      Promise.resolve({
+    withEnvironment: (_dir, _project, fn) =>
+      fn({
         registry,
         assets: { get: () => undefined, bytes: () => Promise.reject(new Error('x')), videoFrame: () => Promise.reject(new Error('x')), all: () => [] },
         fonts: { all: () => [], has: () => true, fallbacks: () => [] },

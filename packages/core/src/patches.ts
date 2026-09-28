@@ -15,9 +15,19 @@ export interface PatchKeyframe {
   readonly ease?: string;
 }
 
-/** Alle Patch-Operationen. `compositionId` ist optional, wenn die Node-ID eindeutig ist. */
+/**
+ * Alle Patch-Operationen. `compositionId` ist optional, wenn die Node-ID eindeutig ist.
+ *
+ * Bei `setProperty`, `setCompositionProperty` und `setProjectProperty` löscht `value: null`
+ * die Property. Mit `keepNull: true` wird stattdessen der JSON-Wert `null` gesetzt.
+ *
+ * @example
+ * ```ts
+ * const p: Patch = { op: 'setProperty', nodeId: 'title', property: 'fontSize', value: 82 };
+ * ```
+ */
 export type Patch =
-  | { readonly op: 'setProperty'; readonly nodeId: string; readonly property: string; readonly value: unknown; readonly compositionId?: string }
+  | { readonly op: 'setProperty'; readonly nodeId: string; readonly property: string; readonly value: unknown; readonly keepNull?: boolean; readonly compositionId?: string }
   | { readonly op: 'addNode'; readonly parentId: string | null; readonly node: Readonly<Record<string, unknown>>; readonly index?: number; readonly compositionId?: string }
   | { readonly op: 'removeNode'; readonly nodeId: string; readonly compositionId?: string }
   | { readonly op: 'moveNode'; readonly nodeId: string; readonly parentId: string | null; readonly index?: number; readonly compositionId?: string }
@@ -26,8 +36,8 @@ export type Patch =
   | { readonly op: 'replaceAsset'; readonly assetId: string; readonly src: string; readonly type?: string; readonly hash?: string }
   | { readonly op: 'addAsset'; readonly asset: Readonly<Record<string, unknown>> }
   | { readonly op: 'removeAsset'; readonly assetId: string }
-  | { readonly op: 'setCompositionProperty'; readonly compositionId: string; readonly property: string; readonly value: unknown }
-  | { readonly op: 'setProjectProperty'; readonly property: string; readonly value: unknown };
+  | { readonly op: 'setCompositionProperty'; readonly compositionId: string; readonly property: string; readonly value: unknown; readonly keepNull?: boolean }
+  | { readonly op: 'setProjectProperty'; readonly property: string; readonly value: unknown; readonly keepNull?: boolean };
 
 /** Namen aller Patch-Operationen. */
 export const PATCH_OPS = ['setProperty', 'addNode', 'removeNode', 'moveNode', 'addKeyframe', 'removeKeyframe', 'replaceAsset', 'addAsset', 'removeAsset', 'setCompositionProperty', 'setProjectProperty'] as const;
@@ -127,18 +137,32 @@ function splitPath(path: string): string[] {
   return parts;
 }
 
+/** Was die Umkehrung eines Setzens wiederherstellen muss. */
+interface Restore {
+  readonly path: string;
+  readonly value: unknown;
+  /** `true`, wenn der alte Wert `null` war (nicht fehlend). */
+  readonly keepNull: boolean;
+}
+
 /**
  * Ermittelt, was die Umkehrung eines Setzens wiederherstellen muss: den ersten
  * vorher fehlenden Vorfahren (dann `null` = entfernen) oder den alten Wert.
+ * Ein alter Wert `null` wird mit `keepNull` wiederhergestellt, nicht gelöscht.
  */
-function inversePath(target: Record<string, unknown>, parts: readonly string[]): { path: string; value: unknown } {
+function inversePath(target: Record<string, unknown>, parts: readonly string[]): Restore {
   for (let i = 1; i <= parts.length; i++) {
     const prefix = parts.slice(0, i);
     const v = getPath(target, prefix);
-    if (v === undefined) return { path: prefix.join('.'), value: null };
-    if (i === parts.length) return { path: parts.join('.'), value: cloneJson(v) };
+    if (v === undefined) return { path: prefix.join('.'), value: null, keepNull: false };
+    if (i === parts.length) return { path: parts.join('.'), value: cloneJson(v), keepNull: v === null };
   }
-  return { path: parts.join('.'), value: null };
+  return { path: parts.join('.'), value: null, keepNull: false };
+}
+
+/** Felder `value` und `keepNull` einer Umkehrung. */
+function restoreFields(r: Restore): { value: unknown; keepNull?: boolean } {
+  return r.keepNull ? { value: null, keepNull: true } : { value: r.value };
 }
 
 function getPath(target: Record<string, unknown>, parts: readonly string[]): unknown {
@@ -159,7 +183,7 @@ export const COMPOUND_DEFAULTS: Readonly<Record<string, Readonly<Record<string, 
   to: { x: 0, y: 0 },
 };
 
-function setPath(target: Record<string, unknown>, parts: readonly string[], value: unknown): void {
+function setPath(target: Record<string, unknown>, parts: readonly string[], value: unknown, keepNull = false): void {
   let cur: Record<string, unknown> = target;
   for (let i = 0; i < parts.length - 1; i++) {
     const key = parts[i] ?? '';
@@ -175,11 +199,26 @@ function setPath(target: Record<string, unknown>, parts: readonly string[], valu
     }
   }
   const last = parts[parts.length - 1] ?? '';
-  if (value === null || value === undefined) {
+  if (value === undefined || (value === null && !keepNull)) {
     Reflect.deleteProperty(cur, last);
   } else {
     cur[last] = value;
   }
+}
+
+/** Alle IDs einer Node und ihrer Nachfahren (Kinder und Masken-Nodes), mit Wiederholungen. */
+function subtreeIds(node: unknown): string[] {
+  if (!isRecord(node)) return [];
+  const out: string[] = typeof node['id'] === 'string' ? [node['id']] : [];
+  const children = node['children'];
+  if (Array.isArray(children)) for (const c of children) out.push(...subtreeIds(c));
+  const mask = node['mask'];
+  if (isRecord(mask)) out.push(...subtreeIds(mask['node']));
+  return out;
+}
+
+function collectIds(list: readonly unknown[], into: Set<string>): void {
+  for (const n of list) for (const id of subtreeIds(n)) into.add(id);
 }
 
 function nodesArray(comp: Record<string, unknown>): unknown[] {
@@ -230,15 +269,22 @@ function applyOne(project: Record<string, unknown>, patch: Patch): Patch[] {
       const loc = locate(project, patch.nodeId, patch.compositionId);
       const parts = splitPath(patch.property);
       const restore = inversePath(loc.node, parts);
-      setPath(loc.node, parts, cloneJson(patch.value));
+      setPath(loc.node, parts, cloneJson(patch.value), patch.keepNull === true);
       const compositionId = String(loc.composition['id']);
-      return [{ op: 'setProperty', nodeId: patch.nodeId, property: restore.path, value: restore.value, compositionId }];
+      return [{ op: 'setProperty', nodeId: patch.nodeId, property: restore.path, ...restoreFields(restore), compositionId }];
     }
     case 'addNode': {
       const id = patch.node['id'];
       if (typeof id !== 'string') throw patchError('The new node needs a string "id".', ['node: { id: "title", type: "text", text: "Hello" }']);
       const { list, composition } = containerFor(project, patch.parentId, patch.compositionId);
-      if (findIn(nodesArray(composition), id, null, composition) !== undefined) throw patchError(`Node id "${id}" already exists.`, [`Use a unique id such as "${id}-2".`], { nodeId: id });
+      const existing = new Set<string>();
+      collectIds(nodesArray(composition), existing);
+      const added = new Set<string>();
+      for (const newId of subtreeIds(patch.node)) {
+        if (existing.has(newId)) throw patchError(`Node id "${newId}" already exists.`, [`Use a unique id such as "${newId}-2".`], { nodeId: newId });
+        if (added.has(newId)) throw patchError(`Node id "${newId}" appears twice in the new subtree.`, ['Give every node in the new subtree its own id.'], { nodeId: newId });
+        added.add(newId);
+      }
       const index = patch.index === undefined ? list.length : Math.min(Math.max(0, patch.index), list.length);
       list.splice(index, 0, cloneRecord(patch.node));
       return [{ op: 'removeNode', nodeId: id, compositionId: String(composition['id']) }];
@@ -264,6 +310,7 @@ function applyOne(project: Record<string, unknown>, patch: Patch): Patch[] {
       const loc = locate(project, patch.nodeId, patch.compositionId);
       const parts = splitPath(patch.property);
       const before = getPath(loc.node, parts);
+      const restore = inversePath(loc.node, parts);
       const frame = frameOf(patch.keyframe.t, loc.composition);
       const key = { t: patch.keyframe.t, v: cloneJson(patch.keyframe.v), ...(patch.keyframe.ease !== undefined ? { ease: patch.keyframe.ease } : {}) };
       let next: Record<string, unknown>;
@@ -287,7 +334,7 @@ function applyOne(project: Record<string, unknown>, patch: Patch): Patch[] {
         next = { $keyframes: frame === 0 ? [key] : [{ t: 0, v: cloneJson(before) }, key] };
       }
       setPath(loc.node, parts, next);
-      return [{ op: 'setProperty', nodeId: patch.nodeId, property: patch.property, value: before === undefined ? null : cloneJson(before), compositionId: String(loc.composition['id']) }];
+      return [{ op: 'setProperty', nodeId: patch.nodeId, property: restore.path, ...restoreFields(restore), compositionId: String(loc.composition['id']) }];
     }
     case 'removeKeyframe': {
       const loc = locate(project, patch.nodeId, patch.compositionId);
@@ -347,15 +394,15 @@ function applyOne(project: Record<string, unknown>, patch: Patch): Patch[] {
       const parts = splitPath(patch.property);
       if (parts[0] === 'nodes') throw patchError('Use addNode, removeNode or moveNode to change nodes.', []);
       const restore = inversePath(comp, parts);
-      setPath(comp, parts, cloneJson(patch.value));
-      return [{ op: 'setCompositionProperty', compositionId: patch.compositionId, property: restore.path, value: restore.value }];
+      setPath(comp, parts, cloneJson(patch.value), patch.keepNull === true);
+      return [{ op: 'setCompositionProperty', compositionId: patch.compositionId, property: restore.path, ...restoreFields(restore) }];
     }
     case 'setProjectProperty': {
       const parts = splitPath(patch.property);
       if (parts[0] === 'compositions' || parts[0] === 'assets') throw patchError(`Use the dedicated operations to change "${parts[0]}".`, []);
       const restore = inversePath(project, parts);
-      setPath(project, parts, cloneJson(patch.value));
-      return [{ op: 'setProjectProperty', property: restore.path, value: restore.value }];
+      setPath(project, parts, cloneJson(patch.value), patch.keepNull === true);
+      return [{ op: 'setProjectProperty', property: restore.path, ...restoreFields(restore) }];
     }
   }
 }

@@ -186,7 +186,8 @@ function invalid(path: string, problem: string): OpenVideoError {
  */
 export async function probeMedia(path: string, options: ProbeOptions = {}): Promise<MediaInfo> {
   const { ffprobe } = locateFfmpeg(options);
-  const args = ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', '-count_packets', path];
+  // Nur lokale Dateien und Pipes: Mediendateien dürfen keine Netzquellen nachladen.
+  const args = ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-print_format', 'json', '-show_format', '-show_streams', '-count_packets', path];
   const { stdout } = await runProcess(ffprobe, args, {
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
     suggestions: ['Check that the path exists and points to a media file.', 'Check that the file is not truncated or still being written.'],
@@ -248,6 +249,7 @@ export async function extractThumbnail(path: string, seconds: number, options: T
     '-hide_banner', '-loglevel', 'error', '-nostdin',
     '-ss', String(Math.max(0, seconds)),
     ...decoderArgs(video),
+    '-protocol_whitelist', 'file,pipe',
     '-i', path,
     '-map', '0:v:0', '-frames:v', '1',
     '-vf', `scale=${String(width)}:${String(height)}:flags=bicubic,format=rgba`,

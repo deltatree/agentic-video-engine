@@ -7,11 +7,19 @@
  *
  * - `isolated: false` (Docker): Der Code läuft wie normales Node. Die Grenze ist der Container.
  * - `isolated: true` (`trusted-host`): Der Code läuft in einem leeren `node:vm`-Kontext ohne
- *   `require`, `process`, `fetch` und Netz-Module. Nur `input` ist gesetzt.
+ *   `require`, `process`, `fetch` und Netz-Module. Nur `input` ist gesetzt. Das schützt vor
+ *   Versehen, ist aber **keine Sicherheitsgrenze**: `node:vm` lässt sich verlassen. Deshalb
+ *   startet der Host den Prozess mit leerer Umgebung und nur für eigenen Code.
+ *
+ * Kommt {@link RESULT_MARK} im Ergebnis vor, wird es im JSON als `\u005f…` maskiert,
+ * damit die letzte Marke auf stdout immer die echte ist.
  */
 
 /** Markierung vor der Ergebniszeile auf stdout. */
 export const RESULT_MARK = '__OPENVIDEO_SANDBOX_RESULT__';
+
+/** Die Marke mit JSON-Escape für das erste Zeichen; nur innerhalb von JSON-Strings gültig. */
+const ESCAPED_MARK = `\\u005f${RESULT_MARK.slice(1)}`;
 
 /**
  * Vorspann im leeren VM-Kontext (`trusted-host`): reine JavaScript-Fassungen von
@@ -62,7 +70,8 @@ const PRELUDE = ${JSON.stringify(PRELUDE_SOURCE)};
 const chunks = [];
 process.stdin.on('data', (c) => chunks.push(c));
 process.stdin.on('end', () => {
-  const send = (text) => process.stdout.write('\\n${RESULT_MARK}' + text + '\\n');
+  const MARK = ${JSON.stringify(RESULT_MARK)};
+  const send = (text) => process.stdout.write('\\n' + MARK + text.split(MARK).join(${JSON.stringify(ESCAPED_MARK)}) + '\\n');
   const fail = (e) => {
     const err = e !== null && typeof e === 'object' ? e : { message: String(e) };
     let diagnostic;
@@ -77,7 +86,8 @@ process.stdin.on('end', () => {
   try {
     let value;
     if (req.isolated) {
-      const ctx = vm.createContext({ __input: JSON.stringify(req.input === undefined ? null : req.input) });
+      // Objekt ohne Prototyp: kein Weg über this.constructor zum Function-Konstruktor des Hosts.
+      const ctx = vm.createContext(Object.assign(Object.create(null), { __input: JSON.stringify(req.input === undefined ? null : req.input) }));
       vm.runInContext(PRELUDE + 'globalThis.input = JSON.parse(__input); delete globalThis.__input;', ctx);
       try {
         value = vm.runInContext(req.code, ctx, { filename: req.filename, timeout: req.timeoutMs });

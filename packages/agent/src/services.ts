@@ -60,8 +60,11 @@ export interface AgentServices {
   readonly telemetry: Telemetry;
   /** `container`: Agent-Code nur im Container (Standard, ADR 0008). `trusted`: eigene Projekte auf dem Host. */
   readonly isolation: 'container' | 'trusted';
-  /** Render-Umgebung für ein Projekt (Assets und Fonts des Projekts aufgelöst). */
-  readonly environment: (projectDir: string, project: Readonly<Record<string, unknown>>) => Promise<RenderEnvironment>;
+  /**
+   * Leiht eine Render-Umgebung für ein Projekt (Assets und Fonts aufgelöst) für die Dauer von `fn` aus.
+   * Der Host zählt Referenzen: Eine Umgebung wird erst entsorgt, wenn niemand sie mehr nutzt.
+   */
+  readonly withEnvironment: <T>(projectDir: string, project: Readonly<Record<string, unknown>>, fn: (env: RenderEnvironment) => Promise<T>) => Promise<T>;
   /** PNG-Kodierung für Bildergebnisse. */
   readonly encodePng: (image: RgbaImage) => Uint8Array;
   readonly templates?: TemplateCatalog;

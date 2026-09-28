@@ -18,6 +18,26 @@ export interface S3Options {
   readonly prefix?: string;
   /** Timeout je Anfrage in Millisekunden (Standard 30 000). */
   readonly timeoutMs?: number;
+  /** Größtes Objekt, das `get` liest, in Bytes (Standard 2 GiB). Größere Antworten brechen ab. */
+  readonly maxObjectBytes?: number;
+}
+
+const XML_ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+
+/**
+ * Dekodiert die XML-Entities in einem Textknoten (benannt und numerisch).
+ *
+ * @example
+ * ```ts
+ * decodeXmlText('a&amp;b&#x3D;'); // 'a&b='
+ * ```
+ */
+export function decodeXmlText(text: string): string {
+  return text.replace(/&(#x[0-9A-Fa-f]+|#[0-9]+|[A-Za-z]+);/gu, (all, name: string) => {
+    if (name.startsWith('#x')) return String.fromCodePoint(Number.parseInt(name.slice(2), 16));
+    if (name.startsWith('#')) return String.fromCodePoint(Number.parseInt(name.slice(1), 10));
+    return XML_ENTITIES[name] ?? all;
+  });
 }
 
 function sha256Hex(data: Uint8Array | string): string {
@@ -146,7 +166,50 @@ export class S3Store implements ContentStore {
     const res = await this.request('GET', this.url(key));
     if (res.status === 404) return undefined;
     if (!res.ok) throw this.fail('GET', key, res);
-    return new Uint8Array(await res.arrayBuffer());
+    return this.#readLimited(key, res);
+  }
+
+  /** Liest den Body in Teilen und bricht ab, sobald er größer als erlaubt ist. */
+  async #readLimited(key: string, res: Response): Promise<Uint8Array> {
+    const max = this.options.maxObjectBytes ?? 2 * 1024 * 1024 * 1024;
+    const tooLarge = () =>
+      new OpenVideoError({
+        code: 'OV_CACHE_TOO_LARGE',
+        errorClass: 'CacheError',
+        problem: `S3 object "${key}" is larger than ${String(max)} bytes.`,
+        details: { endpoint: this.options.endpoint, bucket: this.options.bucket },
+        suggestions: ['Raise maxObjectBytes if such large cache entries are expected.', 'Check that the key points to a cache entry.'],
+      });
+    if (Number(res.headers.get('content-length') ?? '0') > max) {
+      await res.body?.cancel();
+      throw tooLarge();
+    }
+    const reader = res.body?.getReader();
+    if (reader === undefined) return new Uint8Array();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      let part: Awaited<ReturnType<typeof reader.read>>;
+      try {
+        part = await reader.read();
+      } catch (error) {
+        throw new OpenVideoError({ code: 'OV_CACHE_REMOTE', errorClass: 'CacheError', problem: `Reading S3 object "${key}" failed.`, details: { reason: error instanceof Error ? error.message : String(error) }, suggestions: ['Check the network access to the object store.'], cause: error });
+      }
+      if (part.done) break;
+      total += part.value.length;
+      if (total > max) {
+        await reader.cancel();
+        throw tooLarge();
+      }
+      chunks.push(part.value);
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const c of chunks) {
+      out.set(c, offset);
+      offset += c.length;
+    }
+    return out;
   }
 
   async put(key: string, bytes: Uint8Array): Promise<void> {
@@ -172,12 +235,13 @@ export class S3Store implements ContentStore {
       const xml = await res.text();
       for (const m of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/gu)) {
         const body = m[1] ?? '';
-        const key = /<Key>([^<]*)<\/Key>/u.exec(body)?.[1] ?? '';
+        const key = decodeXmlText(/<Key>([^<]*)<\/Key>/u.exec(body)?.[1] ?? '');
         const size = Number(/<Size>([0-9]+)<\/Size>/u.exec(body)?.[1] ?? '0');
         const modified = Date.parse(/<LastModified>([^<]*)<\/LastModified>/u.exec(body)?.[1] ?? '');
         out.push({ key: key.slice((this.options.prefix ?? '').length), size, lastUsed: Number.isFinite(modified) ? modified : 0 });
       }
-      token = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/u.exec(xml)?.[1];
+      const next = /<NextContinuationToken>([^<]*)<\/NextContinuationToken>/u.exec(xml)?.[1];
+      token = next === undefined ? undefined : decodeXmlText(next);
     } while (token !== undefined);
     return out;
   }

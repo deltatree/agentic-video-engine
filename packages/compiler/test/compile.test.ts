@@ -54,7 +54,7 @@ describe('compileTsx (trusted-host)', () => {
     expect(e.diagnostic.code).toBe('OV_COMPILE_RUNTIME');
     expect(e.diagnostic.details?.['file']).toBe('runtime-error.tsx');
     expect(e.diagnostic.details?.['line']).toBe(12);
-    expect(e.diagnostic.problem).toContain('broken on purpose');
+    expect(String(e.diagnostic.details?.['untrusted'])).toContain('broken on purpose');
   });
 
   it('forbids Node built-in modules with a diagnostic', async () => {

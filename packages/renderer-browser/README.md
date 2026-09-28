@@ -55,3 +55,18 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
 - CSS-Variablen auf `:root`: `--ov-time` (Sekunden), `--ov-frame`, `--ov-progress` (ohne Einheit).
 - CSS- und Web-Animationen werden pausiert und auf die lokale Zeit gesetzt.
 - `<script>` läuft nur in der Sandbox (ADR 0008); `check()` meldet dazu `OV_HTML_SCRIPT` als Info.
+- Skripte laufen nur mit der Host-Option `allowHtmlScripts: true`. Standard ist `false`.
+  Dann hat das iframe `sandbox="allow-same-origin"` und die CSP `script-src 'none'`.
+  Es laufen keine `<script>`-Elemente, Event-Handler, `javascript:`-URLs und verschachtelten iframes.
+  CSS-Animationen und die CSS-Variablen funktionieren weiter.
+- `document.timeline.currentTime` und `Event.timeStamp` zeigen die virtuelle Zeit.
+- Mehr als 100 000 Timer in einem Frame brechen mit `OV_BROWSER_TIMER_LIMIT` ab.
+
+## Sicherheit des Hosts
+
+- Der Server braucht ein zufälliges Token im Header `x-openvideo-token`. Der Host setzt es im Route-Handler.
+  Das Token steht nicht in der URL der Seite.
+- Frame-Uploads haben zufällige IDs (`crypto.randomUUID`).
+- Chromium löst keine Hostnamen auf, nutzt einen toten Proxy (außer für `127.0.0.1`) und kennt kein WebRTC.
+- Chromium startet mit OS-Sandbox. Klappt das nicht, läuft es ohne und `host.diagnostics` meldet `OV_BROWSER_NO_OS_SANDBOX`.
+- Höchstens `maxPages` Seiten (Standard 4) bleiben offen. Nach einem Absturz startet Chromium bei der nächsten Anfrage neu.

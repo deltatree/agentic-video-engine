@@ -70,14 +70,16 @@ export function isLottieJson(text: string): boolean {
 }
 
 /**
- * Erkennt Typ und Format. Magic Bytes haben Vorrang vor der Endung.
+ * Erkennt das Format nur aus dem Dateiinhalt (Magic Bytes). Der Dateiname entscheidet nur
+ * zwischen gleich aufgebauten Containern (WebM/MKV, Ogg/Opus).
  *
  * @example
  * ```ts
- * detectFormat('logo.bin', bytes); // { type: 'image', format: 'png', mimeType: 'image/png' }
+ * sniffFormat('clip.mp4', bytes); // { type: 'video', format: 'mp4', … } oder undefined
  * ```
  */
-export function detectFormat(fileName: string, bytes: Uint8Array): DetectedFormat | undefined {
+export function sniffFormat(fileName: string, bytes: Uint8Array): DetectedFormat | undefined {
+  const ext = extname(fileName).toLowerCase();
   if (startsWith(bytes, [0x89, 0x50, 0x4e, 0x47])) return BY_EXTENSION['.png'];
   if (startsWith(bytes, [0xff, 0xd8, 0xff])) return BY_EXTENSION['.jpg'];
   if (ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 4) === 'WEBP') return BY_EXTENSION['.webp'];
@@ -90,11 +92,14 @@ export function detectFormat(fileName: string, bytes: Uint8Array): DetectedForma
     if (brand === 'M4A ') return BY_EXTENSION['.m4a'];
     return BY_EXTENSION['.mp4'];
   }
-  if (startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return extname(fileName).toLowerCase() === '.mkv' ? BY_EXTENSION['.mkv'] : BY_EXTENSION['.webm'];
+  // QuickTime ohne `ftyp`: die Datei beginnt direkt mit einem Atom.
+  if (['moov', 'mdat', 'wide', 'free', 'skip'].includes(ascii(bytes, 4, 4))) return BY_EXTENSION['.mov'];
+  if (startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return ext === '.mkv' ? BY_EXTENSION['.mkv'] : BY_EXTENSION['.webm'];
   if (ascii(bytes, 0, 4) === 'fLaC') return BY_EXTENSION['.flac'];
-  if (ascii(bytes, 0, 4) === 'OggS') return extname(fileName).toLowerCase() === '.opus' ? BY_EXTENSION['.opus'] : BY_EXTENSION['.ogg'];
-  if (ascii(bytes, 0, 3) === 'ID3' || startsWith(bytes, [0xff, 0xfb]) || startsWith(bytes, [0xff, 0xf3])) return BY_EXTENSION['.mp3'];
+  if (ascii(bytes, 0, 4) === 'OggS') return ext === '.opus' ? BY_EXTENSION['.opus'] : BY_EXTENSION['.ogg'];
   if (startsWith(bytes, [0xff, 0xf1]) || startsWith(bytes, [0xff, 0xf9])) return BY_EXTENSION['.aac'];
+  // MPEG Audio Layer III: 11 Sync-Bits, Layer-Bits `01`.
+  if (ascii(bytes, 0, 3) === 'ID3' || (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe6) === 0xe2)) return BY_EXTENSION['.mp3'];
   if (ascii(bytes, 0, 4) === 'glTF') return BY_EXTENSION['.glb'];
   if (startsWith(bytes, [0x00, 0x01, 0x00, 0x00]) || ascii(bytes, 0, 4) === 'true') return BY_EXTENSION['.ttf'];
   if (ascii(bytes, 0, 4) === 'OTTO') return BY_EXTENSION['.otf'];
@@ -102,6 +107,20 @@ export function detectFormat(fileName: string, bytes: Uint8Array): DetectedForma
   if (ascii(bytes, 0, 4) === 'wOF2') return BY_EXTENSION['.woff2'];
   if (ascii(bytes, 0, 10) === '#?RADIANCE' || ascii(bytes, 0, 6) === '#?RGBE') return BY_EXTENSION['.hdr'];
   if (startsWith(bytes, [0x76, 0x2f, 0x31, 0x01])) return BY_EXTENSION['.exr'];
+  return undefined;
+}
+
+/**
+ * Erkennt Typ und Format. Magic Bytes haben Vorrang vor der Endung.
+ *
+ * @example
+ * ```ts
+ * detectFormat('logo.bin', bytes); // { type: 'image', format: 'png', mimeType: 'image/png' }
+ * ```
+ */
+export function detectFormat(fileName: string, bytes: Uint8Array): DetectedFormat | undefined {
+  const sniffed = sniffFormat(fileName, bytes);
+  if (sniffed !== undefined) return sniffed;
   const ext = extname(fileName).toLowerCase();
   const head = new TextDecoder().decode(bytes.subarray(0, 512)).trimStart();
   if (ext === '.json' || head.startsWith('{')) {

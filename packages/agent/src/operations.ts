@@ -5,21 +5,29 @@ import { join, relative } from 'node:path';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import Type from 'typebox';
 import {
+  OUTPUT_FORMATS,
   OpenVideoError,
   SCHEMA_VERSION,
+  analyzeScene,
   applyPatches,
   compositionDurationFrames,
+  computeBounds,
+  contentHash,
+  evaluateScene,
   findComposition,
   formatDiagnostic,
   isRecord,
   resolveMarkers,
   toFrames,
+  validateProject,
   type Diagnostic,
   type Patch,
+  type Registry,
 } from '@agentic-video/core';
-import { checkProject, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, type OutputProfile } from '@agentic-video/render';
+import { checkProject, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, type OutputProfile, type RenderEnvironment } from '@agentic-video/render';
+import { assertFps, assertFrameCount, assertImageSize, containsScripts, sampleFrames, scriptsInScene, type SceneSample } from './guards.js';
 import { defineOperation, type OperationContext, type OperationDefinition } from './operation.js';
-import { readProjectConfig } from './workspace.js';
+import { isSourceEntry, readProjectConfig, safeJoin, safeRealPath, writeAtomic } from './workspace.js';
 
 // ---------------------------------------------------------------------------
 // Gemeinsame Schemas
@@ -79,26 +87,10 @@ interface Loaded {
   readonly project: Record<string, unknown>;
 }
 
-const SCRIPT_PATTERN = /<script\b|\son[a-z]+\s*=|javascript:/iu;
-
-/** Findet HTML-Inhalte mit Skripten (nicht vertrauenswürdiger Code, ADR 0008). */
-export function containsScripts(project: Readonly<Record<string, unknown>>): string[] {
-  const hits: string[] = [];
-  const visit = (value: unknown): void => {
-    if (Array.isArray(value)) value.forEach(visit);
-    else if (isRecord(value)) {
-      if (value['type'] === 'html' && typeof value['html'] === 'string' && SCRIPT_PATTERN.test(value['html'])) hits.push(String(value['id']));
-      for (const v of Object.values(value)) visit(v);
-    }
-  };
-  visit(project['compositions']);
-  return hits;
-}
-
 async function loadProject(ctx: OperationContext, projectId: string): Promise<Loaded> {
   const dir = ctx.services.workspace.projectDir(projectId);
   const config = await readProjectConfig(dir);
-  if (config.entry.endsWith('.tsx')) {
+  if (isSourceEntry(config.entry)) {
     const sources = ctx.services.sources;
     if (sources === undefined) {
       throw new OpenVideoError({ code: 'OV_SOURCE_UNAVAILABLE', errorClass: 'ProjectError', problem: 'This is a TSX project, but no TSX compiler is configured.', suggestions: ['Start the server with the compiler enabled (Docker required), or use a JSON project.'] });
@@ -112,9 +104,18 @@ async function loadProject(ctx: OperationContext, projectId: string): Promise<Lo
   return { dir, entry: config.entry, project: await ctx.services.workspace.load(projectId) };
 }
 
-function assertRenderable(ctx: OperationContext, project: Readonly<Record<string, unknown>>): void {
+/** Leiht die Render-Umgebung eines geladenen Projekts aus. */
+function withEnv<T>(ctx: OperationContext, loaded: Loaded, fn: (env: RenderEnvironment) => Promise<T>): Promise<T> {
+  return ctx.services.withEnvironment(loaded.dir, loaded.project, fn);
+}
+
+/**
+ * Früher, freundlicher Hinweis auf Skripte (ADR 0008); die harte Grenze setzt der Browser.
+ * Prüft die IR und die ausgewertete Szene an den gegebenen Frames.
+ */
+function assertRenderable(ctx: OperationContext, project: Readonly<Record<string, unknown>>, registry: Registry, samples: readonly SceneSample[]): void {
   if (ctx.services.isolation !== 'container') return;
-  const scripted = containsScripts(project);
+  const scripted = [...new Set([...containsScripts(project), ...scriptsInScene(project, samples, registry)])];
   if (scripted.length > 0) {
     throw new OpenVideoError({
       code: 'OV_SANDBOX_REQUIRED',
@@ -123,6 +124,30 @@ function assertRenderable(ctx: OperationContext, project: Readonly<Record<string
       suggestions: ['Render through a container worker (`openvideo worker` / Docker).', 'Remove scripts from the HTML (CSS animations are fine).', 'For your own trusted project, use the CLI with --trusted.'],
     });
   }
+}
+
+/** Macht aus einer ID einen sicheren Dateinamen-Teil (nur `A-Za-z0-9_-`). */
+function fileSafe(text: string): string {
+  const s = text.replace(/[^A-Za-z0-9_-]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 64);
+  return s === '' ? 'x' : s;
+}
+
+/** Kurzer, stabiler Hash für Dateinamen. */
+function shortHash(value: unknown): string {
+  return contentHash(value).slice('sha256:'.length, 'sha256:'.length + 10);
+}
+
+/** Prüft ein Ausgabeformat gegen {@link OUTPUT_FORMATS}. */
+function outputFormat(value: unknown): (typeof OUTPUT_FORMATS)[number] {
+  const hit = OUTPUT_FORMATS.find((f) => f === value);
+  if (hit === undefined) {
+    throw new OpenVideoError({ code: 'OV_RENDER_PROFILE', errorClass: 'RenderError', problem: `Unknown output format "${String(value)}".`, suggestions: [`Use one of: ${OUTPUT_FORMATS.join(', ')}.`] });
+  }
+  return hit;
+}
+
+function rangeError(problem: string): OpenVideoError {
+  return new OpenVideoError({ code: 'OV_RANGE_INVALID', errorClass: 'ApiError', problem, suggestions: ['Use frames between 0 and the composition duration (timeline.inspect shows it).'] });
 }
 
 function frameOf(project: Readonly<Record<string, unknown>>, compositionId: string | undefined, frame: number | string): number {
@@ -139,7 +164,7 @@ function frameOf(project: Readonly<Record<string, unknown>>, compositionId: stri
 async function imageOutput(ctx: OperationContext, projectId: string, name: string, png: Uint8Array, size: { width: number; height: number }, inline: boolean) {
   const dir = join(await ctx.services.workspace.outDir(projectId), 'frames');
   await mkdir(dir, { recursive: true });
-  const file = join(dir, name);
+  const file = safeJoin(dir, name);
   await writeFile(file, png);
   return {
     file,
@@ -153,6 +178,21 @@ async function imageOutput(ctx: OperationContext, projectId: string, name: strin
 
 function plainDiagnostics(list: readonly Diagnostic[]): Diagnostic[] {
   return list.map((d) => ({ ...d }));
+}
+
+/** Validierungsoptionen mit Plugin-Nodes und Komponenten des Registers. */
+function validateOptionsOf(registry: Registry): { extraNodeSchemas: ReturnType<Registry['extraNodeSchemas']>; components?: string[] } {
+  const components = [...registry.components.keys()];
+  return { extraNodeSchemas: registry.extraNodeSchemas(), ...(components.length > 0 ? { components } : {}) };
+}
+
+/** Schlüssel einer Diagnose für „nur neue Fehler“ (wie `applyPatches`). */
+function errorKey(d: Diagnostic): string {
+  return `${d.code}|${d.path ?? ''}|${d.problem}`;
+}
+
+function tsxProjectError(): OpenVideoError {
+  return new OpenVideoError({ code: 'OV_PROJECT_TSX', errorClass: 'ProjectError', problem: 'TSX projects are edited in their source file.', suggestions: ['Edit the TSX entry file, or use composition.patch (AST write-back).'] });
 }
 
 // ---------------------------------------------------------------------------
@@ -192,11 +232,29 @@ const projectCreate = defineOperation({
       };
     }
     const id = await ctx.services.workspace.create(input.name, project, input.source !== undefined ? { source: input.source } : {});
-    const loaded = await loadProject(ctx, id);
-    const env = await ctx.services.environment(loaded.dir, loaded.project);
-    const diagnostics = checkProject(env, loaded.project);
-    const comps = Array.isArray(loaded.project['compositions']) ? loaded.project['compositions'].filter(isRecord).map((c) => String(c['id'])) : [];
-    return { projectId: id, compositions: comps, diagnostics: plainDiagnostics(diagnostics) };
+    try {
+      const loaded = await loadProject(ctx, id);
+      return await withEnv(ctx, loaded, (env) => {
+        // Ein Projekt mit Schema- oder Referenzfehlern wird nicht angelegt (B4).
+        const errors = validateProject(loaded.project, validateOptionsOf(env.registry)).diagnostics.filter((d) => d.severity === 'error');
+        const first = errors[0];
+        if (first !== undefined) {
+          throw new OpenVideoError({
+            code: 'OV_PROJECT_INVALID',
+            errorClass: 'ProjectError',
+            problem: `The project was not created: ${String(errors.length)} validation error(s). First: ${first.problem}`,
+            ...(first.path !== undefined ? { path: first.path } : {}),
+            suggestions: ['Fix the errors and call project.create again.', ...errors.slice(0, 5).map((d) => `${d.path ?? '(project)'}: ${d.problem}`)],
+          });
+        }
+        const diagnostics = checkProject(env, loaded.project);
+        const comps = Array.isArray(loaded.project['compositions']) ? loaded.project['compositions'].filter(isRecord).map((c) => String(c['id'])) : [];
+        return Promise.resolve({ projectId: id, compositions: comps, diagnostics: plainDiagnostics(diagnostics) });
+      });
+    } catch (error) {
+      await ctx.services.workspace.remove(id);
+      throw error;
+    }
   },
 });
 
@@ -214,7 +272,7 @@ const projectInspect = defineOperation({
     return {
       projectId: input.projectId,
       entry: loaded.entry,
-      kind: loaded.entry.endsWith('.tsx') ? 'tsx' : 'json',
+      kind: isSourceEntry(loaded.entry) ? 'tsx' : 'json',
       schemaVersion: p['schemaVersion'],
       metadata: p['metadata'] ?? {},
       compositions: comps.map((c) => ({ id: c['id'], width: c['width'], height: c['height'], fps: c['fps'], durationFrames: compositionDurationFrames(c), nodes: Array.isArray(c['nodes']) ? c['nodes'].length : 0, tracks: Array.isArray(c['tracks']) ? c['tracks'].length : 0 })),
@@ -233,11 +291,8 @@ const projectUpdate = defineOperation({
   example: { input: { projectId: 'launch-video', project: { schemaVersion: '1.0.0', compositions: [] } } },
   async handler(input, ctx) {
     const cfg = await ctx.services.workspace.config(input.projectId);
-    if (cfg.entry.endsWith('.tsx')) {
-      throw new OpenVideoError({ code: 'OV_PROJECT_TSX', errorClass: 'ProjectError', problem: 'TSX projects are edited in their source file.', suggestions: ['Edit src/video.tsx, or use composition.patch (AST write-back).'] });
-    }
-    const env = await ctx.services.environment(ctx.services.workspace.projectDir(input.projectId), input.project);
-    const diagnostics = checkProject(env, input.project);
+    if (isSourceEntry(cfg.entry)) throw tsxProjectError();
+    const diagnostics = await ctx.services.withEnvironment(ctx.services.workspace.projectDir(input.projectId), input.project, (env) => Promise.resolve(checkProject(env, input.project)));
     if (diagnostics.some((d) => d.severity === 'error')) return { ok: false, diagnostics: plainDiagnostics(diagnostics) };
     await ctx.services.workspace.save(input.projectId, input.project);
     return { ok: true, diagnostics: plainDiagnostics(diagnostics) };
@@ -252,12 +307,27 @@ const compositionCreate = defineOperation({
   example: { input: { projectId: 'launch-video', composition: { id: 'outro', width: 1920, height: 1080, fps: 30, duration: '4s', nodes: [] } } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
+    if (isSourceEntry(loaded.entry)) throw tsxProjectError();
+    const compositionId = String(input.composition['id']);
     const existing: unknown = loaded.project['compositions'];
     const comps: unknown[] = Array.isArray(existing) ? Array.from<unknown>(existing) : [];
-    const result = applyPatches(loaded.project, [{ op: 'setProjectProperty', property: 'compositions', value: [...comps, input.composition] }]);
-    if (!result.ok) return { ok: false, compositionId: String(input.composition['id']), diagnostics: plainDiagnostics(result.diagnostics) };
-    await ctx.services.workspace.save(input.projectId, result.project);
-    return { ok: true, compositionId: String(input.composition['id']), diagnostics: plainDiagnostics(result.diagnostics) };
+    if (comps.some((c) => isRecord(c) && c['id'] === input.composition['id'])) {
+      return {
+        ok: false,
+        compositionId,
+        diagnostics: [{ code: 'OV_COMPOSITION_EXISTS', severity: 'error', errorClass: 'ProjectError', problem: `A composition with id "${compositionId}" already exists.`, suggestions: ['Choose another id, or change the existing composition with composition.patch.'] }],
+      };
+    }
+    const next: Record<string, unknown> = { ...loaded.project, compositions: [...comps, { ...input.composition }] };
+    return withEnv(ctx, loaded, async (env) => {
+      const options = validateOptionsOf(env.registry);
+      const before = new Set(validateProject(loaded.project, options).diagnostics.filter((d) => d.severity === 'error').map(errorKey));
+      const after = validateProject(next, options).diagnostics;
+      const introduced = after.filter((d) => d.severity === 'error' && !before.has(errorKey(d)));
+      if (introduced.length > 0) return { ok: false, compositionId, diagnostics: plainDiagnostics(introduced) };
+      await ctx.services.workspace.save(input.projectId, next);
+      return { ok: true, compositionId, diagnostics: plainDiagnostics(after) };
+    });
   },
 });
 
@@ -281,13 +351,16 @@ const compositionValidate = defineOperation({
   example: { input: { projectId: 'launch-video' } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    const env = await ctx.services.environment(loaded.dir, loaded.project);
-    const all = checkProject(env, loaded.project).filter((d) => input.compositionId === undefined || d.compositionId === undefined || d.compositionId === input.compositionId || d.path?.startsWith(`composition.${input.compositionId}`) === true);
+    const checked = await withEnv(ctx, loaded, (env) => Promise.resolve(checkProject(env, loaded.project)));
+    const all = checked.filter((d) => input.compositionId === undefined || d.compositionId === undefined || d.compositionId === input.compositionId || d.path?.startsWith(`composition.${input.compositionId}`) === true);
     return { ok: all.every((d) => d.severity !== 'error'), diagnostics: plainDiagnostics(all), text: all.map(formatDiagnostic).join('\n\n') };
   },
 });
 
-const PatchSchema = Type.Record(Type.String(), Type.Unknown(), { description: 'A patch object with "op": setProperty | addNode | removeNode | moveNode | addKeyframe | removeKeyframe | replaceAsset | addAsset | removeAsset | setCompositionProperty | setProjectProperty' });
+const PatchSchema = Type.Record(Type.String(), Type.Unknown(), {
+  description:
+    'A patch object with "op": setProperty | addNode | removeNode | moveNode | addKeyframe | removeKeyframe | replaceAsset | addAsset | removeAsset | setCompositionProperty | setProjectProperty. setProperty/setCompositionProperty/setProjectProperty accept "keepNull": true to store null instead of deleting the property.',
+});
 
 function asPatches(list: readonly Readonly<Record<string, unknown>>[]): Patch[] {
   const out: Patch[] = [];
@@ -317,10 +390,19 @@ function applyPatchesShapeCheck(p: Readonly<Record<string, unknown>>): Patch {
     if (!isRecord(v)) throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "${k}" as object.`, suggestions: [] });
     return v;
   };
-  const index = typeof p['index'] === 'number' ? { index: p['index'] } : {};
+  const rawIndex = p['index'];
+  if (rawIndex !== undefined && (typeof rawIndex !== 'number' || !Number.isInteger(rawIndex) || rawIndex < 0)) {
+    throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "index" as a non-negative integer.`, suggestions: ['Leave out "index" to append, or use 0 for the first position.'] });
+  }
+  const index = typeof rawIndex === 'number' ? { index: rawIndex } : {};
+  const rawKeepNull = p['keepNull'];
+  if (rawKeepNull !== undefined && typeof rawKeepNull !== 'boolean') {
+    throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "keepNull" as boolean.`, suggestions: ['Use "keepNull": true to store null instead of deleting the property.'] });
+  }
+  const keepNull = rawKeepNull === true ? { keepNull: true } : {};
   switch (p['op']) {
     case 'setProperty':
-      return { op: 'setProperty', nodeId: str('nodeId'), property: str('property'), value: p['value'], ...withComp };
+      return { op: 'setProperty', nodeId: str('nodeId'), property: str('property'), value: p['value'], ...keepNull, ...withComp };
     case 'addNode':
       return { op: 'addNode', parentId: typeof p['parentId'] === 'string' ? p['parentId'] : null, node: obj('node'), ...index, ...withComp };
     case 'removeNode':
@@ -342,9 +424,9 @@ function applyPatchesShapeCheck(p: Readonly<Record<string, unknown>>): Patch {
     case 'removeAsset':
       return { op: 'removeAsset', assetId: str('assetId') };
     case 'setCompositionProperty':
-      return { op: 'setCompositionProperty', compositionId: str('compositionId'), property: str('property'), value: p['value'] };
+      return { op: 'setCompositionProperty', compositionId: str('compositionId'), property: str('property'), value: p['value'], ...keepNull };
     case 'setProjectProperty':
-      return { op: 'setProjectProperty', property: str('property'), value: p['value'] };
+      return { op: 'setProjectProperty', property: str('property'), value: p['value'], ...keepNull };
     default:
       throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Unknown patch op "${String(p['op'])}".`, suggestions: ['Use setProperty, addNode, removeNode, moveNode, addKeyframe, removeKeyframe, replaceAsset.'] });
   }
@@ -359,21 +441,38 @@ const compositionPatch = defineOperation({
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
     const patches = asPatches(input.patches);
-    const env = await ctx.services.environment(loaded.dir, loaded.project);
-    const components = [...env.registry.components.keys()];
-    const result = applyPatches(loaded.project, patches, { validateOptions: { extraNodeSchemas: env.registry.extraNodeSchemas(), ...(components.length > 0 ? { components } : {}) } });
-    const inverse = result.inverse.map((p) => ({ ...p }));
-    if (!result.ok || input.dryRun === true) return { ok: result.ok, diagnostics: plainDiagnostics(result.diagnostics), inverse, sourceUpdated: false };
-    if (loaded.entry.endsWith('.tsx')) {
-      const sources = ctx.services.sources;
-      if (sources === undefined) throw new OpenVideoError({ code: 'OV_SOURCE_UNAVAILABLE', errorClass: 'ProjectError', problem: 'TSX write-back is not configured.', suggestions: [] });
-      const back = await sources.writeBack(loaded.dir, loaded.entry, patches);
-      if (back.diagnostics.some((d) => d.severity === 'error')) return { ok: false, diagnostics: plainDiagnostics(back.diagnostics), inverse: [], sourceUpdated: false };
-      const recompiled = await loadProject(ctx, input.projectId);
-      return { ok: true, diagnostics: plainDiagnostics([...back.diagnostics, ...checkProject(env, recompiled.project).filter((d) => d.severity !== 'info')]), inverse, sourceUpdated: true };
-    }
-    await ctx.services.workspace.save(input.projectId, result.project);
-    return { ok: true, diagnostics: plainDiagnostics(result.diagnostics), inverse, sourceUpdated: false };
+    return withEnv(ctx, loaded, async (env) => {
+      const result = applyPatches(loaded.project, patches, { validateOptions: validateOptionsOf(env.registry) });
+      const inverse = result.inverse.map((p) => ({ ...p }));
+      if (!result.ok || input.dryRun === true) return { ok: result.ok, diagnostics: plainDiagnostics(result.diagnostics), inverse, sourceUpdated: false };
+      if (isSourceEntry(loaded.entry)) {
+        const sources = ctx.services.sources;
+        if (sources === undefined) throw new OpenVideoError({ code: 'OV_SOURCE_UNAVAILABLE', errorClass: 'ProjectError', problem: 'TSX write-back is not configured.', suggestions: [] });
+        // Atomar (B10): Quelle sichern, zurückschreiben, neu kompilieren; bei Fehlern die alte Quelle wiederherstellen.
+        const file = safeJoin(loaded.dir, loaded.entry);
+        const original = await readFile(file, 'utf8');
+        const restore = async (): Promise<void> => {
+          if ((await readFile(file, 'utf8')) !== original) await writeAtomic(file, original);
+        };
+        let back: Awaited<ReturnType<typeof sources.writeBack>>;
+        let recompiled: Loaded;
+        try {
+          back = await sources.writeBack(loaded.dir, loaded.entry, patches);
+          if (back.diagnostics.some((d) => d.severity === 'error')) {
+            await restore();
+            return { ok: false, diagnostics: plainDiagnostics(back.diagnostics), inverse: [], sourceUpdated: false };
+          }
+          recompiled = await loadProject(ctx, input.projectId);
+        } catch (error) {
+          await restore();
+          if (!(error instanceof OpenVideoError)) throw error;
+          return { ok: false, diagnostics: plainDiagnostics([error.diagnostic]), inverse: [], sourceUpdated: false };
+        }
+        return { ok: true, diagnostics: plainDiagnostics([...back.diagnostics, ...checkProject(env, recompiled.project).filter((d) => d.severity !== 'info')]), inverse, sourceUpdated: true };
+      }
+      await ctx.services.workspace.save(input.projectId, result.project);
+      return { ok: true, diagnostics: plainDiagnostics(result.diagnostics), inverse, sourceUpdated: false };
+    });
   },
 });
 
@@ -391,12 +490,21 @@ const assetImport = defineOperation({
     if (service === undefined) throw new OpenVideoError({ code: 'OV_ASSETS_UNAVAILABLE', errorClass: 'ApiError', problem: 'No asset service is configured.', suggestions: [] });
     const loaded = await loadProject(ctx, input.projectId);
     const imported = await service.import(loaded.dir, input);
-    const exists = Array.isArray(loaded.project['assets']) && loaded.project['assets'].filter(isRecord).some((a) => a['id'] === imported.id);
+    const declared = Array.isArray(loaded.project['assets']) ? loaded.project['assets'].filter(isRecord) : [];
+    const exists = declared.some((a) => a['id'] === imported.id);
+    const sameFile = declared.filter((a) => a['id'] !== imported.id && a['src'] === imported.src).map((a) => String(a['id']));
+    // Ersetzen ist erlaubt, aber nie still (A7): Der Agent sieht eine Warnung.
+    const warnings: Diagnostic[] = [
+      ...(exists ? [{ code: 'OV_ASSET_REPLACED', severity: 'warning' as const, errorClass: 'AssetError', problem: `Asset "${imported.id}" already existed and was replaced.`, suggestions: ['Pass another "id" to keep both assets.'] }] : []),
+      ...(sameFile.length > 0
+        ? [{ code: 'OV_ASSET_REPLACED', severity: 'warning' as const, errorClass: 'AssetError', problem: `The file ${imported.src} is also used by asset(s) ${sameFile.join(', ')}; they now show the new content.`, suggestions: ['Pass another "fileName" to keep the old file.'] }]
+        : []),
+    ];
     const patch: Patch = exists ? { op: 'replaceAsset', assetId: imported.id, src: imported.src, type: imported.type, hash: imported.hash } : { op: 'addAsset', asset: { id: imported.id, type: imported.type, src: imported.src, hash: imported.hash } };
     const result = applyPatches(loaded.project, [patch]);
     if (!result.ok) return { asset: { ...imported }, diagnostics: plainDiagnostics(result.diagnostics) };
     await ctx.services.workspace.save(input.projectId, result.project);
-    return { asset: { id: imported.id, type: imported.type, src: imported.src, hash: imported.hash, metadata: imported.metadata }, diagnostics: plainDiagnostics(imported.diagnostics) };
+    return { asset: { id: imported.id, type: imported.type, src: imported.src, hash: imported.hash, metadata: imported.metadata }, diagnostics: plainDiagnostics([...imported.diagnostics, ...warnings]) };
   },
 });
 
@@ -422,12 +530,18 @@ const frameRender = defineOperation({
   example: { input: { projectId: 'launch-video', frame: '2s', scale: 0.5, debug: { showBounds: true } } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    assertRenderable(ctx, loaded.project);
-    const env = await ctx.services.environment(loaded.dir, loaded.project);
+    const comp = findComposition(loaded.project, input.compositionId);
+    const scale = input.scale ?? 1;
+    assertImageSize(Number(comp['width']) * scale, Number(comp['height']) * scale, 'frame.render');
     const frame = frameOf(loaded.project, input.compositionId, input.frame);
-    const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame, scale: input.scale ?? 1, ...(input.debug !== undefined ? { debug: input.debug } : {}) });
-    const image = await imageOutput(ctx, input.projectId, `${r.scene.compositionId}-${String(frame)}${input.scale !== undefined ? `-x${String(input.scale)}` : ''}.png`, ctx.services.encodePng(r.image), r.image, input.inline !== false);
-    return { image, key: r.key, cached: r.cached, diagnostics: plainDiagnostics(r.diagnostics) };
+    return withEnv(ctx, loaded, async (env) => {
+      assertRenderable(ctx, loaded.project, env.registry, [{ compositionId: input.compositionId, frame }]);
+      const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame, scale, ...(input.debug !== undefined ? { debug: input.debug } : {}) });
+      // Der Name kommt aus geprüften Teilen; Varianten (scale, debug) bekommen einen eigenen Hash (B4, B16).
+      const variant = input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
+      const image = await imageOutput(ctx, input.projectId, `${fileSafe(r.scene.compositionId)}-${String(frame)}${variant}.png`, ctx.services.encodePng(r.image), r.image, input.inline !== false);
+      return { image, key: r.key, cached: r.cached, diagnostics: plainDiagnostics(r.diagnostics) };
+    });
   },
 });
 
@@ -439,21 +553,27 @@ const frameInspect = defineOperation({
   example: { input: { projectId: 'launch-video', frame: 90 } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    const env = await ctx.services.environment(loaded.dir, loaded.project);
-    const { evaluateScene, computeBounds, analyzeScene } = await import('@agentic-video/core');
     const frame = frameOf(loaded.project, input.compositionId, input.frame);
-    const scene = evaluateScene(loaded.project, input.compositionId, frame, { registry: env.registry });
-    const bounds = computeBounds(scene, env.measurer);
-    return { frame, tree: sceneTree(scene, bounds).map((n) => ({ ...n })), diagnostics: plainDiagnostics([...scene.diagnostics, ...analyzeScene(scene, bounds)]), description: describeScene(scene, bounds) };
+    return withEnv(ctx, loaded, (env) => {
+      const scene = evaluateScene(loaded.project, input.compositionId, frame, { registry: env.registry });
+      const bounds = computeBounds(scene, env.measurer);
+      return Promise.resolve({ frame, tree: sceneTree(scene, bounds).map((n) => ({ ...n })), diagnostics: plainDiagnostics([...scene.diagnostics, ...analyzeScene(scene, bounds)]), description: describeScene(scene, bounds) });
+    });
   },
 });
 
-async function previewFrames(input: { projectId: string; compositionId?: string | undefined; frames?: readonly (number | string)[] | undefined; count?: number | undefined }, project: Readonly<Record<string, unknown>>): Promise<number[]> {
-  if (input.frames !== undefined) return input.frames.map((f) => frameOf(project, input.compositionId, f));
+/** Frames eines Kontaktbogens: im Bereich der Composition und ohne Doppelte (B11). */
+function previewFrames(input: { projectId: string; compositionId?: string | undefined; frames?: readonly (number | string)[] | undefined; count?: number | undefined }, project: Readonly<Record<string, unknown>>): number[] {
   const comp = findComposition(project, input.compositionId);
   const total = compositionDurationFrames(comp);
+  if (input.frames !== undefined) {
+    const frames = input.frames.map((f) => frameOf(project, input.compositionId, f));
+    const outside = frames.find((f) => f < 0 || f >= total);
+    if (outside !== undefined) throw rangeError(`Frame ${String(outside)} is outside the composition (0–${String(total - 1)}).`);
+    return [...new Set(frames)];
+  }
   const count = Math.max(1, Math.min(64, input.count ?? 8));
-  return Promise.resolve(Array.from({ length: count }, (_, i) => Math.min(total - 1, Math.round((i * (total - 1)) / Math.max(1, count - 1)))));
+  return sampleFrames(0, total, count);
 }
 
 const previewContactSheet = defineOperation({
@@ -467,39 +587,61 @@ const previewContactSheet = defineOperation({
   example: { input: { projectId: 'launch-video', frames: [0, 90, 180, 360] } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    assertRenderable(ctx, loaded.project);
-    const env = await ctx.services.environment(loaded.dir, loaded.project);
-    const overlays = env.overlays;
-    if (overlays === undefined) throw new OpenVideoError({ code: 'OV_BACKEND_MISSING', errorClass: 'RendererError', problem: 'Contact sheets need the Skia backend.', suggestions: ['Run `openvideo doctor`.'] });
-    const frames = await previewFrames(input, loaded.project);
+    const frames = previewFrames(input, loaded.project);
     const comp = findComposition(loaded.project, input.compositionId);
     const cellWidth = input.cellWidth ?? 480;
     const scale = cellWidth / Number(comp['width']);
+    const columns = input.columns ?? Math.min(4, frames.length);
+    assertImageSize(cellWidth * Math.min(columns, frames.length), Number(comp['height']) * scale * Math.ceil(frames.length / columns), 'preview.contactSheet');
     const fps = Number(comp['fps']);
-    const diagnostics: Diagnostic[] = [];
-    const cells = [];
-    for (const f of frames) {
-      const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame: f, scale });
-      diagnostics.push(...r.diagnostics.filter((d) => d.severity !== 'info'));
-      cells.push({ image: r.image, label: `#${String(f)} · ${(f / fps).toFixed(2)}s` });
-    }
-    const sheet = overlays.contactSheet(cells, { columns: input.columns ?? Math.min(4, frames.length), cellWidth, background: '#1B1D24' });
-    const image = await imageOutput(ctx, input.projectId, `contact-sheet-${frames.join('-').slice(0, 60)}.png`, ctx.services.encodePng(sheet), sheet, input.inline !== false);
-    return { image, frames, diagnostics: plainDiagnostics(diagnostics) };
+    return withEnv(ctx, loaded, async (env) => {
+      assertRenderable(ctx, loaded.project, env.registry, frames.map((frame) => ({ compositionId: input.compositionId, frame })));
+      const overlays = env.overlays;
+      if (overlays === undefined) throw new OpenVideoError({ code: 'OV_BACKEND_MISSING', errorClass: 'RendererError', problem: 'Contact sheets need the Skia backend.', suggestions: ['Run `openvideo doctor`.'] });
+      const diagnostics: Diagnostic[] = [];
+      const cells = [];
+      for (const f of frames) {
+        const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame: f, scale });
+        diagnostics.push(...r.diagnostics.filter((d) => d.severity !== 'info'));
+        cells.push({ image: r.image, label: `#${String(f)} · ${(f / fps).toFixed(2)}s` });
+      }
+      const sheet = overlays.contactSheet(cells, { columns, cellWidth, background: '#1B1D24' });
+      const name = `contact-sheet-${fileSafe(String(comp['id']))}-${shortHash({ frames, columns, cellWidth })}.png`;
+      const image = await imageOutput(ctx, input.projectId, name, ctx.services.encodePng(sheet), sheet, input.inline !== false);
+      return { image, frames, diagnostics: plainDiagnostics(diagnostics) };
+    });
   },
 });
+
+/** Prüft Grenzen (B9) und Skripte (B5) eines Render-Jobs, bevor er startet. */
+async function checkVideoJob(ctx: OperationContext, loaded: Loaded, comp: Readonly<Record<string, unknown>>, profile: OutputProfile, range: { start: number; end: number }, what: string): Promise<void> {
+  const cw = Number(comp['width']);
+  const ch = Number(comp['height']);
+  const cfps = Number(comp['fps']);
+  const width = profile.width ?? (profile.height !== undefined ? Math.round((profile.height * cw) / ch) : cw);
+  const height = profile.height ?? Math.round((width * ch) / cw);
+  assertImageSize(width, Math.max(height, (ch * width) / cw), what);
+  const fps = profile.fps ?? cfps;
+  assertFps(fps, what);
+  assertFrameCount(Math.ceil(((range.end - range.start) * fps) / cfps), what);
+  await withEnv(ctx, loaded, (env) => {
+    const id = typeof comp['id'] === 'string' ? comp['id'] : undefined;
+    assertRenderable(ctx, loaded.project, env.registry, sampleFrames(range.start, range.end, 16).map((frame) => ({ compositionId: id, frame })));
+    return Promise.resolve();
+  });
+}
 
 function startVideoJob(ctx: OperationContext, projectId: string, kind: string, loaded: Loaded, options: { compositionId?: string | undefined; profile: OutputProfile; outName: string; range?: { start: number; end: number } }): string {
   return ctx.services.jobs.start(
     kind,
     projectId,
-    async (control) => {
-      const env = await ctx.services.environment(loaded.dir, loaded.project);
+    (control) =>
+      withEnv(ctx, loaded, async (env) => {
       const outDir = await ctx.services.workspace.outDir(projectId);
       const runChunks = ctx.services.chunkRunner?.(env, loaded.project);
       const r = await renderVideo(env, loaded.project, {
         ...(options.compositionId !== undefined ? { compositionId: options.compositionId } : {}),
-        outPath: join(outDir, options.outName),
+        outPath: safeJoin(outDir, options.outName),
         profile: options.profile,
         ...(options.range !== undefined ? { range: options.range } : {}),
         ...(runChunks !== undefined ? { runChunks } : {}),
@@ -516,7 +658,7 @@ function startVideoJob(ctx: OperationContext, projectId: string, kind: string, l
         framesFromCache: r.manifest.cache.framesFromCache,
         warnings: r.manifest.diagnostics.warnings,
       };
-    },
+    }),
     ctx.traceparent,
   );
 }
@@ -530,12 +672,18 @@ const previewRender = defineOperation({
   example: { input: { projectId: 'launch-video', scale: 0.25 } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    assertRenderable(ctx, loaded.project);
     const comp = findComposition(loaded.project, input.compositionId);
     const width = Math.max(2, Math.round((Number(comp['width']) * (input.scale ?? 0.25)) / 2) * 2);
+    const total = compositionDurationFrames(comp);
     const start = input.start !== undefined ? frameOf(loaded.project, input.compositionId, input.start) : 0;
-    const end = input.end !== undefined ? frameOf(loaded.project, input.compositionId, input.end) : compositionDurationFrames(comp);
-    const jobId = startVideoJob(ctx, input.projectId, 'preview.render', loaded, { compositionId: input.compositionId, profile: { format: 'mp4', codec: 'h264', width, quality: 60 }, outName: `preview-${String(comp['id'])}.mp4`, range: { start, end } });
+    const end = input.end !== undefined ? frameOf(loaded.project, input.compositionId, input.end) : total;
+    if (start < 0 || end > total || start >= end) throw rangeError(`The range ${String(start)}–${String(end)} is empty or outside the composition (0–${String(total)}).`);
+    const profile: OutputProfile = { format: 'mp4', codec: 'h264', width, quality: 60 };
+    await checkVideoJob(ctx, loaded, comp, profile, { start, end }, 'preview.render');
+    // Die Standard-Vorschau heißt preview-<id>.mp4; jede andere Variante (Bereich, Breite) bekommt eine eigene Datei (B16).
+    const standard = start === 0 && end === total && (input.scale ?? 0.25) === 0.25;
+    const outName = `preview-${fileSafe(String(comp['id']))}${standard ? '' : `-${String(start)}-${String(end)}-w${String(width)}`}.mp4`;
+    const jobId = startVideoJob(ctx, input.projectId, 'preview.render', loaded, { compositionId: input.compositionId, profile, outName, range: { start, end } });
     return { jobId, state: ctx.services.jobs.status(jobId).state };
   },
 });
@@ -549,7 +697,7 @@ const videoRender = defineOperation({
       compositionId: CompositionId,
       profileId: Type.Optional(Type.String()),
       profile: Type.Optional(AnyObject),
-      outName: Type.Optional(Type.String({ pattern: '^[A-Za-z0-9._-]+$' })),
+      outName: Type.Optional(Type.String({ pattern: '^(?!\\.)[A-Za-z0-9._-]{1,128}$', description: 'File name in out/; must not start with ".".' })),
     },
     { additionalProperties: false },
   ),
@@ -558,12 +706,11 @@ const videoRender = defineOperation({
   example: { input: { projectId: 'launch-video', profile: { format: 'mp4', codec: 'h264', width: 3840 } } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    assertRenderable(ctx, loaded.project);
     const fromId = input.profileId !== undefined ? profileById(loaded.project, input.profileId) : undefined;
     if (input.profileId !== undefined && fromId === undefined) throw new OpenVideoError({ code: 'OV_PROFILE_UNKNOWN', errorClass: 'ApiError', problem: `Render profile "${input.profileId}" does not exist.`, suggestions: ['Add it to project.renderProfiles, or pass `profile` inline.'] });
     const inline = input.profile;
-    const profile: OutputProfile = fromId ?? {
-      format: typeof inline?.['format'] === 'string' ? inline['format'] : 'mp4',
+    const profile: OutputProfile = fromId !== undefined ? { ...fromId, format: outputFormat(fromId.format) } : {
+      format: outputFormat(inline?.['format'] ?? 'mp4'),
       ...(typeof inline?.['codec'] === 'string' ? { codec: inline['codec'] } : { codec: 'h264' }),
       ...(typeof inline?.['width'] === 'number' ? { width: inline['width'] } : {}),
       ...(typeof inline?.['height'] === 'number' ? { height: inline['height'] } : {}),
@@ -572,8 +719,9 @@ const videoRender = defineOperation({
       ...(typeof inline?.['alpha'] === 'boolean' ? { alpha: inline['alpha'] } : {}),
     };
     const comp = findComposition(loaded.project, input.compositionId);
+    await checkVideoJob(ctx, loaded, comp, profile, { start: 0, end: compositionDurationFrames(comp) }, 'video.render');
     const ext = profile.format.endsWith('-sequence') ? '' : `.${profile.format}`;
-    const jobId = startVideoJob(ctx, input.projectId, 'video.render', loaded, { compositionId: input.compositionId, profile, outName: input.outName ?? `${String(comp['id'])}${ext}` });
+    const jobId = startVideoJob(ctx, input.projectId, 'video.render', loaded, { compositionId: input.compositionId, profile, outName: input.outName ?? `${fileSafe(String(comp['id']))}${ext}` });
     return { jobId, state: ctx.services.jobs.status(jobId).state };
   },
 });
@@ -608,13 +756,14 @@ const diagnosticsGet = defineOperation({
   example: { input: { projectId: 'launch-video', frame: 120 } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    const env = await ctx.services.environment(loaded.dir, loaded.project);
-    const list: Diagnostic[] = [...checkProject(env, loaded.project)];
-    if (input.frame !== undefined && list.every((d) => d.severity !== 'error')) {
-      const { evaluateScene, computeBounds, analyzeScene } = await import('@agentic-video/core');
-      const scene = evaluateScene(loaded.project, input.compositionId, frameOf(loaded.project, input.compositionId, input.frame), { registry: env.registry });
-      list.push(...scene.diagnostics, ...analyzeScene(scene, computeBounds(scene, env.measurer)));
-    }
+    const list = await withEnv(ctx, loaded, (env) => {
+      const out: Diagnostic[] = [...checkProject(env, loaded.project)];
+      if (input.frame !== undefined && out.every((d) => d.severity !== 'error')) {
+        const scene = evaluateScene(loaded.project, input.compositionId, frameOf(loaded.project, input.compositionId, input.frame), { registry: env.registry });
+        out.push(...scene.diagnostics, ...analyzeScene(scene, computeBounds(scene, env.measurer)));
+      }
+      return Promise.resolve(out);
+    });
     return { diagnostics: plainDiagnostics(list), text: list.map(formatDiagnostic).join('\n\n') };
   },
 });
@@ -628,8 +777,8 @@ const fontsList = defineOperation({
   async handler(input, ctx) {
     const project: Record<string, unknown> = input.projectId !== undefined ? (await loadProject(ctx, input.projectId)).project : { schemaVersion: SCHEMA_VERSION, compositions: [] };
     const dir = input.projectId !== undefined ? ctx.services.workspace.projectDir(input.projectId) : ctx.services.workspace.root;
-    const env = await ctx.services.environment(dir, project);
-    return { fonts: env.fonts.all().map((f) => ({ family: f.family, weight: f.weight, style: f.style, variable: f.variable, hash: f.hash })) };
+    const fonts = await ctx.services.withEnvironment(dir, project, (env) => Promise.resolve(env.fonts.all().map((f) => ({ family: f.family, weight: f.weight, style: f.style, variable: f.variable, hash: f.hash }))));
+    return { fonts };
   },
 });
 
@@ -738,8 +887,23 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
   ].map((op): [string, OperationDefinition] => [op.name, op]),
 );
 
-/** Liest eine Datei eines Projekts (für `/v1/files`). */
+/**
+ * Liest eine Datei eines Projekts (für `/v1/files`). Symlinks aus dem Projekt heraus werden abgelehnt;
+ * Fehler nennen keinen Host-Pfad (B3).
+ *
+ * @example
+ * ```ts
+ * const bytes = await readProjectFile(ctx, 'demo', 'out/frames/main-0.png');
+ * ```
+ */
 export async function readProjectFile(ctx: OperationContext, projectId: string, path: string): Promise<Uint8Array> {
-  const { safeJoin } = await import('./workspace.js');
-  return readFile(safeJoin(ctx.services.workspace.projectDir(projectId), path));
+  const file = await safeRealPath(ctx.services.workspace.projectDir(projectId), path);
+  try {
+    return await readFile(file);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error) {
+      throw new OpenVideoError({ code: 'OV_FILE_NOT_FOUND', errorClass: 'ApiError', problem: `File "${path}" cannot be read.`, suggestions: ['Use the url returned by the operation.'] });
+    }
+    throw error;
+  }
 }

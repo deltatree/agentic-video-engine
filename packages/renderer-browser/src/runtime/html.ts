@@ -8,9 +8,20 @@
  *   globale Namen wie `window.t` für `id="t"` verhalten sich wie in einer normalen Seite.
  * - Jedes Dokument hat eine eigene virtuelle Uhr (`addInitScript` läuft auch in iframes).
  * - `srcdoc` erbt die Origin der Host-Seite; `/assets/<id>` und `/fonts.css` bleiben erreichbar.
+ *
+ * Skripte (D1, ADR 0008): Ohne `allowScripts` bekommt das iframe `sandbox="allow-same-origin"`
+ * (kein `allow-scripts`) und das Dokument als erstes Element die CSP `script-src 'none'`.
+ * Damit laufen weder `<script>` noch Event-Handler, `javascript:`-URLs oder verschachtelte
+ * iframes. Die Host-Seite liest das Dokument weiter (gleiche Origin) und stellt Animationen
+ * und CSS-Variablen selbst auf den Frame.
+ * Mit `allowScripts` hat das iframe `allow-scripts allow-same-origin`. Diese Kombination ist
+ * keine Grenze: Ein Skript kann die Host-Seite erreichen. Die Host-Seite braucht aber Zugriff
+ * auf das Dokument (Uhr, Schriften, Animationen). Die Grenze ist dann der Container (ADR 0008).
+ * `css` kann das `<style>`-Element in keinem Modus verlassen.
  */
 import type { EvaluatedNode } from '@agentic-video/core';
-import { DOCUMENT_NAME_PREFIX, type BrowserLayerPayload, type DocumentConfig } from '../protocol.js';
+import { DOCUMENT_NAME_PREFIX, type BrowserLayerPayload, type DocumentConfig, type FrameState, type HtmlRenderOptions } from '../protocol.js';
+import { applyFrame, seekAnimations } from './animations.js';
 import { clearDefs, defineColorMatrices } from './defs.js';
 import { loadFonts } from './fonts.js';
 import { htmlNodeStyle } from './style.js';
@@ -19,6 +30,21 @@ interface Slot {
   readonly signature: string;
   readonly container: HTMLDivElement;
   readonly iframe: HTMLIFrameElement;
+  /** Laufen Skripte in diesem Dokument? */
+  readonly scripts: boolean;
+  /** Zeit des zuletzt gerenderten Frames (für Dokumente ohne eigene Uhr). */
+  now: number;
+}
+
+/** CSP als erstes Element im Dokument ohne Skripte. */
+const NO_SCRIPT_CSP = `<meta http-equiv="Content-Security-Policy" content="script-src 'none'; object-src 'none'">`;
+
+/**
+ * Verhindert, dass `css` das `<style>`-Element beendet. Im HTML-Parser endet `<style>` nur an
+ * `</style`; `<\/style` ist in CSS gleichwertig (Escape von `/`) und beendet es nicht.
+ */
+function styleText(css: string): string {
+  return css.replace(/<\/(style)/giu, '<\\/$1');
 }
 
 /** Höchstzahl gehaltener iframes; ältere unbenutzte werden entfernt. */
@@ -43,22 +69,25 @@ function layerRoot(): HTMLElement {
   return el;
 }
 
-function srcdoc(html: string, css: string): string {
+function srcdoc(html: string, css: string, scripts: boolean): string {
   return [
-    '<!doctype html><html><head><meta charset="utf-8">',
+    '<!doctype html><html><head>',
+    scripts ? '' : NO_SCRIPT_CSP,
+    '<meta charset="utf-8">',
     '<link rel="stylesheet" href="fonts.css">',
     '<style>html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:transparent;}</style>',
-    `<style>${css}</style>`,
+    `<style>${styleText(css)}</style>`,
     `</head><body>${html}</body></html>`,
   ].join('');
 }
 
-async function createSlot(node: EvaluatedNode, payload: BrowserLayerPayload, signature: string, html: string, css: string): Promise<Slot> {
+async function createSlot(node: EvaluatedNode, payload: BrowserLayerPayload, signature: string, html: string, css: string, scripts: boolean): Promise<Slot> {
   const container = document.createElement('div');
   const iframe = document.createElement('iframe');
   const config: DocumentConfig = { seed: payload.seed, key: node.id, fps: payload.fps };
   iframe.name = DOCUMENT_NAME_PREFIX + JSON.stringify(config);
   iframe.setAttribute('scrolling', 'no');
+  iframe.setAttribute('sandbox', scripts ? 'allow-scripts allow-same-origin' : 'allow-same-origin');
   iframe.style.cssText = 'display:block;border:0;margin:0;padding:0;width:100%;height:100%;background:transparent;color-scheme:normal;';
   container.append(iframe);
   layerRoot().append(container);
@@ -67,9 +96,9 @@ async function createSlot(node: EvaluatedNode, payload: BrowserLayerPayload, sig
       resolve();
     }, { once: true });
   });
-  iframe.srcdoc = srcdoc(html, css);
+  iframe.srcdoc = srcdoc(html, css, scripts);
   await loaded;
-  return { signature, container, iframe };
+  return { signature, container, iframe, scripts, now: 0 };
 }
 
 async function settle(doc: Document): Promise<void> {
@@ -91,10 +120,11 @@ async function settle(doc: Document): Promise<void> {
  *
  * @example
  * ```ts
- * await renderHtmlLayer({ nodes: [htmlNode], width: 640, height: 360, scale: 1, frame: 0, time: 0, fps: 30, seed: 1 });
+ * await renderHtmlLayer({ nodes: [htmlNode], width: 640, height: 360, scale: 1, frame: 0, time: 0, fps: 30, seed: 1 }, { allowScripts: false });
  * ```
  */
-export async function renderHtmlLayer(payload: BrowserLayerPayload): Promise<void> {
+export async function renderHtmlLayer(payload: BrowserLayerPayload, options: HtmlRenderOptions): Promise<void> {
+  const scripts = options.allowScripts;
   clearDefs();
   for (const slot of slots.values()) slot.container.style.display = 'none';
   const used = new Set<string>();
@@ -104,13 +134,13 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload): Promise<voi
     if (node.type !== 'html') throw new TypeError(`Node "${node.id}" has type "${node.type}"; the browser backend renders only "html" nodes.`);
     const html = typeof node.props['html'] === 'string' ? node.props['html'] : '';
     const css = typeof node.props['css'] === 'string' ? node.props['css'] : '';
-    const signature = JSON.stringify([html, css, payload.seed, payload.fps]);
+    const signature = JSON.stringify([html, css, payload.seed, payload.fps, scripts]);
     const timeMs = (node.time.localFrame / payload.fps) * 1000;
+    if (!Number.isFinite(timeMs)) throw new RangeError(`OV_BROWSER_PAYLOAD: node "${node.id}" has a non-finite local time.`);
     let slot = slots.get(node.id);
-    const clockNow = slot?.iframe.contentWindow?.__ovClock?.now ?? 0;
-    if (slot === undefined || slot.signature !== signature || timeMs < clockNow) {
+    if (slot === undefined || slot.signature !== signature || timeMs < slot.now) {
       slot?.container.remove();
-      slot = await createSlot(node, payload, signature, html, css);
+      slot = await createSlot(node, payload, signature, html, css, scripts);
       slots.set(node.id, slot);
     }
     // Zeichenreihenfolge über z-index: ein iframe im DOM zu verschieben würde es neu laden.
@@ -133,12 +163,20 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload): Promise<voi
     c.filter = style.filter;
     c.clipPath = style.clipPath;
     c.background = style.background;
-    const win = slot.iframe.contentWindow;
     const doc = slot.iframe.contentDocument;
-    const clock = win?.__ovClock;
-    if (win === null || doc === null || clock === undefined) throw new Error(`HTML node "${node.id}" has no virtual clock.`);
+    if (doc === null) throw new Error(`HTML node "${node.id}" has no readable document.`);
     await loadFonts(doc);
-    clock.frame({ timeMs, frame: node.time.localFrame, fps: payload.fps, progress: node.time.progress, seed: payload.seed, key: node.id });
+    const state: FrameState = { timeMs, frame: node.time.localFrame, fps: payload.fps, progress: node.time.progress, seed: payload.seed, key: node.id };
+    if (slot.scripts) {
+      const clock = slot.iframe.contentWindow?.__ovClock;
+      if (clock === undefined) throw new Error(`HTML node "${node.id}" has no virtual clock.`);
+      clock.frame(state);
+    } else {
+      // Ohne Skripte läuft keine Uhr im Dokument; die Host-Seite stellt es von außen.
+      applyFrame(doc, state);
+      seekAnimations(doc, timeMs);
+    }
+    slot.now = timeMs;
     docs.push(doc);
   }
   // Speicher begrenzen: unbenutzte iframes entfernen, sobald zu viele gehalten werden.

@@ -194,6 +194,7 @@ export class VideoFrameReader {
       '-hide_banner', '-loglevel', 'error', '-nostdin',
       ...seek,
       ...decoderArgs(this.info.video),
+      '-protocol_whitelist', 'file,pipe',
       '-i', this.path,
       '-map', '0:v:0', '-an', '-sn', '-fps_mode', 'passthrough',
       '-f', 'rawvideo', '-pix_fmt', 'rgba', '-',

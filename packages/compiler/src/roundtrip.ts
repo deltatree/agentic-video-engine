@@ -478,7 +478,7 @@ function applyOne(sf: ts.SourceFile, patch: Patch): Edit[] {
       const keys = patch.property.split('.').filter((k) => k.length > 0);
       if (keys[0] === 'id' || keys[0] === 'type' || keys[0] === 'children') throw new Refusal('OV_ROUNDTRIP_PATH', `Property "${patch.property}" cannot be set.`, ['Use addNode, removeNode or moveNode.']);
       const slot = attributeSlot(el.tag, keys);
-      if (patch.value === null || patch.value === undefined) return slot.remove();
+      if (patch.value === undefined || (patch.value === null && patch.keepNull !== true)) return slot.remove();
       if (slot.expr !== undefined && !isLiteral(slot.expr)) throw dynamic(slot, patch.property);
       return slot.write(toLiteral(patch.value), patch.value);
     }

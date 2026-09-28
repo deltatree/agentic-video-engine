@@ -7,7 +7,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from 'playwright-core';
-import { OpenVideoError, type AssetResolver, type FontResolver, type RgbaImage } from '@agentic-video/core';
+import { OpenVideoError, type AssetResolver, type Diagnostic, type FontResolver, type RgbaImage } from '@agentic-video/core';
 import { decodePng, premultiply } from '@agentic-video/png';
 import type { BrowserLayerKind, BrowserLayerPayload } from './protocol.js';
 import { startHostServer, type HostServer } from './server.js';
@@ -20,6 +20,11 @@ import { startHostServer, type HostServer } from './server.js';
  * `--disable-partial-raster`, `--disable-threaded-animation`, `--disable-checker-imaging` und
  * `--run-all-compositor-stages-before-draw` machen das Rastern unabhängig vom vorigen Frame;
  * ohne sie wich im Test etwa jeder achte Frame einer animierten Kante um 2 Stufen ab.
+ *
+ * Netzsperre unterhalb von HTTP (D3): Der Route-Handler sieht nur HTTP und WebSocket.
+ * Deshalb löst `--host-resolver-rules` keinen Namen auf (auch kein DNS-Prefetch), der Proxy
+ * zeigt auf einen toten Port (nur `127.0.0.1` geht direkt), und WebRTC darf kein UDP ohne
+ * Proxy senden. Zusätzlich entfernt ein Init-Skript die WebRTC-Schnittstellen.
  */
 export const CHROMIUM_ARGS: readonly string[] = [
   '--use-angle=swiftshader',
@@ -45,7 +50,36 @@ export const CHROMIUM_ARGS: readonly string[] = [
   '--metrics-recording-only',
   '--no-first-run',
   '--mute-audio',
+  '--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1',
+  '--proxy-server=http://127.0.0.1:9',
+  '--proxy-bypass-list=127.0.0.1',
+  '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
 ];
+
+/** WebRTC-Schnittstellen, die das Init-Skript aus jedem Dokument entfernt (D3). */
+const WEBRTC_GLOBALS: readonly string[] = [
+  'RTCPeerConnection',
+  'webkitRTCPeerConnection',
+  'RTCDataChannel',
+  'RTCSessionDescription',
+  'RTCIceCandidate',
+  'RTCIceTransport',
+  'RTCDtlsTransport',
+  'RTCSctpTransport',
+  'RTCRtpSender',
+  'RTCRtpReceiver',
+  'RTCRtpTransceiver',
+  'RTCCertificate',
+  'RTCDTMFSender',
+  'RTCPeerConnectionIceEvent',
+  'RTCDataChannelEvent',
+  'RTCTrackEvent',
+];
+
+const NO_WEBRTC_JS = `(()=>{for(const n of ${JSON.stringify(WEBRTC_GLOBALS)})Reflect.deleteProperty(globalThis,n);})();`;
+
+/** Standard-Obergrenze gleichzeitig offener Seiten (eine je Ausgabegröße). */
+const DEFAULT_MAX_PAGES = 4;
 
 /** Optionen für {@link createBrowserHost}. */
 export interface BrowserHostOptions {
@@ -58,6 +92,14 @@ export interface BrowserHostOptions {
   readonly height: number;
   /** Zeitlimit je Layer in Millisekunden. Standard 60 000. */
   readonly timeoutMs?: number;
+  /**
+   * Skripte in HTML-Layern ausführen (ADR 0008). Standard `false`: Layer-Dokumente laufen
+   * in einem iframe ohne `allow-scripts` und mit CSP `script-src 'none'`.
+   * Nur im Container oder mit `--trusted` auf `true` setzen.
+   */
+  readonly allowHtmlScripts?: boolean;
+  /** Höchstzahl offener Seiten; die am längsten ungenutzte Größe wird geschlossen (LRU). Standard 4. */
+  readonly maxPages?: number;
 }
 
 /** Ein laufender Render-Host. */
@@ -68,6 +110,12 @@ export interface BrowserHost {
   versions(): Readonly<Record<string, string>>;
   /** Zahl der blockierten Netzanfragen seit dem Start (Sicherheits-Nachweis). */
   readonly blockedRequests: number;
+  /** Zahl der offenen Seiten (höchstens `maxPages`). */
+  readonly openPages: number;
+  /** Läuft Chromium mit der Sandbox des Betriebssystems? */
+  readonly osSandbox: boolean;
+  /** Hinweise zum Start, z. B. `OV_BROWSER_NO_OS_SANDBOX`, wenn die OS-Sandbox fehlt. */
+  readonly diagnostics: readonly Diagnostic[];
   /** Schließt Browser und Server. Mehrfacher Aufruf ist erlaubt. */
   close(): Promise<void>;
 }
@@ -123,13 +171,57 @@ function checkSize(payload: BrowserLayerPayload): void {
   if (!ok(payload.width) || !ok(payload.height)) {
     throw hostError('OV_BROWSER_SIZE', `Invalid output size ${String(payload.width)}×${String(payload.height)}.`, ['Use integer output sizes between 1 and 16384 pixels.']);
   }
-  if (!(payload.fps > 0) || !(payload.scale > 0)) {
-    throw hostError('OV_BROWSER_PAYLOAD', `Invalid fps (${String(payload.fps)}) or scale (${String(payload.scale)}).`, ['Pass fps > 0 and scale > 0.']);
+  const positive = (v: number) => Number.isFinite(v) && v > 0;
+  if (!positive(payload.fps) || !positive(payload.scale)) {
+    throw hostError('OV_BROWSER_PAYLOAD', `Invalid fps (${String(payload.fps)}) or scale (${String(payload.scale)}).`, ['Pass finite values fps > 0 and scale > 0.']);
   }
+  // Die virtuelle Uhr braucht endliche Zeiten (D5); NaN würde `Date.now()` vergiften.
+  const bad = [payload.time, payload.frame].some((v) => !Number.isFinite(v)) ? 'the layer' : payload.nodes.find((n) => !Number.isFinite(n.time.localFrame))?.id;
+  if (bad !== undefined) {
+    throw hostError('OV_BROWSER_PAYLOAD', `The time of ${bad === 'the layer' ? bad : `node "${bad}"`} is not a finite number.`, ['Pass finite frame numbers and times; check the timeline evaluation for NaN or Infinity.']);
+  }
+}
+
+/** Fehler-Codes, die die Seiten-Laufzeit als Präfix `OV_…:` in ihre Fehlermeldung schreibt. */
+const PAGE_CODES: Readonly<Record<string, readonly string[]>> = {
+  OV_BROWSER_TIMER_LIMIT: ['Do not reschedule timers endlessly (e.g. setTimeout(f, 0) inside f).', 'Drive animation from window.openvideo.onFrame instead of timers.'],
+  OV_BROWSER_PAYLOAD: ['Pass finite frame numbers and times.'],
+};
+
+/** Übersetzt einen Fehler aus `page.evaluate` in einen {@link OpenVideoError}. */
+function pageError(kind: BrowserLayerKind, error: unknown): OpenVideoError {
+  const message = error instanceof Error ? error.message : String(error);
+  for (const [code, suggestions] of Object.entries(PAGE_CODES)) {
+    const at = message.indexOf(`${code}: `);
+    if (at >= 0) return hostError(code, message.slice(at + code.length + 2).split('\n')[0] ?? message, suggestions, error);
+  }
+  return hostError('OV_BROWSER_RENDER', `Chromium failed to render the ${kind} layer: ${message}`, ['Check the layer content for script errors.', 'Run the layer alone to isolate the failing node.'], error);
+}
+
+/**
+ * Schließt eine Seite. Ein Fehler hier ist erwartbar (Seite oder Browser schon weg) und darf
+ * den eigentlichen Fehler des Aufrufers nicht verdecken (D4); er wird deshalb nur gezählt.
+ */
+function closePage(page: Page, failures: { count: number }): Promise<void> {
+  return page.close().catch(() => {
+    failures.count++;
+  });
+}
+
+/** Ein laufender Browser mit Kontext und Seiten-Cache. */
+interface Session {
+  readonly browser: Browser;
+  readonly context: BrowserContext;
+  /** Seiten je Ausgabegröße in LRU-Reihenfolge (zuletzt benutzt am Ende). */
+  readonly pages: Map<string, Promise<PageEntry>>;
+  alive: boolean;
 }
 
 /**
  * Startet Chromium mit Netzblockade, virtueller Zeit und lokaler HTTP-Origin.
+ *
+ * Ohne `allowHtmlScripts` laufen in HTML-Layern keine Skripte (D1). Stürzt Chromium ab,
+ * startet der Host es bei der nächsten Anfrage neu (D4).
  *
  * @example
  * ```ts
@@ -143,74 +235,138 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
   const clockJs = readBundle('clock.js');
   const executablePath = resolveExecutable(options.executablePath);
   const timeoutMs = options.timeoutMs ?? 60_000;
+  const allowScripts = options.allowHtmlScripts === true;
+  const maxPages = Math.max(1, Math.floor(options.maxPages ?? DEFAULT_MAX_PAGES));
   const server: HostServer = await startHostServer({ runtimeJs, assets: options.assets, fonts: options.fonts });
-  let browser: Browser | undefined;
+  const diagnostics: Diagnostic[] = [];
+  const closeFailures = { count: 0 };
+  let osSandbox = true;
   let blocked = 0;
-  let frameCounter = 0;
   let closed = false;
-  const pages = new Map<string, Promise<PageEntry>>();
-  let context: BrowserContext;
-  try {
-    browser = await chromium.launch({ executablePath, headless: true, args: [...CHROMIUM_ARGS] });
-    context = await browser.newContext({
-      serviceWorkers: 'block',
-      deviceScaleFactor: 1,
-      colorScheme: 'light',
-      locale: 'en-US',
-      timezoneId: 'UTC',
-      acceptDownloads: false,
-      viewport: { width: options.width, height: options.height },
-    });
-    // Netzblockade: nur die eigene Origin; Pfade ohne Token werden auf das Token umgeschrieben.
-    await context.route('**/*', async (route) => {
-      const url = new URL(route.request().url());
-      if (url.origin === server.origin) {
-        if (url.pathname.startsWith(server.prefix)) await route.continue();
-        else await route.continue({ url: `${server.origin}${server.prefix}${url.pathname.slice(1)}${url.search}` });
-        return;
-      }
-      blocked++;
-      await route.abort('blockedbyclient');
-    });
-    await context.routeWebSocket(/.*/u, async (ws) => {
-      blocked++;
-      await ws.close({ code: 1008, reason: 'Network access is blocked in the render host.' });
-    });
-    await context.addInitScript({ content: clockJs });
-  } catch (error) {
-    await browser?.close();
-    await server.close();
-    throw hostError('OV_BROWSER_LAUNCH', `Chromium could not start from "${executablePath}".`, ['Check that Chromium matches playwright-core 1.63 (`npx playwright install chromium`).', 'Check system libraries with `npx playwright install-deps chromium`.'], error);
-  }
-  const chromiumVersion = browser.version();
+  let current: Promise<Session> | undefined;
+  let live: Session | undefined;
 
-  const openPage = async (width: number, height: number): Promise<PageEntry> => {
-    const page = await context.newPage();
+  const launchBrowser = async (): Promise<Browser> => {
+    const launch = (sandbox: boolean) => chromium.launch({ executablePath, headless: true, chromiumSandbox: sandbox, args: [...CHROMIUM_ARGS] });
+    if (!osSandbox) return launch(false);
+    try {
+      return await launch(true);
+    } catch (error) {
+      // Ohne Namespaces (z. B. in manchen Containern) startet die OS-Sandbox nicht.
+      // Der Container ist dann die Grenze (ADR 0008); der Host meldet das als Diagnose.
+      osSandbox = false;
+      diagnostics.push({
+        code: 'OV_BROWSER_NO_OS_SANDBOX',
+        severity: 'warning',
+        errorClass: 'BrowserRendererError',
+        problem: `Chromium could not start with the OS sandbox and runs without it: ${error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error)}`,
+        suggestions: ['Allow unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1) or run the render in the container sandbox (ADR 0008).'],
+      });
+      return launch(false);
+    }
+  };
+
+  const startSession = async (): Promise<Session> => {
+    let browser: Browser | undefined;
+    try {
+      browser = await launchBrowser();
+      const context = await browser.newContext({
+        serviceWorkers: 'block',
+        deviceScaleFactor: 1,
+        colorScheme: 'light',
+        locale: 'en-US',
+        timezoneId: 'UTC',
+        acceptDownloads: false,
+        viewport: { width: options.width, height: options.height },
+      });
+      // Netzblockade: nur die eigene Origin; sie bekommt das Token als Header (D2).
+      await context.route('**/*', async (route) => {
+        const request = route.request();
+        if (new URL(request.url()).origin === server.origin) {
+          await route.continue({ headers: { ...request.headers(), ...server.headers } });
+          return;
+        }
+        blocked++;
+        await route.abort('blockedbyclient');
+      });
+      await context.routeWebSocket(/.*/u, async (ws) => {
+        blocked++;
+        await ws.close({ code: 1008, reason: 'Network access is blocked in the render host.' });
+      });
+      await context.addInitScript({ content: NO_WEBRTC_JS });
+      await context.addInitScript({ content: clockJs });
+      const session: Session = { browser, context, pages: new Map(), alive: true };
+      browser.on('disconnected', () => {
+        // Absturz oder Ende: Cache leeren; die nächste Anfrage startet Chromium neu.
+        session.alive = false;
+        session.pages.clear();
+      });
+      return session;
+    } catch (error) {
+      await browser?.close();
+      throw hostError('OV_BROWSER_LAUNCH', `Chromium could not start from "${executablePath}".`, ['Check that Chromium matches playwright-core 1.63 (`npx playwright install chromium`).', 'Check system libraries with `npx playwright install-deps chromium`.'], error);
+    }
+  };
+
+  const session = (): Promise<Session> => {
+    if (current === undefined || live?.alive === false) {
+      const started = startSession().then((s) => {
+        live = s;
+        return s;
+      });
+      current = started;
+      started.catch(() => {
+        if (current === started) current = undefined;
+      });
+    }
+    return current;
+  };
+
+  const openPage = async (s: Session, width: number, height: number): Promise<PageEntry> => {
+    const page = await s.context.newPage();
     await page.setViewportSize({ width, height });
-    const cdp = await context.newCDPSession(page);
+    const cdp = await s.context.newCDPSession(page);
     await cdp.send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
-    await page.goto(`${server.origin}${server.prefix}index.html`, { waitUntil: 'load' });
+    await page.goto(`${server.origin}/index.html`, { waitUntil: 'load' });
     const ready = await page.evaluate(() => window.__ovRuntime !== undefined && window.__ovClock !== undefined);
     if (!ready) throw hostError('OV_BROWSER_RUNTIME', 'The page runtime did not start in Chromium.', ['Rebuild the runtime with `npm run build:extra -w @agentic-video/renderer-browser`.']);
     return { page, cdp, queue: Promise.resolve() };
   };
-  const pageFor = (width: number, height: number): Promise<PageEntry> => {
+
+  const pageFor = async (width: number, height: number): Promise<{ readonly session: Session; readonly key: string; readonly entry: Promise<PageEntry> }> => {
+    const s = await session();
     const key = `${String(width)}x${String(height)}`;
-    let entry = pages.get(key);
+    let entry = s.pages.get(key);
     if (entry === undefined) {
-      entry = openPage(width, height);
-      pages.set(key, entry);
-      entry.catch(() => pages.delete(key));
+      const opened = openPage(s, width, height);
+      entry = opened;
+      opened.catch(() => {
+        if (s.pages.get(key) === opened) s.pages.delete(key);
+      });
     }
-    return entry;
+    // LRU: zuletzt benutzte Größe ans Ende; die älteste schließt, sobald ihre Warteschlange leer ist.
+    s.pages.delete(key);
+    s.pages.set(key, entry);
+    for (const [oldKey, old] of s.pages) {
+      if (s.pages.size <= maxPages) break;
+      s.pages.delete(oldKey);
+      void old.then(
+        (e) => e.queue.then(() => closePage(e.page, closeFailures)),
+        () => undefined,
+      );
+    }
+    return { session: s, key, entry };
   };
 
   let libraryVersions: Readonly<Record<string, string>>;
+  let chromiumVersion: string;
   try {
     const first = await pageFor(options.width, options.height);
-    libraryVersions = await first.page.evaluate(() => window.__ovRuntime?.versions() ?? {});
+    const entry = await first.entry;
+    chromiumVersion = first.session.browser.version();
+    libraryVersions = await entry.page.evaluate(() => window.__ovRuntime?.versions() ?? {});
   } catch (error) {
-    await browser.close();
+    await live?.browser.close();
     await server.close();
     throw error instanceof OpenVideoError ? error : hostError('OV_BROWSER_LAUNCH', 'The render page could not be opened.', ['Rebuild the runtime with `npm run build:extra -w @agentic-video/renderer-browser`.'], error);
   }
@@ -227,14 +383,17 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
   const renderOn = async (entry: PageEntry, kind: BrowserLayerKind, payload: BrowserLayerPayload): Promise<RgbaImage> => {
     const { width, height } = payload;
     if (kind === 'html') {
-      await entry.page.evaluate(async (p) => {
-        const rt = window.__ovRuntime;
-        if (rt === undefined) throw new Error('Page runtime missing.');
-        await rt.renderHtml(p);
-      }, payload);
+      await entry.page.evaluate(
+        async ([p, scripts]) => {
+          const rt = window.__ovRuntime;
+          if (rt === undefined) throw new Error('Page runtime missing.');
+          await rt.renderHtml(p, { allowScripts: scripts });
+        },
+        [payload, allowScripts] as const,
+      );
       return capture(entry, width, height);
     }
-    const upload = server.expectFrame(String(++frameCounter), width * height * 4);
+    const upload = server.expectFrame(width * height * 4);
     try {
       await entry.page.evaluate(
         async ([k, p, url]) => {
@@ -255,15 +414,21 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
     get blockedRequests() {
       return blocked;
     },
+    get openPages() {
+      return live?.pages.size ?? 0;
+    },
+    get osSandbox() {
+      return osSandbox;
+    },
+    diagnostics,
     versions: () => ({ chromium: chromiumVersion, ...libraryVersions }),
     async render(kind, payload) {
       if (closed) throw hostError('OV_BROWSER_CLOSED', 'The render host is closed.', ['Create a new host with `createBrowserHost`.']);
       checkSize(payload);
-      const entry = await pageFor(payload.width, payload.height);
-      const job = entry.queue.then(
-        () => withTimeout(renderOn(entry, kind, payload), timeoutMs, `Rendering the ${kind} layer`),
-        () => withTimeout(renderOn(entry, kind, payload), timeoutMs, `Rendering the ${kind} layer`),
-      );
+      const slot = await pageFor(payload.width, payload.height);
+      const entry = await slot.entry;
+      const run = () => withTimeout(renderOn(entry, kind, payload), timeoutMs, `Rendering the ${kind} layer`);
+      const job = entry.queue.then(run, run);
       entry.queue = job.catch((error: unknown) => error);
       try {
         return await job;
@@ -271,19 +436,28 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
         if (error instanceof OpenVideoError) {
           if (error.diagnostic.code === 'OV_BROWSER_TIMEOUT') {
             // Eine hängende Seite ist verbraucht; die nächste Anfrage öffnet eine neue.
-            pages.delete(`${String(payload.width)}x${String(payload.height)}`);
-            await entry.page.close();
+            // Nur den eigenen Eintrag entfernen: eine andere Anfrage kann schon eine neue Seite halten.
+            if (slot.session.pages.get(slot.key) === slot.entry) slot.session.pages.delete(slot.key);
+            await closePage(entry.page, closeFailures);
           }
           throw error;
         }
-        throw hostError('OV_BROWSER_RENDER', `Chromium failed to render the ${kind} layer: ${error instanceof Error ? error.message : String(error)}`, ['Check the layer content for script errors.', 'Run the layer alone to isolate the failing node.'], error);
+        throw pageError(kind, error);
       }
     },
     async close() {
       if (closed) return;
       closed = true;
-      await browser.close();
-      await server.close();
+      try {
+        // Ein gescheiterter Start hat keinen Browser zum Schließen.
+        const s = await current?.then(
+          (value) => value,
+          () => undefined,
+        );
+        await s?.browser.close();
+      } finally {
+        await server.close();
+      }
     },
   };
 }

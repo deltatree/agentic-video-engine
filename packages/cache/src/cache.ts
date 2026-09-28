@@ -40,9 +40,15 @@ export interface Cache {
   hitRatio(): number;
   /** Einträge je Ebene (Anzahl, Bytes). */
   usage(): Promise<Record<CacheTierName, { entries: number; bytes: number }>>;
-  /** Löscht eine Ebene oder alles. */
+  /**
+   * Löscht eine Ebene oder alles. Bei einem gestuften Speicher nur die lokale Stufe,
+   * außer er wurde mit `deleteRemote` angelegt.
+   */
   clear(tier?: CacheTierName): Promise<number>;
-  /** Löscht die am längsten ungenutzten Einträge, bis höchstens `maxBytes` belegt sind. */
+  /**
+   * Löscht die am längsten ungenutzten Einträge, bis höchstens `maxBytes` belegt sind.
+   * Bei einem gestuften Speicher zählt und löscht nur die lokale Stufe (außer `deleteRemote`).
+   */
   prune(maxBytes: number): Promise<number>;
 }
 
@@ -78,6 +84,8 @@ export function createCache(store: ContentStore): Cache {
   const counters = perTier(() => emptyStats());
   const tiers = new Map<CacheTierName, CacheTier>();
   const pending = new Map<string, Promise<Uint8Array>>();
+  // Aufräumen wirkt auf die lokale Stufe; der gemeinsame Speicher gehört allen Rechnern.
+  const housekeeping = store instanceof TieredStore && !store.deletesRemote ? store.local : store;
   const makeTier = (name: CacheTierName): CacheTier => {
     const k = (key: string) => `${name}/${key}`;
     const c = counters[name];
@@ -154,8 +162,8 @@ export function createCache(store: ContentStore): Cache {
     async clear(tier) {
       let removed = 0;
       for (const t of tier === undefined ? CACHE_TIERS : [tier]) {
-        for (const e of await store.list(`${t}/`)) {
-          await store.delete(e.key);
+        for (const e of await housekeeping.list(`${t}/`)) {
+          await housekeeping.delete(e.key);
           removed++;
         }
       }
@@ -163,13 +171,13 @@ export function createCache(store: ContentStore): Cache {
     },
     async prune(maxBytes) {
       const all: StoreEntry[] = [];
-      for (const t of CACHE_TIERS) all.push(...(await store.list(`${t}/`)));
+      for (const t of CACHE_TIERS) all.push(...(await housekeeping.list(`${t}/`)));
       all.sort((a, b) => a.lastUsed - b.lastUsed);
       let total = all.reduce((n, e) => n + e.size, 0);
       let removed = 0;
       for (const e of all) {
         if (total <= maxBytes) break;
-        await store.delete(e.key);
+        await housekeeping.delete(e.key);
         total -= e.size;
         removed++;
       }
@@ -180,7 +188,7 @@ export function createCache(store: ContentStore): Cache {
 
 /**
  * Baut einen Speicher aus Umgebungsvariablen:
- * `OPENVIDEO_CACHE_DIR` (lokal, Standard `<projekt>/.openvideo/cache`) und optional
+ * `OPENVIDEO_CACHE_DIR` (lokal, Standard `<projekt>/.openvideo/cache`; leer zählt als nicht gesetzt) und optional
  * `OPENVIDEO_S3_ENDPOINT`, `OPENVIDEO_S3_BUCKET`, `OPENVIDEO_S3_REGION`,
  * `OPENVIDEO_S3_ACCESS_KEY_ID`, `OPENVIDEO_S3_SECRET_ACCESS_KEY`, `OPENVIDEO_S3_PREFIX`.
  *
@@ -190,7 +198,8 @@ export function createCache(store: ContentStore): Cache {
  * ```
  */
 export function storeFromEnv(env: Readonly<Record<string, string | undefined>>, projectDir: string): ContentStore {
-  const local = new FileStore(env['OPENVIDEO_CACHE_DIR'] ?? `${projectDir}/.openvideo/cache`);
+  const dir = env['OPENVIDEO_CACHE_DIR'];
+  const local = new FileStore(dir !== undefined && dir !== '' ? dir : `${projectDir}/.openvideo/cache`);
   const endpoint = env['OPENVIDEO_S3_ENDPOINT'];
   if (endpoint === undefined || endpoint === '') return local;
   const need = (name: string): string => {

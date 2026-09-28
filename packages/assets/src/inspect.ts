@@ -3,8 +3,30 @@
  */
 import { probeMedia } from '@agentic-video/ffmpeg';
 import { parseFontInfo } from '@agentic-video/fonts';
-import { isRecord } from '@agentic-video/core';
-import type { DetectedFormat } from './detect.js';
+import { OpenVideoError, isRecord } from '@agentic-video/core';
+import { sniffFormat, type DetectedFormat } from './detect.js';
+
+/**
+ * Prüft, dass FFmpeg eine Datei lesen darf: Ihr Inhalt muss mit der Signatur eines
+ * unterstützten Bild-, Video- oder Audio-Containers beginnen. So erreicht FFmpeg nie
+ * Playlist- oder Listen-Demuxer (HLS, concat, SDP), die weitere Dateien oder Netzquellen öffnen.
+ *
+ * @example
+ * ```ts
+ * assertFfmpegInput('/p/assets/clip.mp4', bytes); // wirft OV_ASSET_UNSAFE_MEDIA bei einer Playlist
+ * ```
+ */
+export function assertFfmpegInput(path: string, bytes: Uint8Array): void {
+  const sniffed = sniffFormat(path, bytes);
+  if (sniffed?.type === 'video' || sniffed?.type === 'audio' || sniffed?.type === 'image') return;
+  throw new OpenVideoError({
+    code: 'OV_ASSET_UNSAFE_MEDIA',
+    errorClass: 'SecurityError',
+    problem: `"${path}" is not a supported media file (no known container signature); FFmpeg will not open it.`,
+    details: { path },
+    suggestions: ['Import a real media file (MP4, MOV, WebM, MKV, WAV, FLAC, MP3, AAC, Ogg, GIF, WebP, AVIF).', 'Playlists (HLS .m3u8) and concat lists are not supported as assets.'],
+  });
+}
 
 /** Ergebnis der Inspektion. */
 export interface AssetMetadata {
@@ -110,6 +132,7 @@ export async function inspectAsset(path: string, bytes: Uint8Array, detected: De
   switch (detected.type) {
     case 'image': {
       if (detected.format === 'avif') {
+        assertFfmpegInput(path, bytes);
         const info = await probeMedia(path);
         return {
           metadata: { format: 'avif', container: info.container },
@@ -127,6 +150,7 @@ export async function inspectAsset(path: string, bytes: Uint8Array, detected: De
     }
     case 'video':
     case 'audio': {
+      assertFfmpegInput(path, bytes);
       const info = await probeMedia(path);
       const v = info.video;
       const a = info.audio;

@@ -81,15 +81,16 @@ export async function invokeOperation(operations: ReadonlyMap<string, OperationD
     return { ok: true, result };
   } catch (error) {
     if (error instanceof OpenVideoError) return { ok: false, error: error.diagnostic };
-    ctx.services.telemetry.logger.error('operation failed', { operation: name, error: error instanceof Error ? error.stack ?? error.message : String(error) });
+    // Rohe Fehlertexte enthalten oft Host-Pfade; nach außen geht nur eine neutrale Meldung (B18).
+    ctx.services.telemetry.logger.error('operation failed', { operation: name, via: ctx.via, traceparent: ctx.traceparent, error: error instanceof Error ? (error.stack ?? error.message) : String(error) });
     return {
       ok: false,
       error: {
         code: 'OV_INTERNAL',
         severity: 'error',
         errorClass: 'InternalError',
-        problem: error instanceof Error ? error.message : String(error),
-        suggestions: ['This is a bug in OpenVideo. Please report it with the input and the log.'],
+        problem: `Operation ${name} failed with an internal error.`,
+        suggestions: ['This is a bug in OpenVideo. Please report it with the input; the server log has the details.'],
       },
     };
   }

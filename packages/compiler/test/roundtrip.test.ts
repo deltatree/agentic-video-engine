@@ -91,6 +91,11 @@ describe('applyPatchesToSource', () => {
     expect(r.source).toContain('<Rect id="box" width={10} height={10} />');
   });
 
+  it('C11: writes a literal null when keepNull is set', () => {
+    const r = run(small, [{ op: 'setProperty', nodeId: 'box', property: 'scale', value: null, keepNull: true }]);
+    expect(r.source).toContain('scale={null}');
+  });
+
   it('adds nodes as last child and extends the import', () => {
     const r = run(small, [
       { op: 'addNode', parentId: 'g', node: { id: 'dot', type: 'ellipse', width: 4, height: 4, fill: '#FF0000' } },

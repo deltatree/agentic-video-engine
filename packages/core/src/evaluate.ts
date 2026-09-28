@@ -16,7 +16,18 @@ export interface EvaluateOptions {
   readonly registry?: Registry;
   /** Überschreibt den Seed von Composition und Project. */
   readonly seed?: number;
+  /**
+   * Höchstzahl ausgewerteter Knoten pro Aufruf (Standard {@link DEFAULT_MAX_NODES}).
+   * Darüber bricht die Auswertung mit der Diagnose `OV_EVAL_NODE_BUDGET` ab.
+   */
+  readonly maxNodes?: number;
 }
+
+/** Standard-Knotenbudget pro Auswertung (Schutz vor exponentiellen `composition-ref`-Bäumen). */
+export const DEFAULT_MAX_NODES = 100_000;
+
+/** Größte Verschachtelung von Komponenten, Expandern und `composition-ref` (Schutz vor Rekursion). */
+export const MAX_EXPANSION_DEPTH = 16;
 
 /** Felder einer IR-Node, die keine Render-Properties sind. */
 export const STRUCTURAL_KEYS: ReadonlySet<string> = new Set(['id', 'type', 'name', 'comment', 'locked', 'timing', 'transition', 'renderer', 'meta', 'children', 'mask', 'visible']);
@@ -84,8 +95,10 @@ interface EvalCtx {
   readonly registry: Registry | undefined;
   readonly diagnostics: Diagnostic[];
   readonly compositionFrame: number;
-  /** Tiefe verschachtelter Compositions (Schutz vor Endlosschleifen). */
+  /** Tiefe verschachtelter Compositions, Komponenten und Expander (Schutz vor Endlosschleifen). */
   readonly depth: number;
+  /** Gemeinsames Knotenbudget aller Ebenen einer Auswertung. */
+  readonly budget: { remaining: number; exceeded: boolean };
 }
 
 interface Parent {
@@ -183,6 +196,7 @@ function applyTransition(props: Record<string, unknown>, spec: Transition, relFr
 function evaluateNode(raw: unknown, parent: Parent, pointer: string, idPrefix: string, ctx: EvalCtx): EvaluatedNode | undefined {
   if (!isRecord(raw) || typeof raw['id'] !== 'string' || typeof raw['type'] !== 'string') return undefined;
   const id = idPrefix + raw['id'];
+  if (!takeBudget(ctx, id)) return undefined;
   const type = raw['type'];
   const rawTiming = raw['timing'];
   const timing = conforms(TimingSchema, rawTiming) ? rawTiming : undefined;
@@ -280,11 +294,17 @@ function evaluateNode(raw: unknown, parent: Parent, pointer: string, idPrefix: s
     if (Array.isArray(raw['children'])) componentProps['children'] = raw['children'];
     delete props['props'];
     delete props['component'];
-    children = expandInto(def.expand(componentProps, expandCtx), childParent, pointer, `${id}/`, ctx);
+    const expanded = safeExpand(() => def.expand(componentProps, expandCtx), `Component "${name}"`, id, ctx);
+    if (expanded === undefined) return undefined;
+    children = expandInto(expanded, childParent, pointer, `${id}/`, ctx);
     outType = 'group';
   } else if (ctx.registry?.expanders.has(type) === true) {
     const expander = ctx.registry.expanders.get(type);
-    if (expander !== undefined) children = expandInto(expander.expand(raw, expandCtx), childParent, pointer, `${id}/`, ctx);
+    if (expander !== undefined) {
+      const expanded = safeExpand(() => expander.expand(raw, expandCtx), `Expander "${type}"`, id, ctx);
+      if (expanded === undefined) return undefined;
+      children = expandInto(expanded, childParent, pointer, `${id}/`, ctx);
+    }
     outType = 'group';
   } else if (type === 'composition-ref') {
     const nested = evaluateCompositionRef(String(raw['composition']), local.localFrame, pointer, id, ctx);
@@ -332,15 +352,70 @@ function sourceOf(raw: Readonly<Record<string, unknown>>): EvaluatedNode['source
   return { file: s['file'], line: s['line'], column: s['column'] };
 }
 
+/** Zieht einen Knoten vom Budget ab; meldet die Überschreitung genau einmal. */
+function takeBudget(ctx: EvalCtx, id: string): boolean {
+  if (ctx.budget.remaining <= 0) {
+    if (!ctx.budget.exceeded) {
+      ctx.budget.exceeded = true;
+      ctx.diagnostics.push({
+        code: 'OV_EVAL_NODE_BUDGET',
+        severity: 'error',
+        errorClass: 'EvaluationError',
+        problem: `The scene expands to more nodes than the budget allows; evaluation stopped at node "${id}".`,
+        nodeId: id,
+        frame: ctx.compositionFrame,
+        suggestions: ['Reduce repeated composition-ref nodes; each ref copies the whole nested composition.', 'Split the composition into smaller compositions or pass a larger maxNodes.'],
+      });
+    }
+    return false;
+  }
+  ctx.budget.remaining -= 1;
+  return true;
+}
+
+/** Prüft die Verschachtelungstiefe vor einer Expansion. */
+function depthExceeded(ctx: EvalCtx, id: string, what: string): boolean {
+  if (ctx.depth < MAX_EXPANSION_DEPTH) return false;
+  ctx.diagnostics.push({
+    code: 'OV_EVAL_DEPTH',
+    severity: 'error',
+    errorClass: 'EvaluationError',
+    problem: `${what} at "${id}" is nested deeper than ${String(MAX_EXPANSION_DEPTH)} levels (recursion?).`,
+    nodeId: id,
+    frame: ctx.compositionFrame,
+    suggestions: ['Remove the component, expander or composition-ref that contains itself.'],
+  });
+  return true;
+}
+
+/** Ruft `expand` einer Komponente oder eines Expanders auf; Fehler werden zur Diagnose an der Node. */
+function safeExpand(run: () => IrNode[], what: string, id: string, ctx: EvalCtx): IrNode[] | undefined {
+  if (depthExceeded(ctx, id, what)) return undefined;
+  try {
+    const nodes: unknown = run();
+    return Array.isArray(nodes) ? nodes.filter(isRecord).filter((n): n is IrNode => typeof n['id'] === 'string' && typeof n['type'] === 'string') : [];
+  } catch (error) {
+    const message = error instanceof OpenVideoError ? error.diagnostic.problem : error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    ctx.diagnostics.push({
+      code: 'OV_COMPONENT_EXPAND',
+      severity: 'error',
+      errorClass: 'ComponentError',
+      problem: `${what} failed to expand: ${message}`,
+      nodeId: id,
+      frame: ctx.compositionFrame,
+      suggestions: ['Check the props of this node against the component documentation.', 'The node is skipped; the rest of the scene still renders.'],
+    });
+    return undefined;
+  }
+}
+
 function expandInto(nodes: readonly IrNode[], parent: Parent, pointer: string, prefix: string, ctx: EvalCtx): EvaluatedNode[] {
-  return nodes.map((n, i) => evaluateNode(n, parent, `${pointer}#${String(i)}`, prefix, ctx)).filter((n): n is EvaluatedNode => n !== undefined);
+  const inner: EvalCtx = { ...ctx, depth: ctx.depth + 1 };
+  return nodes.map((n, i) => evaluateNode(n, parent, `${pointer}#${String(i)}`, prefix, inner)).filter((n): n is EvaluatedNode => n !== undefined);
 }
 
 function evaluateCompositionRef(compositionId: string, frame: number, pointer: string, idPrefix: string, ctx: EvalCtx): { children: EvaluatedNode[]; width: number; height: number } | undefined {
-  if (ctx.depth > 16) {
-    ctx.diagnostics.push({ code: 'OV_SCHEMA_CYCLE', severity: 'error', errorClass: 'EvaluationError', problem: 'Nested compositions are deeper than 16 levels (cycle?).', suggestions: ['Remove the cyclic composition-ref.'] });
-    return undefined;
-  }
+  if (depthExceeded(ctx, idPrefix, `Composition-ref to "${compositionId}"`)) return undefined;
   let comp: Record<string, unknown>;
   try {
     comp = findComposition(ctx.project, compositionId);
@@ -420,6 +495,7 @@ export function evaluateScene(project: Readonly<Record<string, unknown>>, compos
     diagnostics,
     compositionFrame: frame,
     depth: 0,
+    budget: { remaining: Math.max(0, Math.floor(options.maxNodes ?? DEFAULT_MAX_NODES)), exceeded: false },
   };
   const compIndex = records(project['compositions']).indexOf(comp);
   const parent: Parent = { frame, start: 0, duration: durationFrames };

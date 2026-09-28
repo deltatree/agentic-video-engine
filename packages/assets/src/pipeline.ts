@@ -5,14 +5,15 @@
  * Metadaten und normalisierte Ableitungen liegen im Cache unter dem Hash.
  */
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, link, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { basename, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { ASSET_TYPES, OpenVideoError, contentHash, isRecord, sha256Hex, type AssetRecord, type AssetResolver, type Diagnostic, type RgbaImage } from '@agentic-video/core';
 import type { Cache } from '@agentic-video/cache';
 import { VideoFrameReader, locateFfmpeg, runProcess } from '@agentic-video/ffmpeg';
-import { detectFormat, type DetectedFormat } from './detect.js';
+import { detectFormat, sniffFormat, type DetectedFormat } from './detect.js';
 import { fetchAsset, type FetchOptions } from './fetcher.js';
-import { inspectAsset, type AssetMetadata } from './inspect.js';
+import { assertFfmpegInput, inspectAsset, type AssetMetadata } from './inspect.js';
 
 /** Zähler, wie oft wirklich verarbeitet wurde (für Tests und Metriken). */
 export interface PipelineStats {
@@ -32,12 +33,41 @@ export interface PipelineOptions {
   readonly stats?: PipelineStats;
 }
 
-function safeResolve(projectDir: string, path: string, allowOutside: boolean): string {
-  const full = isAbsolute(path) ? normalize(path) : resolve(projectDir, normalize(path));
-  const rel = relative(projectDir, full);
-  if (!allowOutside && (rel.startsWith('..') || isAbsolute(rel))) {
-    throw new OpenVideoError({ code: 'OV_PATH_OUTSIDE', errorClass: 'SecurityError', problem: `Asset path "${path}" is outside the project directory.`, suggestions: ['Copy the file into the project (e.g. assets/) and reference it relatively.'] });
+function outside(path: string): OpenVideoError {
+  return new OpenVideoError({ code: 'OV_PATH_OUTSIDE', errorClass: 'SecurityError', problem: `Asset path "${path}" is outside the project directory.`, suggestions: ['Copy the file into the project (e.g. assets/) and reference it relatively.', 'Replace symbolic links that point outside the project with real files.'] });
+}
+
+function isInside(root: string, full: string): boolean {
+  const rel = relative(root, full);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+function isNotFound(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+}
+
+/** Kanonischer Pfad (Symlinks aufgelöst); `undefined`, wenn die Datei fehlt. */
+async function canonical(path: string): Promise<string | undefined> {
+  try {
+    return await realpath(path);
+  } catch (error) {
+    if (isNotFound(error)) return undefined;
+    throw error;
   }
+}
+
+/**
+ * Löst einen Asset-Pfad auf und prüft die Projektgrenze zweimal: lexikalisch (`..`) und
+ * nach Auflösung aller Symlinks (`realpath`). Fehlende Dateien liefern den lexikalischen Pfad.
+ */
+async function safeResolve(projectDir: string, path: string, allowOutside: boolean): Promise<string> {
+  const full = isAbsolute(path) ? normalize(path) : resolve(projectDir, normalize(path));
+  if (allowOutside) return full;
+  if (!isInside(projectDir, full)) throw outside(path);
+  const real = await canonical(full);
+  if (real === undefined) return full;
+  const root = (await canonical(projectDir)) ?? projectDir;
+  if (!isInside(root, real)) throw outside(path);
   return full;
 }
 
@@ -61,7 +91,14 @@ async function cachedMetadata(path: string, bytes: Uint8Array, hash: string, det
   const key = `meta-${hash.replace('sha256:', '')}-${detected.format}`;
   const hit = await tier.get(key);
   if (hit !== undefined) {
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(hit));
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(new TextDecoder().decode(hit));
+    } catch (error) {
+      // Ein kaputter Eintrag (z. B. abgebrochenes Schreiben) gilt als Fehltreffer und wird ersetzt.
+      if (!(error instanceof SyntaxError)) throw error;
+      parsed = undefined;
+    }
     if (isRecord(parsed) && isRecord(parsed['metadata'])) return metadataFrom(parsed);
   }
   const meta = await inspectAsset(path, bytes, detected);
@@ -80,6 +117,7 @@ async function normalizedPath(path: string, hash: string, detected: DetectedForm
   if (detected.type === 'image' && meta.animated === true) target = { ext: '.mkv', args: ['-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'bgra', '-fflags', '+bitexact', '-map_metadata', '-1'] };
   else if (detected.format === 'avif') target = { ext: '.png', args: ['-frames:v', '1', '-pix_fmt', 'rgba', '-fflags', '+bitexact'] };
   if (target === undefined) return path;
+  assertFfmpegInput(path, await readFile(path));
   const tier = options.cache.tier('asset');
   const key = `norm-${hash.replace('sha256:', '')}${target.ext.replace('.', '-')}`;
   const outFile = join(workDir, `${hash.replace('sha256:', '')}${target.ext}`);
@@ -89,7 +127,7 @@ async function normalizedPath(path: string, hash: string, detected: DetectedForm
     return outFile;
   }
   const { ffmpeg } = locateFfmpeg();
-  await runProcess(ffmpeg, ['-y', '-loglevel', 'error', '-i', path, ...target.args, outFile], { timeoutMs: 300_000 });
+  await runProcess(ffmpeg, ['-y', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-i', path, ...target.args, outFile], { timeoutMs: 300_000 });
   if (options.stats !== undefined) options.stats.normalized++;
   await tier.put(key, new Uint8Array(await readFile(outFile)));
   return outFile;
@@ -120,9 +158,79 @@ function sanitize(name: string): string {
   return clean === '' ? 'asset' : clean;
 }
 
-function idFrom(name: string): string {
-  const base = basename(name, extname(name)).replace(/[^A-Za-z0-9_-]+/gu, '-').replace(/^[^A-Za-z]+/u, '');
-  return base === '' ? 'asset' : base;
+/**
+ * Leitet eine gültige Asset-ID aus dem Dateinamen ab. Namen ohne führenden Buchstaben
+ * bekommen das Präfix `asset-` (aus `123.png` wird `asset-123`); Namen ohne verwertbare
+ * Zeichen bekommen den Inhalts-Hash (`asset-<hash>`), damit verschiedene Dateien nicht
+ * dieselbe ID tragen.
+ */
+function idFrom(name: string, hash: string): string {
+  const base = basename(name, extname(name)).replace(/[^A-Za-z0-9_-]+/gu, '-').replace(/^-+|-+$/gu, '');
+  if (!/[A-Za-z0-9]/u.test(base)) return `asset-${hash.slice(7, 15)}`;
+  return /^[A-Za-z]/u.test(base) ? base : `asset-${base}`;
+}
+
+/**
+ * Legt `bytes` unter `target` an, ohne eine vorhandene Datei zu überschreiben: erst eine
+ * temporäre Datei, dann ein harter Link (atomar, scheitert bei vorhandenem Ziel, folgt keinem Symlink).
+ * Liefert `false`, wenn das Ziel schon existiert.
+ */
+async function createExclusive(target: string, bytes: Uint8Array): Promise<boolean> {
+  const tmp = `${target}.${randomUUID()}.tmp`;
+  await writeFile(tmp, bytes, { flag: 'wx' });
+  try {
+    await link(tmp, target);
+    return true;
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST') return false;
+    throw error;
+  } finally {
+    await rm(tmp, { force: true });
+  }
+}
+
+/** Liest den Hash einer vorhandenen Datei; `undefined`, wenn sie fehlt. */
+async function hashOf(path: string): Promise<string | undefined> {
+  try {
+    return contentHash(new Uint8Array(await readFile(path)));
+  } catch (error) {
+    if (isNotFound(error)) return undefined;
+    throw error;
+  }
+}
+
+/**
+ * Legt eine Datei in `assets/` ab. Gleicher Name mit anderem Inhalt bekommt ein Hash-Präfix;
+ * gleichzeitige Importe überschreiben sich nie.
+ */
+async function storeInAssets(projectDir: string, fileName: string, bytes: Uint8Array, hash: string): Promise<string> {
+  const assetsDir = join(projectDir, 'assets');
+  await mkdir(assetsDir, { recursive: true });
+  const root = (await canonical(projectDir)) ?? projectDir;
+  const realAssets = (await canonical(assetsDir)) ?? assetsDir;
+  if (realAssets !== join(root, 'assets')) throw outside('assets/');
+  const plain = sanitize(fileName);
+  for (const name of [plain, `${hash.slice(7, 15)}-${plain}`, `${hash.slice(7)}-${plain}`]) {
+    const target = join(realAssets, name);
+    if (await createExclusive(target, bytes)) return name;
+    if ((await hashOf(target)) === hash) return name;
+  }
+  throw new OpenVideoError({ code: 'OV_ASSET_NAME_CONFLICT', errorClass: 'AssetError', problem: `Could not store "${plain}" in assets/: every candidate name holds different content.`, suggestions: ['Rename the file and import it again.'] });
+}
+
+/** Lädt eine URL über den Cache; offline nur aus dem Cache (FR-89). */
+async function remoteBytes(src: string, options: PipelineOptions): Promise<{ readonly bytes: Uint8Array; readonly finalUrl: string }> {
+  const tier = options.cache.tier('asset');
+  const urlKey = `url-${sha256Hex(src)}`;
+  const known = await tier.get(urlKey);
+  if (known !== undefined) return { bytes: known, finalUrl: src };
+  if (options.offline === true) {
+    throw new OpenVideoError({ code: 'OV_ASSET_OFFLINE', errorClass: 'AssetError', problem: `Remote asset ${src} is not cached and the render is offline.`, suggestions: ['Render once online, or import the file into the project.'] });
+  }
+  const r = await fetchAsset(src, options.fetch);
+  if (options.stats !== undefined) options.stats.fetched++;
+  await tier.put(urlKey, r.bytes);
+  return { bytes: r.bytes, finalUrl: r.finalUrl };
 }
 
 /**
@@ -138,13 +246,12 @@ export async function importAsset(projectDir: string, input: ImportInput, option
   let bytes: Uint8Array;
   let fileName: string;
   if (input.path !== undefined) {
-    const full = safeResolve(projectDir, input.path, options.allowOutsidePaths === true);
+    const full = await safeResolve(projectDir, input.path, options.allowOutsidePaths === true);
     if (!existsSync(full)) throw new OpenVideoError({ code: 'OV_ASSET_MISSING', errorClass: 'AssetError', problem: `File "${input.path}" does not exist.`, suggestions: ['Check the path relative to the project root.'] });
     bytes = new Uint8Array(await readFile(full));
     fileName = input.fileName ?? basename(full);
   } else if (input.url !== undefined) {
-    const r = await fetchAsset(input.url, options.fetch);
-    if (options.stats !== undefined) options.stats.fetched++;
+    const r = await remoteBytes(input.url, options);
     bytes = r.bytes;
     fileName = input.fileName ?? (basename(new URL(r.finalUrl).pathname) || 'download');
   } else if (input.base64 !== undefined) {
@@ -158,18 +265,8 @@ export async function importAsset(projectDir: string, input: ImportInput, option
     throw new OpenVideoError({ code: 'OV_ASSET_UNSUPPORTED', errorClass: 'AssetError', problem: `Cannot detect the format of "${fileName}".`, suggestions: ['Supported: PNG, JPEG, WebP, AVIF, SVG, GIF, MP4, WebM, MOV, WAV, FLAC, MP3, AAC, OGG, glTF, GLB, OBJ, fonts, Lottie JSON, SRT, VTT, ASS, CUBE, HDR, EXR.'] });
   }
   const hash = contentHash(bytes);
-  const assetsDir = join(projectDir, 'assets');
-  await mkdir(assetsDir, { recursive: true });
-  let name = sanitize(fileName);
-  let target = join(assetsDir, name);
-  if (existsSync(target)) {
-    const existing = new Uint8Array(await readFile(target));
-    if (contentHash(existing) !== hash) {
-      name = `${hash.slice(7, 15)}-${name}`;
-      target = join(assetsDir, name);
-    }
-  }
-  if (!existsSync(target)) await writeFile(target, bytes);
+  const name = await storeInAssets(projectDir, fileName, bytes, hash);
+  const target = join(projectDir, 'assets', name);
   const meta = await cachedMetadata(target, bytes, hash, detected, options);
   const workDir = join(projectDir, '.openvideo', 'assets');
   await mkdir(workDir, { recursive: true });
@@ -179,7 +276,7 @@ export async function importAsset(projectDir: string, input: ImportInput, option
     diagnostics.push({ code: 'OV_ASSET_TYPE', severity: 'warning', errorClass: 'AssetError', problem: `Requested type "${input.type}" but the file is ${detected.type} (${detected.format}).`, suggestions: [`Use type "${detected.type}".`] });
   }
   return {
-    id: input.id ?? idFrom(fileName),
+    id: input.id ?? idFrom(fileName, hash),
     type: detected.type,
     src: `assets/${name}`,
     hash,
@@ -209,29 +306,31 @@ export async function resolveProjectAssets(projectDir: string, project: Readonly
   const workDir = join(projectDir, '.openvideo', 'assets');
   await mkdir(workDir, { recursive: true });
   const list = Array.isArray(project['assets']) ? project['assets'].filter(isRecord) : [];
-  for (const a of list) {
-    const id = String(a['id']);
+  const seen = new Set<string>();
+  const ffmpegSafe = new Set<string>();
+  for (const [index, a] of list.entries()) {
+    const rawId = a['id'];
+    if (typeof rawId !== 'string' || rawId === '') {
+      diagnostics.push({ code: 'OV_ASSET_ID_MISSING', severity: 'error', errorClass: 'AssetError', problem: `Asset #${String(index)} (src "${String(a['src'])}") has no id.`, suggestions: ['Give every entry in project.assets a unique "id".'] });
+      continue;
+    }
+    const id = rawId;
+    if (seen.has(id)) {
+      diagnostics.push({ code: 'OV_ASSET_DUPLICATE_ID', severity: 'error', errorClass: 'AssetError', problem: `Asset id "${id}" is declared more than once; only the first entry is used.`, suggestions: [`Rename or remove the duplicate "${id}" entry in project.assets.`] });
+      continue;
+    }
+    seen.add(id);
     const src = String(a['src']);
     try {
       let path: string;
       let bytes: Uint8Array;
       if (/^https?:\/\//u.test(src)) {
-        const urlKey = `url-${sha256Hex(src)}`;
-        const tier = options.cache.tier('asset');
-        const known = await tier.get(urlKey);
-        if (known !== undefined) bytes = known;
-        else if (options.offline === true) {
-          throw new OpenVideoError({ code: 'OV_ASSET_OFFLINE', errorClass: 'AssetError', problem: `Remote asset ${src} is not cached and the render is offline.`, suggestions: ['Render once online, or import the file into the project.'] });
-        } else {
-          bytes = (await fetchAsset(src, options.fetch)).bytes;
-          if (options.stats !== undefined) options.stats.fetched++;
-          await tier.put(urlKey, bytes);
-        }
+        bytes = (await remoteBytes(src, options)).bytes;
         const ext = extname(new URL(src).pathname) || '.bin';
         path = join(workDir, `${contentHash(bytes).slice(7)}${ext}`);
         if (!existsSync(path)) await writeFile(path, bytes);
       } else {
-        path = safeResolve(projectDir, src, options.allowOutsidePaths === true);
+        path = await safeResolve(projectDir, src, options.allowOutsidePaths === true);
         if (!existsSync(path)) {
           diagnostics.push({ code: 'OV_ASSET_MISSING', severity: 'error', errorClass: 'AssetError', problem: `Asset "${id}" file "${src}" does not exist.`, suggestions: ['Check the path relative to the project root.', 'Import the file with asset.import.'] });
           continue;
@@ -246,6 +345,7 @@ export async function resolveProjectAssets(projectDir: string, project: Readonly
       const detected: DetectedFormat = detectFormat(src, bytes) ?? { type: declaredType, format: extname(src).slice(1), mimeType: 'application/octet-stream' };
       const meta = await cachedMetadata(path, bytes, hash, detected, options);
       const normalized = await normalizedPath(path, hash, detected, meta, options, workDir);
+      if (normalized !== path || sniffFormat(src, bytes) !== undefined) ffmpegSafe.add(id);
       const license = isRecord(a['license']) ? Object.fromEntries(Object.entries(a['license']).map(([k, v]) => [k, String(v)])) : undefined;
       records.set(id, {
         id,
@@ -280,16 +380,31 @@ export async function resolveProjectAssets(projectDir: string, project: Readonly
     async videoFrame(id: string, seconds: number): Promise<RgbaImage> {
       const r = records.get(id);
       if (r === undefined) throw new OpenVideoError({ code: 'OV_ASSET_MISSING', errorClass: 'AssetError', problem: `Asset "${id}" is not available.`, suggestions: ['Declare it in project.assets.'] });
+      if (!ffmpegSafe.has(id)) assertFfmpegInput(r.path, new Uint8Array(await readFile(r.path)));
       let reader = readers.get(id);
       if (reader === undefined) {
-        reader = VideoFrameReader.open(r.path);
-        readers.set(id, reader);
+        const opening = VideoFrameReader.open(r.path);
+        reader = opening;
+        readers.set(id, opening);
+        // Ein gescheitertes Öffnen bleibt nicht im Cache; der nächste Aufruf versucht es neu.
+        void opening.catch(() => {
+          if (readers.get(id) === opening) readers.delete(id);
+        });
       }
       return (await reader).frameAt(seconds);
     },
     async close() {
-      for (const r of readers.values()) await (await r).close();
+      const pending = [...readers.values()];
       readers.clear();
+      // Gescheiterte Öffnungen wurden dem Aufrufer schon gemeldet; alle offenen Leser werden geschlossen.
+      const opened = await Promise.allSettled(pending);
+      const closed = await Promise.allSettled(opened.flatMap((o) => (o.status === 'fulfilled' ? [o.value.close()] : [])));
+      for (const c of closed) {
+        if (c.status === 'rejected') {
+          const reason: unknown = c.reason;
+          throw reason instanceof Error ? reason : new Error(String(reason));
+        }
+      }
     },
   };
 }

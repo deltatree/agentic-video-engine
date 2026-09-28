@@ -79,9 +79,15 @@ export interface VirtualClock {
   reseed(seed: number, key: string): void;
 }
 
+/** Optionen für HTML-Layer. */
+export interface HtmlRenderOptions {
+  /** Skripte in Layer-Dokumenten ausführen (ADR 0008); sonst iframe-Sandbox ohne Skripte und CSP. */
+  readonly allowScripts: boolean;
+}
+
 /** Seiten-Laufzeit `window.__ovRuntime` (siehe `runtime/page.ts`). */
 export interface PageRuntime {
-  renderHtml(payload: BrowserLayerPayload): Promise<void>;
+  renderHtml(payload: BrowserLayerPayload, options: HtmlRenderOptions): Promise<void>;
   renderThree(payload: BrowserLayerPayload, frameUrl: string): Promise<void>;
   renderPixi(payload: BrowserLayerPayload, frameUrl: string): Promise<void>;
   versions(): Readonly<Record<string, string>>;

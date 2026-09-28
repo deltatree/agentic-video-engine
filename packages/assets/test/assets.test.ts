@@ -128,13 +128,9 @@ describe('Kontrollierter Fetcher (FR-51, A24)', () => {
     await expect(fetchAsset('file:///etc/passwd')).rejects.toThrow(/Protocol/u);
   });
 
-  it('lädt erlaubte Quellen und prüft Weiterleitungen', async () => {
-    const server = createServer((req, res) => {
-      if (req.url === '/redirect') {
-        res.writeHead(302, { location: 'http://169.254.169.254/' });
-        res.end();
-        return;
-      }
+  // Weiterleitungen prüft review-fixes.test.ts (A3) mit einem Server, dessen erster Hop erlaubt ist.
+  it('lädt erlaubte Quellen', async () => {
+    const server = createServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'image/svg+xml' });
       res.end('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>');
     }).listen(0);
@@ -142,8 +138,6 @@ describe('Kontrollierter Fetcher (FR-51, A24)', () => {
     try {
       const r = await fetchAsset(`http://127.0.0.1:${String(port)}/logo.svg`, { allowPrivate: true });
       expect(detectFormat('logo.svg', r.bytes)?.type).toBe('svg');
-      // Auch mit erlaubten privaten Adressen ist die Weiterleitung nur mit allowPrivate erreichbar; ohne Freigabe blockiert.
-      await expect(fetchAsset(`http://127.0.0.1:${String(port)}/redirect`)).rejects.toThrow(/blocked/u);
     } finally {
       server.close();
     }
