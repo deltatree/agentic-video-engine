@@ -1,0 +1,444 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Cinematic Title",
+    "description": "Letterboxed film title with dust, light and tracking animation.",
+    "tags": [
+      "cinematic",
+      "title",
+      "trailer"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "10s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 38,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "light",
+          "type": "ellipse",
+          "x": 260,
+          "y": 280,
+          "width": 1400,
+          "height": 520,
+          "fill": {
+            "$ref": "theme.colors.secondary"
+          },
+          "filters": [
+            {
+              "type": "blur",
+              "radius": 180
+            }
+          ],
+          "opacity": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 0
+              },
+              {
+                "t": "3s",
+                "v": 0.45,
+                "ease": "easeInOutSine"
+              },
+              {
+                "t": "10s",
+                "v": 0.3
+              }
+            ]
+          },
+          "scale": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": {
+                  "x": 0.8,
+                  "y": 0.8
+                }
+              },
+              {
+                "t": "10s",
+                "v": {
+                  "x": 1.15,
+                  "y": 1.15
+                },
+                "ease": "easeOutSine"
+              }
+            ]
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 40,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "dust",
+          "type": "component",
+          "opacity": 0.5,
+          "component": "ParticleField",
+          "props": {
+            "width": 1920,
+            "height": 1080,
+            "count": 140,
+            "speed": 12,
+            "size": 3,
+            "direction": 300,
+            "enter": "none",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 55,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "presents",
+          "type": "text",
+          "text": "OPEN VIDEO PRESENTS",
+          "y": 390,
+          "width": 1920,
+          "textAlign": "center",
+          "fontSize": 26,
+          "fontWeight": 500,
+          "letterSpacing": 14,
+          "fill": {
+            "$ref": "theme.colors.muted"
+          },
+          "timing": {
+            "from": "0.6s",
+            "duration": "2.6s"
+          },
+          "transition": {
+            "in": {
+              "type": "fade",
+              "duration": "0.8s"
+            },
+            "out": {
+              "type": "fade",
+              "duration": "0.6s"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 56,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "title-group",
+          "type": "group",
+          "timing": {
+            "from": "2.8s"
+          },
+          "transition": {
+            "in": {
+              "type": "blur",
+              "duration": "1.2s",
+              "ease": "easeOutCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 70,
+              "column": 11
+            }
+          },
+          "children": [
+            {
+              "id": "title",
+              "type": "text",
+              "text": "THE LAST FRAME",
+              "y": 460,
+              "width": 1920,
+              "textAlign": "center",
+              "fontSize": 150,
+              "fontWeight": 300,
+              "letterSpacing": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": 40
+                  },
+                  {
+                    "t": "7.2s",
+                    "v": 20,
+                    "ease": "easeOutCubic"
+                  }
+                ]
+              },
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 71,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "rule",
+              "type": "rect",
+              "x": 780,
+              "y": 650,
+              "width": 360,
+              "height": 2,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": "1.2s",
+                    "v": 0
+                  },
+                  {
+                    "t": "2.2s",
+                    "v": 0.6
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 82,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "tagline",
+              "type": "text",
+              "text": "Every pixel has a past.",
+              "y": 680,
+              "width": 1920,
+              "textAlign": "center",
+              "fontSize": 40,
+              "fontStyle": "italic",
+              "fontWeight": 300,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "timing": {
+                "from": "1.6s"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": 0
+                  },
+                  {
+                    "t": "1s",
+                    "v": 1,
+                    "ease": "easeOutSine"
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 83,
+                  "column": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "date",
+          "type": "text",
+          "text": "IN THEATERS · WINTER 2026",
+          "y": 852,
+          "width": 1920,
+          "textAlign": "center",
+          "fontSize": 24,
+          "fontWeight": 600,
+          "letterSpacing": 10,
+          "fill": {
+            "$ref": "theme.colors.accent"
+          },
+          "timing": {
+            "from": "6.4s"
+          },
+          "opacity": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 0
+              },
+              {
+                "t": "0.8s",
+                "v": 1
+              }
+            ]
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 97,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "vignette",
+          "type": "component",
+          "component": "Spotlight",
+          "props": {
+            "width": 1920,
+            "height": 1080,
+            "target": {
+              "x": 960,
+              "y": 540
+            },
+            "radius": 760,
+            "softness": 320,
+            "dim": 0.55,
+            "ring": false,
+            "enter": "none",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 111,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "bar-top",
+          "type": "rect",
+          "width": 1920,
+          "height": 138,
+          "fill": "#000000",
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 112,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "bar-bottom",
+          "type": "rect",
+          "y": 942,
+          "width": 1920,
+          "height": 138,
+          "fill": "#000000",
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 113,
+              "column": 11
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

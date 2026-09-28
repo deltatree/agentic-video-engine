@@ -1,0 +1,346 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Subtitle Video",
+    "description": "Talking-head style layout with inline, word-highlighted subtitles.",
+    "tags": [
+      "subtitles",
+      "captions"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "12s",
+      "tracks": [
+        {
+          "id": "captions",
+          "kind": "subtitle",
+          "cues": [
+            {
+              "start": "0.4s",
+              "end": "3.2s",
+              "text": "Most teams still edit every video by hand.",
+              "speaker": "JW"
+            },
+            {
+              "start": "3.4s",
+              "end": "6.4s",
+              "text": "We describe the video as code instead.",
+              "speaker": "JW"
+            },
+            {
+              "start": "6.6s",
+              "end": "9.2s",
+              "text": "Change one line, and every frame updates.",
+              "speaker": "JW"
+            },
+            {
+              "start": "9.4s",
+              "end": "12s",
+              "text": "Subtitles included, perfectly in sync.",
+              "speaker": "JW"
+            }
+          ],
+          "language": "en"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 41,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "gradient",
+          "type": "component",
+          "opacity": 0.7,
+          "component": "GradientBackground",
+          "props": {
+            "width": 1920,
+            "height": 1080,
+            "speed": 6,
+            "enter": "none",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 42,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "speaker",
+          "type": "group",
+          "x": 780,
+          "y": 220,
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 44,
+              "column": 11
+            }
+          },
+          "children": [
+            {
+              "id": "speaker-halo",
+              "type": "ellipse",
+              "fill": {
+                "$ref": "theme.colors.primary"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": 0.15
+                  },
+                  {
+                    "t": "0.4s",
+                    "v": 0.35,
+                    "ease": "easeInOutSine"
+                  },
+                  {
+                    "t": "0.8s",
+                    "v": 0.15,
+                    "ease": "easeInOutSine"
+                  }
+                ],
+                "loop": "repeat"
+              },
+              "scale": {
+                "x": 1.18,
+                "y": 1.18
+              },
+              "width": 360,
+              "height": 360,
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 45,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "speaker-avatar",
+              "type": "ellipse",
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.primary"
+              },
+              "strokeWidth": 6,
+              "width": 360,
+              "height": 360,
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 59,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "speaker-initials",
+              "type": "text",
+              "text": "JW",
+              "y": 118,
+              "width": 360,
+              "textAlign": "center",
+              "fontSize": 112,
+              "fontWeight": 800,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 60,
+                  "column": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "speaker-name",
+          "type": "text",
+          "text": "Jonas Weber",
+          "y": 650,
+          "width": 1920,
+          "textAlign": "center",
+          "fontSize": 48,
+          "fontWeight": 700,
+          "fill": {
+            "$ref": "theme.colors.text"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 62,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "speaker-role",
+          "type": "text",
+          "text": "Product Designer",
+          "y": 714,
+          "width": 1920,
+          "textAlign": "center",
+          "fontSize": 30,
+          "fill": {
+            "$ref": "theme.colors.muted"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 63,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "badge",
+          "type": "component",
+          "x": 1720,
+          "y": 80,
+          "component": "Badge",
+          "props": {
+            "label": "CC",
+            "variant": "muted",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 64,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "captions",
+          "type": "subtitles",
+          "style": "word-highlight",
+          "position": "bottom",
+          "fontSize": 54,
+          "fontWeight": 700,
+          "color": {
+            "$ref": "theme.colors.text"
+          },
+          "highlightColor": {
+            "$ref": "theme.colors.accent"
+          },
+          "box": {
+            "color": "#000000A0",
+            "paddingX": 28,
+            "paddingY": 14,
+            "radius": 14
+          },
+          "maxWidth": 1400,
+          "safeArea": 0.08,
+          "track": "captions",
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 11
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

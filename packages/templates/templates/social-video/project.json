@@ -1,0 +1,830 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Social Video",
+    "description": "Vertical 9:16 clip with hook, tips and follow call.",
+    "tags": [
+      "social",
+      "vertical"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "duration": "10s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1080,
+          "height": 1920,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 90,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "glow",
+          "type": "component",
+          "opacity": 0.6,
+          "component": "GradientBackground",
+          "props": {
+            "width": 1080,
+            "height": 1920,
+            "enter": "none",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 91,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "hook",
+          "type": "group",
+          "timing": {
+            "from": 0,
+            "duration": "3.6s"
+          },
+          "transition": {
+            "out": {
+              "type": "slide-up",
+              "duration": "0.5s",
+              "ease": "easeInCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 36,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "hook-badge",
+              "type": "component",
+              "x": 90,
+              "y": 320,
+              "component": "Badge",
+              "props": {
+                "label": "TIP #12",
+                "variant": "accent",
+                "fontSize": 32
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 37,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "hook-title",
+              "type": "component",
+              "x": 90,
+              "y": 420,
+              "timing": {
+                "from": "0.2s"
+              },
+              "component": "Title",
+              "props": {
+                "text": "Render video 10× faster",
+                "width": 900,
+                "fontSize": 132
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 38,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "hook-counter",
+              "type": "component",
+              "x": 90,
+              "y": 980,
+              "component": "Counter",
+              "props": {
+                "from": 1,
+                "to": 10,
+                "suffix": "×",
+                "fontSize": 300,
+                "duration": "1.6s",
+                "delay": "0.8s",
+                "color": {
+                  "$ref": "theme.colors.primary"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 39,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "hook-stat",
+              "type": "text",
+              "text": "faster renders",
+              "x": 90,
+              "y": 1330,
+              "fontSize": 56,
+              "fontWeight": 600,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "timing": {
+                "from": "0.8s"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": 0
+                  },
+                  {
+                    "t": "0.5s",
+                    "v": 1
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 40,
+                  "column": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "tips",
+          "type": "group",
+          "timing": {
+            "from": "3.4s",
+            "duration": "4.6s"
+          },
+          "transition": {
+            "in": {
+              "type": "fade",
+              "duration": "0.4s"
+            },
+            "out": {
+              "type": "fade",
+              "duration": "0.4s"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 46,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "tips-heading",
+              "type": "text",
+              "text": "Three quick wins",
+              "x": 90,
+              "y": 320,
+              "fontSize": 88,
+              "fontWeight": 800,
+              "letterSpacing": -1.5,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 47,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "tip-1",
+              "type": "group",
+              "x": 90,
+              "y": 500,
+              "timing": {
+                "from": "0.3s"
+              },
+              "transition": {
+                "in": {
+                  "type": "slide-left",
+                  "duration": "0.5s",
+                  "ease": "easeOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 49,
+                  "column": 7
+                }
+              },
+              "children": [
+                {
+                  "id": "tip-1-card",
+                  "type": "rect",
+                  "width": 900,
+                  "height": 310,
+                  "cornerRadius": 28,
+                  "fill": {
+                    "$ref": "theme.colors.surface"
+                  },
+                  "shadow": {
+                    "color": "#00000055",
+                    "blur": 30,
+                    "offsetY": 12
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 57,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-1-accent",
+                  "type": "rect",
+                  "width": 12,
+                  "height": 310,
+                  "cornerRadius": [
+                    28,
+                    0,
+                    0,
+                    28
+                  ],
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 58,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-1-number",
+                  "type": "text",
+                  "text": "1",
+                  "x": 56,
+                  "y": 48,
+                  "fontSize": 96,
+                  "fontWeight": 900,
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 59,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-1-title",
+                  "type": "text",
+                  "text": "Cache every layer",
+                  "x": 190,
+                  "y": 62,
+                  "width": 660,
+                  "fontSize": 56,
+                  "fontWeight": 800,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 60,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-1-body",
+                  "type": "text",
+                  "text": "Unchanged layers come straight from the cache.",
+                  "x": 190,
+                  "y": 148,
+                  "width": 660,
+                  "fontSize": 40,
+                  "lineHeight": 1.3,
+                  "fill": {
+                    "$ref": "theme.colors.muted"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 61,
+                      "column": 9
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "tip-2",
+              "type": "group",
+              "x": 90,
+              "y": 860,
+              "timing": {
+                "from": "0.75s"
+              },
+              "transition": {
+                "in": {
+                  "type": "slide-left",
+                  "duration": "0.5s",
+                  "ease": "easeOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 49,
+                  "column": 7
+                }
+              },
+              "children": [
+                {
+                  "id": "tip-2-card",
+                  "type": "rect",
+                  "width": 900,
+                  "height": 310,
+                  "cornerRadius": 28,
+                  "fill": {
+                    "$ref": "theme.colors.surface"
+                  },
+                  "shadow": {
+                    "color": "#00000055",
+                    "blur": 30,
+                    "offsetY": 12
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 57,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-2-accent",
+                  "type": "rect",
+                  "width": 12,
+                  "height": 310,
+                  "cornerRadius": [
+                    28,
+                    0,
+                    0,
+                    28
+                  ],
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 58,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-2-number",
+                  "type": "text",
+                  "text": "2",
+                  "x": 56,
+                  "y": 48,
+                  "fontSize": 96,
+                  "fontWeight": 900,
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 59,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-2-title",
+                  "type": "text",
+                  "text": "Split into chunks",
+                  "x": 190,
+                  "y": 62,
+                  "width": 660,
+                  "fontSize": 56,
+                  "fontWeight": 800,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 60,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-2-body",
+                  "type": "text",
+                  "text": "Render chunks in parallel, stitch losslessly.",
+                  "x": 190,
+                  "y": 148,
+                  "width": 660,
+                  "fontSize": 40,
+                  "lineHeight": 1.3,
+                  "fill": {
+                    "$ref": "theme.colors.muted"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 61,
+                      "column": 9
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "tip-3",
+              "type": "group",
+              "x": 90,
+              "y": 1220,
+              "timing": {
+                "from": "1.2s"
+              },
+              "transition": {
+                "in": {
+                  "type": "slide-left",
+                  "duration": "0.5s",
+                  "ease": "easeOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 49,
+                  "column": 7
+                }
+              },
+              "children": [
+                {
+                  "id": "tip-3-card",
+                  "type": "rect",
+                  "width": 900,
+                  "height": 310,
+                  "cornerRadius": 28,
+                  "fill": {
+                    "$ref": "theme.colors.surface"
+                  },
+                  "shadow": {
+                    "color": "#00000055",
+                    "blur": 30,
+                    "offsetY": 12
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 57,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-3-accent",
+                  "type": "rect",
+                  "width": 12,
+                  "height": 310,
+                  "cornerRadius": [
+                    28,
+                    0,
+                    0,
+                    28
+                  ],
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 58,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-3-number",
+                  "type": "text",
+                  "text": "3",
+                  "x": 56,
+                  "y": 48,
+                  "fontSize": 96,
+                  "fontWeight": 900,
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 59,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-3-title",
+                  "type": "text",
+                  "text": "Preview at ¼ size",
+                  "x": 190,
+                  "y": 62,
+                  "width": 660,
+                  "fontSize": 56,
+                  "fontWeight": 800,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 60,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "tip-3-body",
+                  "type": "text",
+                  "text": "Iterate on small frames, export at full size.",
+                  "x": 190,
+                  "y": 148,
+                  "width": 660,
+                  "fontSize": 40,
+                  "lineHeight": 1.3,
+                  "fill": {
+                    "$ref": "theme.colors.muted"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 61,
+                      "column": 9
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "follow",
+          "type": "group",
+          "timing": {
+            "from": "7.8s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-out",
+              "duration": "0.5s",
+              "ease": "easeOutCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 69,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "follow-title",
+              "type": "text",
+              "text": "Follow for more",
+              "y": 800,
+              "width": 1080,
+              "textAlign": "center",
+              "fontSize": 110,
+              "fontWeight": 800,
+              "letterSpacing": -2,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 70,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "follow-pill",
+              "type": "group",
+              "x": 280,
+              "y": 980,
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 71,
+                  "column": 5
+                }
+              },
+              "children": [
+                {
+                  "id": "follow-pill-bg",
+                  "type": "rect",
+                  "width": 520,
+                  "height": 110,
+                  "cornerRadius": 55,
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 72,
+                      "column": 7
+                    }
+                  }
+                },
+                {
+                  "id": "follow-pill-label",
+                  "type": "text",
+                  "text": "@openvideo",
+                  "y": 30,
+                  "width": 520,
+                  "textAlign": "center",
+                  "fontSize": 46,
+                  "fontWeight": 700,
+                  "fill": "#FFFFFF",
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 73,
+                      "column": 7
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "progress-track",
+          "type": "rect",
+          "x": 90,
+          "y": 140,
+          "width": 900,
+          "height": 8,
+          "cornerRadius": 4,
+          "fill": {
+            "$ref": "theme.colors.text"
+          },
+          "opacity": 0.2,
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 96,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "progress-fill",
+          "type": "rect",
+          "x": 90,
+          "y": 140,
+          "width": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 0
+              },
+              {
+                "t": "10s",
+                "v": 900,
+                "ease": "linear"
+              }
+            ]
+          },
+          "height": 8,
+          "cornerRadius": 4,
+          "fill": {
+            "$ref": "theme.colors.text"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 97,
+              "column": 11
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

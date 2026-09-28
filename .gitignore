@@ -33,3 +33,6 @@ _bmad/
 
 # BMAD-Laufzeitdateien
 _bmad-output/**/.memlog.md.lock
+AGENTS.md
+AGENTS.local.md
+CLAUDE.md

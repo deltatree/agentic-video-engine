@@ -1,0 +1,265 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Code Tutorial",
+    "description": "Typing code editor and terminal output.",
+    "tags": [
+      "tutorial",
+      "code"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "15s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 54,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "header",
+          "type": "group",
+          "x": 120,
+          "y": 70,
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 56,
+              "column": 11
+            }
+          },
+          "children": [
+            {
+              "id": "header-step",
+              "type": "component",
+              "component": "Badge",
+              "props": {
+                "label": "STEP 2",
+                "variant": "accent",
+                "appearance": "soft",
+                "exit": "none"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 57,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "header-title",
+              "type": "text",
+              "text": "Render your first frame",
+              "y": 52,
+              "fontSize": 64,
+              "fontWeight": 800,
+              "letterSpacing": -1.2,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": "0.2s",
+                    "v": 0
+                  },
+                  {
+                    "t": "0.7s",
+                    "v": 1
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 58,
+                  "column": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "editor",
+          "type": "component",
+          "x": 120,
+          "y": 260,
+          "component": "CodeEditor",
+          "props": {
+            "code": "import { composition, Scene, Text } from '@agentic-video/sdk';\n\nexport default composition({\n  width: 1920, height: 1080, fps: 30, duration: \"3s\",\n  scene: ({ frame }) => (\n    <Scene background=\"#0B1020\">\n      <Text text=\"Hello\" x={frame * 4} fontSize={96} />\n    </Scene>\n  ),\n});",
+            "language": "ts",
+            "title": "video.tsx",
+            "highlightLines": [
+              7
+            ],
+            "typing": 45,
+            "typingDelay": "0.8s",
+            "width": 1120,
+            "fontSize": 30,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 60,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "callout",
+          "type": "component",
+          "x": 1300,
+          "y": 330,
+          "timing": {
+            "from": "8.5s",
+            "duration": "3.5s"
+          },
+          "component": "Callout",
+          "props": {
+            "text": "x moves 4 px per frame",
+            "target": {
+              "x": -120,
+              "y": 271
+            },
+            "width": 360
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 74,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "terminal",
+          "type": "component",
+          "x": 980,
+          "y": 780,
+          "timing": {
+            "from": "9s"
+          },
+          "component": "Terminal",
+          "props": {
+            "commands": [
+              {
+                "command": "npx openvideo frame video.tsx --at 1s",
+                "output": "Wrote out/frame-30.png (1920×1080)"
+              },
+              {
+                "command": "npx openvideo render video.tsx",
+                "output": "Rendered 90 frames in 1.8 s → out/video.mp4"
+              }
+            ],
+            "title": "zsh",
+            "typing": 30,
+            "pause": "0.6s",
+            "width": 820,
+            "height": 250,
+            "fontSize": 24,
+            "enter": "slide-up",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 75,
+              "column": 11
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

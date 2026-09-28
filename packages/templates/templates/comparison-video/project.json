@@ -1,0 +1,1126 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Comparison Video",
+    "description": "Side-by-side before and after with a result counter.",
+    "tags": [
+      "comparison",
+      "marketing"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "12s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 86,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "columns",
+          "type": "group",
+          "timing": {
+            "from": 0,
+            "duration": "7.4s"
+          },
+          "transition": {
+            "out": {
+              "type": "zoom-out",
+              "duration": "0.5s",
+              "ease": "easeInCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 56,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "heading",
+              "type": "text",
+              "text": "Before vs. after",
+              "y": 80,
+              "width": 1920,
+              "textAlign": "center",
+              "fontSize": 64,
+              "fontWeight": 800,
+              "letterSpacing": -1.2,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 57,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "before",
+              "type": "group",
+              "x": 180,
+              "y": 230,
+              "timing": {
+                "from": "0.3s"
+              },
+              "transition": {
+                "in": {
+                  "type": "wipe-right",
+                  "duration": "0.7s",
+                  "ease": "easeInOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 39,
+                  "column": 5
+                }
+              },
+              "children": [
+                {
+                  "id": "before-bg",
+                  "type": "rect",
+                  "width": 720,
+                  "height": 600,
+                  "cornerRadius": 28,
+                  "fill": {
+                    "$ref": "theme.colors.surface"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 40,
+                      "column": 7
+                    }
+                  }
+                },
+                {
+                  "id": "before-top",
+                  "type": "rect",
+                  "width": 720,
+                  "height": 8,
+                  "cornerRadius": 4,
+                  "fill": {
+                    "$ref": "theme.colors.danger"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 41,
+                      "column": 7
+                    }
+                  }
+                },
+                {
+                  "id": "before-title",
+                  "type": "text",
+                  "text": "Manual editing",
+                  "x": 48,
+                  "y": 56,
+                  "fontSize": 56,
+                  "fontWeight": 800,
+                  "letterSpacing": -1,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 42,
+                      "column": 7
+                    }
+                  }
+                },
+                {
+                  "id": "before-row-1",
+                  "type": "group",
+                  "x": 48,
+                  "y": 180,
+                  "timing": {
+                    "from": "0.6s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "before-row-1-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-1-symbol",
+                      "type": "text",
+                      "text": "✕",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-1-text",
+                      "type": "text",
+                      "text": "Every change means a re-export",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "before-row-2",
+                  "type": "group",
+                  "x": 48,
+                  "y": 276,
+                  "timing": {
+                    "from": "0.8999999999999999s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "before-row-2-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-2-symbol",
+                      "type": "text",
+                      "text": "✕",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-2-text",
+                      "type": "text",
+                      "text": "Brand colors drift between videos",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "before-row-3",
+                  "type": "group",
+                  "x": 48,
+                  "y": 372,
+                  "timing": {
+                    "from": "1.2s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "before-row-3-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-3-symbol",
+                      "type": "text",
+                      "text": "✕",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-3-text",
+                      "type": "text",
+                      "text": "One editor, one video at a time",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "before-row-4",
+                  "type": "group",
+                  "x": 48,
+                  "y": 468,
+                  "timing": {
+                    "from": "1.5s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "before-row-4-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-4-symbol",
+                      "type": "text",
+                      "text": "✕",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.danger"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "before-row-4-text",
+                      "type": "text",
+                      "text": "Hours per variant",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "after",
+              "type": "group",
+              "x": 1020,
+              "y": 230,
+              "timing": {
+                "from": "2.4s"
+              },
+              "transition": {
+                "in": {
+                  "type": "wipe-left",
+                  "duration": "0.7s",
+                  "ease": "easeInOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 39,
+                  "column": 5
+                }
+              },
+              "children": [
+                {
+                  "id": "after-bg",
+                  "type": "rect",
+                  "width": 720,
+                  "height": 600,
+                  "cornerRadius": 28,
+                  "fill": {
+                    "$ref": "theme.colors.surface"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 40,
+                      "column": 7
+                    }
+                  }
+                },
+                {
+                  "id": "after-top",
+                  "type": "rect",
+                  "width": 720,
+                  "height": 8,
+                  "cornerRadius": 4,
+                  "fill": {
+                    "$ref": "theme.colors.success"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 41,
+                      "column": 7
+                    }
+                  }
+                },
+                {
+                  "id": "after-title",
+                  "type": "text",
+                  "text": "Video as code",
+                  "x": 48,
+                  "y": 56,
+                  "fontSize": 56,
+                  "fontWeight": 800,
+                  "letterSpacing": -1,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 42,
+                      "column": 7
+                    }
+                  }
+                },
+                {
+                  "id": "after-row-1",
+                  "type": "group",
+                  "x": 48,
+                  "y": 180,
+                  "timing": {
+                    "from": "0.6s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "after-row-1-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-1-symbol",
+                      "type": "text",
+                      "text": "✓",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-1-text",
+                      "type": "text",
+                      "text": "Change one line, re-render",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "after-row-2",
+                  "type": "group",
+                  "x": 48,
+                  "y": 276,
+                  "timing": {
+                    "from": "0.8999999999999999s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "after-row-2-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-2-symbol",
+                      "type": "text",
+                      "text": "✓",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-2-text",
+                      "type": "text",
+                      "text": "Theme tokens keep brands exact",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "after-row-3",
+                  "type": "group",
+                  "x": 48,
+                  "y": 372,
+                  "timing": {
+                    "from": "1.2s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "after-row-3-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-3-symbol",
+                      "type": "text",
+                      "text": "✓",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-3-text",
+                      "type": "text",
+                      "text": "Render farm builds them in parallel",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "after-row-4",
+                  "type": "group",
+                  "x": 48,
+                  "y": 468,
+                  "timing": {
+                    "from": "1.5s"
+                  },
+                  "transition": {
+                    "in": {
+                      "type": "fade",
+                      "duration": "0.35s"
+                    }
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 44,
+                      "column": 9
+                    }
+                  },
+                  "children": [
+                    {
+                      "id": "after-row-4-icon",
+                      "type": "rect",
+                      "width": 48,
+                      "height": 48,
+                      "cornerRadius": 24,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "opacity": 0.18,
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 45,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-4-symbol",
+                      "type": "text",
+                      "text": "✓",
+                      "y": 6,
+                      "width": 48,
+                      "textAlign": "center",
+                      "fontSize": 30,
+                      "fontWeight": 800,
+                      "fill": {
+                        "$ref": "theme.colors.success"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 46,
+                          "column": 11
+                        }
+                      }
+                    },
+                    {
+                      "id": "after-row-4-text",
+                      "type": "text",
+                      "text": "Minutes per variant",
+                      "x": 76,
+                      "y": 6,
+                      "width": 540,
+                      "fontSize": 32,
+                      "fill": {
+                        "$ref": "theme.colors.text"
+                      },
+                      "meta": {
+                        "source": {
+                          "file": "src/video.tsx",
+                          "line": 47,
+                          "column": 11
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "divider",
+              "type": "line",
+              "from": {
+                "x": 960,
+                "y": 270
+              },
+              "to": {
+                "x": 960,
+                "y": 790
+              },
+              "stroke": {
+                "$ref": "theme.colors.muted"
+              },
+              "strokeWidth": 2,
+              "opacity": 0.4,
+              "trimEnd": {
+                "$keyframes": [
+                  {
+                    "t": "2s",
+                    "v": 0
+                  },
+                  {
+                    "t": "2.8s",
+                    "v": 1,
+                    "ease": "easeInOutCubic"
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 60,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "vs",
+              "type": "component",
+              "x": 926,
+              "y": 510,
+              "timing": {
+                "from": "2.2s"
+              },
+              "component": "Badge",
+              "props": {
+                "label": "VS",
+                "variant": "muted",
+                "enter": "scale",
+                "exit": "none"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 61,
+                  "column": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "result",
+          "type": "group",
+          "timing": {
+            "from": "7.2s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-out",
+              "duration": "0.5s",
+              "ease": "easeOutCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 67,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "result-label",
+              "type": "text",
+              "text": "Time to ship a new variant",
+              "y": 260,
+              "width": 1920,
+              "textAlign": "center",
+              "fontSize": 48,
+              "fontWeight": 600,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "result-counter",
+              "type": "component",
+              "x": 670,
+              "y": 360,
+              "component": "Counter",
+              "props": {
+                "from": 42,
+                "to": 3,
+                "suffix": " min",
+                "fontSize": 240,
+                "duration": "1.8s",
+                "delay": "0.5s",
+                "ease": "easeInOutCubic",
+                "color": {
+                  "$ref": "theme.colors.success"
+                },
+                "exit": "none"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "result-sub",
+              "type": "text",
+              "text": "from 42 min to 3 min per video variant",
+              "y": 700,
+              "width": 1920,
+              "textAlign": "center",
+              "fontSize": 36,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "timing": {
+                "from": "2.4s"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": 0
+                  },
+                  {
+                    "t": "0.5s",
+                    "v": 1
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 70,
+                  "column": 5
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

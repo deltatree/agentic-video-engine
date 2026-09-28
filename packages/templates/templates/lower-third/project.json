@@ -1,0 +1,238 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Lower Third",
+    "description": "Name and role overlay with alpha channel.",
+    "tags": [
+      "overlay",
+      "alpha",
+      "interview"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "6s",
+      "nodes": [
+        {
+          "id": "lower-third",
+          "type": "component",
+          "props": {
+            "name": "Dr. Maya Okafor",
+            "role": "Head of Rendering, Lumen Studio",
+            "width": 760
+          },
+          "x": 120,
+          "y": 750,
+          "timing": {
+            "from": "0.3s",
+            "duration": "5.4s"
+          },
+          "component": "LowerThird",
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 44,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "topic",
+          "type": "group",
+          "x": 120,
+          "y": 690,
+          "timing": {
+            "from": "0.9s",
+            "duration": "4.8s"
+          },
+          "transition": {
+            "in": {
+              "type": "fade",
+              "duration": "0.4s"
+            },
+            "out": {
+              "type": "fade",
+              "duration": "0.3s"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 46,
+              "column": 11
+            }
+          },
+          "children": [
+            {
+              "id": "topic-bg",
+              "type": "rect",
+              "width": 560,
+              "height": 44,
+              "cornerRadius": 8,
+              "fill": {
+                "$ref": "theme.colors.background"
+              },
+              "opacity": 0.8,
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 47,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "topic-dot",
+              "type": "rect",
+              "x": 18,
+              "y": 15,
+              "width": 14,
+              "height": 14,
+              "cornerRadius": 7,
+              "fill": {
+                "$ref": "theme.colors.danger"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": 1
+                  },
+                  {
+                    "t": "0.5s",
+                    "v": 0.3,
+                    "ease": "easeInOutSine"
+                  },
+                  {
+                    "t": "1s",
+                    "v": 1,
+                    "ease": "easeInOutSine"
+                  }
+                ],
+                "loop": "repeat"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 48,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "topic-text",
+              "type": "text",
+              "text": "LIVE · Deterministic video at scale",
+              "x": 46,
+              "y": 9,
+              "fontSize": 22,
+              "fontWeight": 600,
+              "letterSpacing": 2,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 65,
+                  "column": 13
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "renderProfiles": [
+    {
+      "id": "alpha",
+      "format": "mov",
+      "codec": "prores-4444",
+      "alpha": true
+    },
+    {
+      "id": "alpha-webm",
+      "format": "webm",
+      "codec": "vp9",
+      "alpha": true
+    }
+  ]
+}

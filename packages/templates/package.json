@@ -20,6 +20,9 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "scripts": {
+    "build:extra": "node scripts/build-templates.mjs"
+  },
   "files": [
     "dist",
     "LICENSE",

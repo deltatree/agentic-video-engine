@@ -1,0 +1,306 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Logo Reveal",
+    "description": "Mark draws itself, then the wordmark appears.",
+    "tags": [
+      "brand",
+      "logo"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "6s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 42,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "glow",
+          "type": "ellipse",
+          "x": 560,
+          "y": 140,
+          "width": 800,
+          "height": 800,
+          "fill": {
+            "$ref": "theme.colors.primary"
+          },
+          "filters": [
+            {
+              "type": "blur",
+              "radius": 160
+            }
+          ],
+          "opacity": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 0.1
+              },
+              {
+                "t": "1.2s",
+                "v": 0.35,
+                "ease": "easeOutCubic"
+              },
+              {
+                "t": "6s",
+                "v": 0.25
+              }
+            ]
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 44,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "mark",
+          "type": "group",
+          "y": 430,
+          "x": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 850
+              },
+              {
+                "t": "2s",
+                "v": 850
+              },
+              {
+                "t": "2.8s",
+                "v": 560,
+                "ease": "easeInOutCubic"
+              }
+            ]
+          },
+          "scale": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": {
+                  "x": 0.85,
+                  "y": 0.85
+                }
+              },
+              {
+                "t": "1.6s",
+                "v": {
+                  "x": 1,
+                  "y": 1
+                },
+                "ease": "easeOutCubic"
+              }
+            ]
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 58,
+              "column": 11
+            }
+          },
+          "children": [
+            {
+              "id": "mark-logo",
+              "type": "component",
+              "component": "Logo",
+              "props": {
+                "path": "M 100 10 L 178 55 L 178 145 L 100 190 L 22 145 L 22 55 Z M 80 62 L 142 100 L 80 138 Z",
+                "viewBox": {
+                  "width": 200,
+                  "height": 200
+                },
+                "width": 220,
+                "height": 220,
+                "reveal": "trim",
+                "duration": "1.6s",
+                "exit": "none"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 71,
+                  "column": 13
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "wordmark",
+          "type": "rich-text",
+          "x": 828,
+          "y": 452,
+          "fontSize": 132,
+          "fontWeight": 800,
+          "letterSpacing": -3,
+          "spans": [
+            {
+              "text": "Lumen",
+              "fill": {
+                "$ref": "theme.colors.text"
+              }
+            },
+            {
+              "text": "Studio",
+              "fill": {
+                "$ref": "theme.colors.primary"
+              },
+              "fontWeight": 400
+            }
+          ],
+          "timing": {
+            "from": "2.5s"
+          },
+          "textAnimation": {
+            "unit": "char",
+            "stagger": 2,
+            "duration": "0.5s",
+            "ease": "easeOutCubic",
+            "from": {
+              "opacity": 0,
+              "x": -24
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 73,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "tagline",
+          "type": "text",
+          "text": "MOTION, RENDERED BY CODE",
+          "x": 834,
+          "y": 624,
+          "fontSize": 30,
+          "fontWeight": 500,
+          "letterSpacing": 8,
+          "fill": {
+            "$ref": "theme.colors.muted"
+          },
+          "timing": {
+            "from": "3.4s"
+          },
+          "opacity": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 0
+              },
+              {
+                "t": "0.6s",
+                "v": 1,
+                "ease": "easeOutCubic"
+              }
+            ]
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 87,
+              "column": 11
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

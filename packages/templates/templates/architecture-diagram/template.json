@@ -1,0 +1,9 @@
+{
+  "title": "Architecture Diagram",
+  "description": "Layered service diagram: boxes appear layer by layer, connectors show the data flow.",
+  "tags": [
+    "architecture",
+    "diagram",
+    "16:9"
+  ]
+}

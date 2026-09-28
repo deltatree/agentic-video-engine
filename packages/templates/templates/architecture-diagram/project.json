@@ -1,0 +1,1224 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Architecture Diagram",
+    "description": "Layered service diagram with animated data flow.",
+    "tags": [
+      "architecture",
+      "diagram"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "14s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 86,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "grid",
+          "type": "component",
+          "opacity": 0.35,
+          "component": "Grid",
+          "props": {
+            "width": 1920,
+            "height": 1080,
+            "style": "lines",
+            "majorEvery": 4,
+            "enter": "none",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 87,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "title",
+          "type": "text",
+          "text": "Render platform",
+          "x": 120,
+          "y": 90,
+          "fontSize": 64,
+          "fontWeight": 800,
+          "letterSpacing": -1.2,
+          "fill": {
+            "$ref": "theme.colors.text"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 88,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "title-badge",
+          "type": "component",
+          "x": 120,
+          "y": 180,
+          "component": "Badge",
+          "props": {
+            "label": "v2 ARCHITECTURE",
+            "variant": "primary",
+            "appearance": "soft",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 89,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "link-web-gateway",
+          "type": "component",
+          "timing": {
+            "from": "2.4s"
+          },
+          "component": "Connector",
+          "props": {
+            "from": {
+              "x": 420,
+              "y": 480
+            },
+            "to": {
+              "x": 560,
+              "y": 610
+            },
+            "style": "elbow",
+            "arrow": true,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 15
+            }
+          }
+        },
+        {
+          "id": "link-agent-gateway",
+          "type": "component",
+          "timing": {
+            "from": "2.6s"
+          },
+          "component": "Connector",
+          "props": {
+            "from": {
+              "x": 420,
+              "y": 740
+            },
+            "to": {
+              "x": 560,
+              "y": 610
+            },
+            "style": "elbow",
+            "arrow": true,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 15
+            }
+          }
+        },
+        {
+          "id": "link-gateway-render",
+          "type": "component",
+          "timing": {
+            "from": "4.2s"
+          },
+          "component": "Connector",
+          "props": {
+            "from": {
+              "x": 860,
+              "y": 610
+            },
+            "to": {
+              "x": 1000,
+              "y": 410
+            },
+            "style": "elbow",
+            "arrow": true,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 15
+            }
+          }
+        },
+        {
+          "id": "link-gateway-scheduler",
+          "type": "component",
+          "timing": {
+            "from": "4.4s"
+          },
+          "component": "Connector",
+          "props": {
+            "from": {
+              "x": 860,
+              "y": 610
+            },
+            "to": {
+              "x": 1000,
+              "y": 610
+            },
+            "style": "elbow",
+            "arrow": true,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 15
+            }
+          }
+        },
+        {
+          "id": "link-scheduler-workers",
+          "type": "component",
+          "timing": {
+            "from": "4.6s"
+          },
+          "component": "Connector",
+          "props": {
+            "from": {
+              "x": 1300,
+              "y": 610
+            },
+            "to": {
+              "x": 1000,
+              "y": 810
+            },
+            "style": "elbow",
+            "arrow": true,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 15
+            }
+          }
+        },
+        {
+          "id": "link-render-cache",
+          "type": "component",
+          "timing": {
+            "from": "5.8s"
+          },
+          "component": "Connector",
+          "props": {
+            "from": {
+              "x": 1300,
+              "y": 410
+            },
+            "to": {
+              "x": 1480,
+              "y": 510
+            },
+            "style": "elbow",
+            "arrow": true,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 15
+            }
+          }
+        },
+        {
+          "id": "link-workers-storage",
+          "type": "component",
+          "timing": {
+            "from": "6s"
+          },
+          "component": "Connector",
+          "props": {
+            "from": {
+              "x": 1300,
+              "y": 810
+            },
+            "to": {
+              "x": 1480,
+              "y": 730
+            },
+            "style": "elbow",
+            "arrow": true,
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 15
+            }
+          }
+        },
+        {
+          "id": "web",
+          "type": "group",
+          "x": 120,
+          "y": 420,
+          "timing": {
+            "from": "0.6s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "web-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.accent"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "web-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.accent"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "web-label",
+              "type": "text",
+              "text": "Web App",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "web-sub",
+              "type": "text",
+              "text": "React · Studio",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "agent",
+          "type": "group",
+          "x": 120,
+          "y": 680,
+          "timing": {
+            "from": "0.9s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "agent-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.accent"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "agent-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.accent"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "agent-label",
+              "type": "text",
+              "text": "Coding Agent",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "agent-sub",
+              "type": "text",
+              "text": "MCP · CLI",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "gateway",
+          "type": "group",
+          "x": 560,
+          "y": 550,
+          "timing": {
+            "from": "2s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "gateway-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.primary"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "gateway-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.primary"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "gateway-label",
+              "type": "text",
+              "text": "API Gateway",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "gateway-sub",
+              "type": "text",
+              "text": "Auth · Rate limits",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "render",
+          "type": "group",
+          "x": 1000,
+          "y": 350,
+          "timing": {
+            "from": "3.2s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "render-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.secondary"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "render-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.secondary"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "render-label",
+              "type": "text",
+              "text": "Render Service",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "render-sub",
+              "type": "text",
+              "text": "Frame plans",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "scheduler",
+          "type": "group",
+          "x": 1000,
+          "y": 550,
+          "timing": {
+            "from": "3.5s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "scheduler-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.secondary"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "scheduler-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.secondary"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "scheduler-label",
+              "type": "text",
+              "text": "Scheduler",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "scheduler-sub",
+              "type": "text",
+              "text": "Chunk queue",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "workers",
+          "type": "group",
+          "x": 1000,
+          "y": 750,
+          "timing": {
+            "from": "3.8s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "workers-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.secondary"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "workers-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.secondary"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "workers-label",
+              "type": "text",
+              "text": "Workers ×32",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "workers-sub",
+              "type": "text",
+              "text": "Skia · Chromium",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "cache",
+          "type": "group",
+          "x": 1480,
+          "y": 450,
+          "timing": {
+            "from": "5s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "cache-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.success"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "cache-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.success"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "cache-label",
+              "type": "text",
+              "text": "Frame Cache",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "cache-sub",
+              "type": "text",
+              "text": "Content addressed",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "storage",
+          "type": "group",
+          "x": 1480,
+          "y": 670,
+          "timing": {
+            "from": "5.3s"
+          },
+          "transition": {
+            "in": {
+              "type": "zoom-in",
+              "duration": "0.45s",
+              "ease": "easeOutBack"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 65,
+              "column": 5
+            }
+          },
+          "children": [
+            {
+              "id": "storage-bg",
+              "type": "rect",
+              "width": 300,
+              "height": 120,
+              "cornerRadius": 18,
+              "fill": {
+                "$ref": "theme.colors.surface"
+              },
+              "stroke": {
+                "$ref": "theme.colors.success"
+              },
+              "strokeWidth": 2,
+              "shadow": {
+                "color": "#00000055",
+                "blur": 24,
+                "offsetY": 10
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 66,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "storage-edge",
+              "type": "rect",
+              "x": 0,
+              "y": 24,
+              "width": 6,
+              "height": 72,
+              "cornerRadius": 3,
+              "fill": {
+                "$ref": "theme.colors.success"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 67,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "storage-label",
+              "type": "text",
+              "text": "Object Storage",
+              "x": 32,
+              "y": 28,
+              "fontSize": 34,
+              "fontWeight": 700,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 68,
+                  "column": 7
+                }
+              }
+            },
+            {
+              "id": "storage-sub",
+              "type": "text",
+              "text": "S3 compatible",
+              "x": 32,
+              "y": 74,
+              "fontSize": 22,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 69,
+                  "column": 7
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,377 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "YouTube Intro",
+    "description": "Channel intro with play mark, channel name and episode.",
+    "tags": [
+      "youtube",
+      "intro"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "6s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 39,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "gradient",
+          "type": "component",
+          "component": "GradientBackground",
+          "props": {
+            "width": 1920,
+            "height": 1080,
+            "speed": 24,
+            "enter": "none",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 40,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "sparks",
+          "type": "component",
+          "opacity": 0.6,
+          "component": "ParticleField",
+          "props": {
+            "width": 1920,
+            "height": 1080,
+            "count": 90,
+            "speed": 60,
+            "direction": 270,
+            "enter": "none",
+            "exit": "none"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 41,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "content",
+          "type": "group",
+          "timing": {
+            "from": 0,
+            "duration": "6s"
+          },
+          "transition": {
+            "out": {
+              "type": "zoom-in",
+              "duration": "0.5s",
+              "ease": "easeInCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 42,
+              "column": 11
+            }
+          },
+          "children": [
+            {
+              "id": "icon",
+              "type": "group",
+              "x": 840,
+              "y": 250,
+              "width": 240,
+              "height": 168,
+              "scale": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": {
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "t": "0.2s",
+                    "v": {
+                      "x": 0,
+                      "y": 0
+                    }
+                  },
+                  {
+                    "t": "0.75s",
+                    "v": {
+                      "x": 1,
+                      "y": 1
+                    },
+                    "ease": "easeOutBack"
+                  }
+                ]
+              },
+              "rotation": {
+                "$keyframes": [
+                  {
+                    "t": "0.2s",
+                    "v": -12
+                  },
+                  {
+                    "t": "0.9s",
+                    "v": 0,
+                    "ease": "easeOutBack"
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 44,
+                  "column": 13
+                }
+              },
+              "children": [
+                {
+                  "id": "icon-body",
+                  "type": "rect",
+                  "width": 240,
+                  "height": 168,
+                  "cornerRadius": 48,
+                  "fill": {
+                    "$ref": "theme.colors.primary"
+                  },
+                  "shadow": {
+                    "color": "#00000066",
+                    "blur": 40,
+                    "offsetY": 16
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 60,
+                      "column": 15
+                    }
+                  }
+                },
+                {
+                  "id": "icon-play",
+                  "type": "polygon",
+                  "points": [
+                    [
+                      98,
+                      52
+                    ],
+                    [
+                      158,
+                      84
+                    ],
+                    [
+                      98,
+                      116
+                    ]
+                  ],
+                  "fill": "#FFFFFF",
+                  "strokeJoin": "round",
+                  "stroke": "#FFFFFF",
+                  "strokeWidth": 10,
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 61,
+                      "column": 15
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "channel",
+              "type": "text",
+              "text": "BUILD WITH CODE",
+              "y": 500,
+              "width": 1920,
+              "textAlign": "center",
+              "fontSize": 128,
+              "fontWeight": 900,
+              "letterSpacing": 6,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "timing": {
+                "from": "0.8s"
+              },
+              "textAnimation": {
+                "unit": "char",
+                "stagger": 1,
+                "duration": "0.45s",
+                "ease": "easeOutBack",
+                "from": {
+                  "opacity": 0,
+                  "y": 60,
+                  "scale": 0.6
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 74,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "badge",
+              "type": "component",
+              "x": 850,
+              "y": 700,
+              "timing": {
+                "from": "1.8s"
+              },
+              "component": "Badge",
+              "props": {
+                "label": "NEW EPISODE",
+                "variant": "accent",
+                "enter": "scale",
+                "exit": "none"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 87,
+                  "column": 13
+                }
+              }
+            },
+            {
+              "id": "episode",
+              "type": "text",
+              "text": "Ep. 42 · Rendering at scale",
+              "y": 780,
+              "width": 1920,
+              "textAlign": "center",
+              "fontSize": 44,
+              "fontWeight": 500,
+              "fill": {
+                "$ref": "theme.colors.muted"
+              },
+              "timing": {
+                "from": "2.1s"
+              },
+              "opacity": {
+                "$keyframes": [
+                  {
+                    "t": 0,
+                    "v": 0
+                  },
+                  {
+                    "t": "0.5s",
+                    "v": 1,
+                    "ease": "easeOutCubic"
+                  }
+                ]
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 88,
+                  "column": 13
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

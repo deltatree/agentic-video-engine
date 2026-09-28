@@ -1,0 +1,668 @@
+{
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Presentation",
+    "description": "Three slides with footer and progress.",
+    "tags": [
+      "presentation",
+      "slides"
+    ]
+  },
+  "settings": {
+    "theme": {
+      "colors": {
+        "background": "#0B1020",
+        "surface": "#161C2E",
+        "primary": "#4F7CFF",
+        "secondary": "#8B5CF6",
+        "accent": "#22D3EE",
+        "text": "#F5F7FF",
+        "muted": "#8A93B2",
+        "success": "#22C55E",
+        "warning": "#F59E0B",
+        "danger": "#EF4444"
+      },
+      "fonts": {
+        "heading": "Inter",
+        "body": "Inter",
+        "mono": "JetBrains Mono"
+      },
+      "fontSizes": {
+        "xs": 16,
+        "sm": 20,
+        "md": 28,
+        "lg": 40,
+        "xl": 56,
+        "xxl": 80,
+        "display": 112
+      },
+      "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 48
+      },
+      "radii": {
+        "sm": 6,
+        "md": 12,
+        "lg": 24,
+        "full": 9999
+      },
+      "motion": {
+        "fast": "0.25s",
+        "normal": "0.5s",
+        "slow": "1s"
+      },
+      "easing": {
+        "standard": "easeInOutCubic",
+        "enter": "easeOutCubic",
+        "exit": "easeInCubic"
+      },
+      "shadows": {
+        "sm": {
+          "color": "#00000080",
+          "blur": 4,
+          "offsetX": 0,
+          "offsetY": 2
+        },
+        "md": {
+          "color": "#00000080",
+          "blur": 12,
+          "offsetX": 0,
+          "offsetY": 6
+        },
+        "lg": {
+          "color": "#00000080",
+          "blur": 32,
+          "offsetX": 0,
+          "offsetY": 16
+        }
+      }
+    }
+  },
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "15s",
+      "nodes": [
+        {
+          "id": "background",
+          "type": "rect",
+          "width": 1920,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.background"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 94,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "side-accent",
+          "type": "rect",
+          "width": 16,
+          "height": 1080,
+          "fill": {
+            "$ref": "theme.colors.primary"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 95,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "slide-1",
+          "type": "group",
+          "timing": {
+            "from": "0s",
+            "duration": "5s"
+          },
+          "transition": {
+            "out": {
+              "type": "slide-left",
+              "duration": "0.5s",
+              "ease": "easeInOutCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 47,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "slide-1-badge",
+              "type": "component",
+              "x": 160,
+              "y": 380,
+              "component": "Badge",
+              "props": {
+                "label": "ENGINEERING",
+                "variant": "primary",
+                "appearance": "soft"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 48,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "slide-1-title",
+              "type": "component",
+              "x": 160,
+              "y": 450,
+              "timing": {
+                "from": "0.2s"
+              },
+              "component": "Title",
+              "props": {
+                "text": "Q3 Engineering Review",
+                "fontSize": 120,
+                "width": 1500
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 49,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "slide-1-sub",
+              "type": "component",
+              "x": 160,
+              "y": 670,
+              "timing": {
+                "from": "0.9s"
+              },
+              "component": "Subtitle",
+              "props": {
+                "text": "Platform team · October"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 50,
+                  "column": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "slide-2",
+          "type": "group",
+          "timing": {
+            "from": "5s",
+            "duration": "5s"
+          },
+          "transition": {
+            "in": {
+              "type": "slide-left",
+              "duration": "0.5s",
+              "ease": "easeInOutCubic"
+            },
+            "out": {
+              "type": "slide-left",
+              "duration": "0.5s",
+              "ease": "easeInOutCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 56,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "slide-2-heading",
+              "type": "text",
+              "text": "Highlights",
+              "x": 160,
+              "y": 170,
+              "fontSize": 80,
+              "fontWeight": 800,
+              "letterSpacing": -1.5,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 57,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "bullet-1",
+              "type": "group",
+              "x": 160,
+              "y": 340,
+              "timing": {
+                "from": "0.6s"
+              },
+              "transition": {
+                "in": {
+                  "type": "slide-right",
+                  "duration": "0.45s",
+                  "ease": "easeOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 59,
+                  "column": 7
+                }
+              },
+              "children": [
+                {
+                  "id": "bullet-1-dot",
+                  "type": "rect",
+                  "y": 18,
+                  "width": 20,
+                  "height": 20,
+                  "cornerRadius": 10,
+                  "fill": {
+                    "$ref": "theme.colors.accent"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 67,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "bullet-1-text",
+                  "type": "text",
+                  "text": "Render time per frame down 38 %",
+                  "x": 56,
+                  "fontSize": 48,
+                  "fontWeight": 500,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 68,
+                      "column": 9
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "bullet-2",
+              "type": "group",
+              "x": 160,
+              "y": 470,
+              "timing": {
+                "from": "1.05s"
+              },
+              "transition": {
+                "in": {
+                  "type": "slide-right",
+                  "duration": "0.45s",
+                  "ease": "easeOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 59,
+                  "column": 7
+                }
+              },
+              "children": [
+                {
+                  "id": "bullet-2-dot",
+                  "type": "rect",
+                  "y": 18,
+                  "width": 20,
+                  "height": 20,
+                  "cornerRadius": 10,
+                  "fill": {
+                    "$ref": "theme.colors.accent"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 67,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "bullet-2-text",
+                  "type": "text",
+                  "text": "Frame cache hit rate now at 91 %",
+                  "x": 56,
+                  "fontSize": 48,
+                  "fontWeight": 500,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 68,
+                      "column": 9
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "bullet-3",
+              "type": "group",
+              "x": 160,
+              "y": 600,
+              "timing": {
+                "from": "1.5s"
+              },
+              "transition": {
+                "in": {
+                  "type": "slide-right",
+                  "duration": "0.45s",
+                  "ease": "easeOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 59,
+                  "column": 7
+                }
+              },
+              "children": [
+                {
+                  "id": "bullet-3-dot",
+                  "type": "rect",
+                  "y": 18,
+                  "width": 20,
+                  "height": 20,
+                  "cornerRadius": 10,
+                  "fill": {
+                    "$ref": "theme.colors.accent"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 67,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "bullet-3-text",
+                  "type": "text",
+                  "text": "Three new render backends shipped",
+                  "x": 56,
+                  "fontSize": 48,
+                  "fontWeight": 500,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 68,
+                      "column": 9
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "bullet-4",
+              "type": "group",
+              "x": 160,
+              "y": 730,
+              "timing": {
+                "from": "1.9500000000000002s"
+              },
+              "transition": {
+                "in": {
+                  "type": "slide-right",
+                  "duration": "0.45s",
+                  "ease": "easeOutCubic"
+                }
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 59,
+                  "column": 7
+                }
+              },
+              "children": [
+                {
+                  "id": "bullet-4-dot",
+                  "type": "rect",
+                  "y": 18,
+                  "width": 20,
+                  "height": 20,
+                  "cornerRadius": 10,
+                  "fill": {
+                    "$ref": "theme.colors.accent"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 67,
+                      "column": 9
+                    }
+                  }
+                },
+                {
+                  "id": "bullet-4-text",
+                  "type": "text",
+                  "text": "Zero flaky golden tests since July",
+                  "x": 56,
+                  "fontSize": 48,
+                  "fontWeight": 500,
+                  "fill": {
+                    "$ref": "theme.colors.text"
+                  },
+                  "meta": {
+                    "source": {
+                      "file": "src/video.tsx",
+                      "line": 68,
+                      "column": 9
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "slide-3",
+          "type": "group",
+          "timing": {
+            "from": "10s"
+          },
+          "transition": {
+            "in": {
+              "type": "slide-left",
+              "duration": "0.5s",
+              "ease": "easeInOutCubic"
+            }
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 76,
+              "column": 3
+            }
+          },
+          "children": [
+            {
+              "id": "slide-3-heading",
+              "type": "text",
+              "text": "Throughput by backend",
+              "x": 160,
+              "y": 170,
+              "fontSize": 80,
+              "fontWeight": 800,
+              "letterSpacing": -1.5,
+              "fill": {
+                "$ref": "theme.colors.text"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 77,
+                  "column": 5
+                }
+              }
+            },
+            {
+              "id": "slide-3-table",
+              "type": "component",
+              "x": 160,
+              "y": 330,
+              "timing": {
+                "from": "0.5s"
+              },
+              "component": "Table",
+              "props": {
+                "columns": [
+                  "Backend",
+                  "Frames/s",
+                  "Change"
+                ],
+                "rows": [
+                  [
+                    "Skia",
+                    "142",
+                    "+24 %"
+                  ],
+                  [
+                    "Browser",
+                    "61",
+                    "+12 %"
+                  ],
+                  [
+                    "Three.js",
+                    "38",
+                    "+31 %"
+                  ],
+                  [
+                    "Blender",
+                    "2.4",
+                    "+8 %"
+                  ]
+                ],
+                "width": 1600,
+                "fontSize": 40,
+                "stagger": 5,
+                "exit": "none"
+              },
+              "meta": {
+                "source": {
+                  "file": "src/video.tsx",
+                  "line": 78,
+                  "column": 5
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "footer-title",
+          "type": "text",
+          "text": "Q3 Engineering Review",
+          "x": 160,
+          "y": 984,
+          "fontSize": 24,
+          "fontWeight": 500,
+          "fill": {
+            "$ref": "theme.colors.muted"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 100,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "footer-track",
+          "type": "rect",
+          "x": 1400,
+          "y": 994,
+          "width": 360,
+          "height": 6,
+          "cornerRadius": 3,
+          "fill": {
+            "$ref": "theme.colors.muted"
+          },
+          "opacity": 0.3,
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 101,
+              "column": 11
+            }
+          }
+        },
+        {
+          "id": "footer-progress",
+          "type": "rect",
+          "x": 1400,
+          "y": 994,
+          "width": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 0
+              },
+              {
+                "t": "15s",
+                "v": 360,
+                "ease": "linear"
+              }
+            ]
+          },
+          "height": 6,
+          "cornerRadius": 3,
+          "fill": {
+            "$ref": "theme.colors.primary"
+          },
+          "meta": {
+            "source": {
+              "file": "src/video.tsx",
+              "line": 102,
+              "column": 11
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
