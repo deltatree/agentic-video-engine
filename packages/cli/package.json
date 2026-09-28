@@ -42,7 +42,8 @@
     "playwright-core": "1.63.0",
     "@agentic-video/scheduler": "0.1.0",
     "@agentic-video/templates": "0.1.0",
-    "@agentic-video/worker": "0.1.0"
+    "@agentic-video/worker": "0.1.0",
+    "@agentic-video/benchmarks": "0.1.0"
   },
   "bin": {
     "openvideo": "./dist/bin.js"

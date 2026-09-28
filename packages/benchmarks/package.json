@@ -1,7 +1,7 @@
 {
   "name": "@agentic-video/benchmarks",
   "version": "0.1.0",
-  "description": "Reproduzierbare Benchmarks: Szenarien, Auflösungen, Messwerte, Regressionserkennung.",
+  "description": "Reproduzierbare Benchmarks: Szenarien, Aufl\u00f6sungen, Messwerte, Regressionserkennung.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
@@ -31,7 +31,8 @@
     "@agentic-video/render": "0.1.0",
     "@agentic-video/cache": "0.1.0",
     "@agentic-video/testing": "0.1.0",
-    "@agentic-video/png": "0.1.0"
+    "@agentic-video/png": "0.1.0",
+    "@agentic-video/scheduler": "0.1.0"
   },
   "bin": {
     "openvideo-bench": "./dist/bin.js"

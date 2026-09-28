@@ -167,7 +167,8 @@
     "mcp",
     "speech",
     "png",
-    "sandbox"
+    "sandbox",
+    "benchmarks"
   ],
   "benchmarks": [
     "core",

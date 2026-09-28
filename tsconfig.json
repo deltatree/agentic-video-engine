@@ -92,6 +92,9 @@
       "path": "packages/templates"
     },
     {
+      "path": "packages/benchmarks"
+    },
+    {
       "path": "packages/agent"
     },
     {

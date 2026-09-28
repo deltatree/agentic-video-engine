@@ -59,3 +59,11 @@ describe('CLI mit Templates, Workern und Worker-Befehl', () => {
     expect((await cli(['worker'], tmpdir())).code).toBe(2);
   });
 });
+
+describe('openvideo benchmark', () => {
+  it('reicht an openvideo-bench durch und liefert JSON', async () => {
+    const r = await cli(['benchmark', '--scenario', 'vector-heavy', '--resolution', '1080p30', '--frames', '1', '--no-encode', '--json'], tmpdir());
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toContain('vector-heavy');
+  }, 300_000);
+});

@@ -62,7 +62,7 @@ Commands:
   render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
   doctor                Check the environment and suggest fixes
-  benchmark             Run reproducible benchmarks
+  benchmark             Run reproducible benchmarks (--scenario --resolution --frames --compare)
   cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9)
   fonts [list|check] [path]   List or check fonts
   assets <list|import|inspect> [path]   Manage assets
@@ -197,6 +197,8 @@ function printDiagnostics(io: CliIo, diagnostics: readonly Diagnostic[]): void {
  * ```
  */
 export async function runCli(argv: readonly string[], io: CliIo): Promise<number> {
+  // Benchmark-Optionen wertet openvideo-bench selbst aus; darum vor dem Parsen weiterreichen.
+  if (argv[0] === 'benchmark') return runBenchmark(argv.slice(1), io);
   let parsed;
   try {
     parsed = parseArgs({
@@ -623,3 +625,25 @@ export default composition({
 `;
 }
 
+
+/** Startet `openvideo-bench` in einem eigenen Prozess und reicht Ausgabe und Exit-Code durch. */
+async function runBenchmark(args: readonly string[], io: CliIo): Promise<number> {
+  const bin = fileURLToPath(new URL('bin.js', import.meta.resolve('@agentic-video/benchmarks')));
+  const { spawn } = await import('node:child_process');
+  const child = spawn(process.execPath, [bin, ...args], { cwd: io.cwd, env: { ...io.env }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child.stdout.on('data', (chunk: Buffer) => {
+    io.stdout(chunk.toString());
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    io.stderr(chunk.toString());
+  });
+  return new Promise<number>((resolveExit) => {
+    child.once('error', (error) => {
+      io.stderr(`openvideo-bench could not start: ${error.message}\n`);
+      resolveExit(1);
+    });
+    child.once('close', (code) => {
+      resolveExit(code ?? 1);
+    });
+  });
+}
