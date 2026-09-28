@@ -1,0 +1,539 @@
+/**
+ * Video-Encoding über einen FFmpeg-Prozess (FR-60..FR-64).
+ *
+ * Eingabe sind vormultiplizierte RGBA-Bilder. Der Encoder entmultipliziert sie (gerades Alpha)
+ * und schreibt sie als `rawvideo rgba` über stdin. Ohne `alpha` wird Alpha auf 255 gesetzt.
+ *
+ * Determinismus: `-fflags +bitexact`, `-flags:v +bitexact`, `-flags:a +bitexact`,
+ * `-map_metadata -1` und eine feste Threadzahl (Standard 4).
+ *
+ * ## Abbildung von `quality` (0–100, 100 = beste Qualität, Standard 75)
+ *
+ * | Codec | Parameter | Formel | q=0 | q=75 | q=100 |
+ * |---|---|---|---|---|---|
+ * | h264 (libx264) | `-crf` | `round(35 − 0.23·q)` | 35 | 18 | 12 |
+ * | h265 (libx265) | `-crf` | `round(38 − 0.24·q)` | 38 | 20 | 14 |
+ * | vp9 (libvpx-vp9) | `-crf`, `-b:v 0` | `round(55 − 0.4·q)` | 55 | 25 | 15 |
+ * | av1 (libsvtav1, libaom-av1) | `-crf` | `round(55 − 0.35·q)` | 55 | 29 | 20 |
+ * | h264/h265 Hardware | `-cq`/`-global_quality`/`-qp` | wie CPU-CRF | | | |
+ * | h264/h265 VideoToolbox | `-q:v` | `round(q)` | 0 | 75 | 100 |
+ * | webp (libwebp) | `-quality` | `round(q)` | 0 | 75 | 100 |
+ * | jpeg (mjpeg) | `-q:v` | `round(31 − 0.29·q)` | 31 | 9 | 2 |
+ * | prores, prores-4444 | Profil `hq` bzw. `4444` | fest | | | |
+ * | ffv1, png, gif | verlustfrei bzw. Palette | fest | | | |
+ */
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import type { Readable, Writable } from 'node:stream';
+import { OpenVideoError, type ColorSpace, type OutputFormat, type RgbaImage, type VideoCodec } from '@agentic-video/core';
+import { probeCapabilities, type FfmpegCapabilities, type HardwareFamily } from './capabilities.js';
+import { locateFfmpeg, type FfmpegLocateOptions } from './locate.js';
+import { unpremultiplyInto } from './pixels.js';
+import { appendLimited, processError, runProcess, spawnError, timeoutError, waitForExit } from './process.js';
+import { toRational } from './probe.js';
+
+/** Hardware-Wahl: `auto` nutzt Hardware nur nach erfolgreicher Probe, sonst immer CPU. */
+export type HardwareMode = 'auto' | 'none' | HardwareFamily;
+
+/** Audio-Codecs für das Muxen. */
+export type AudioCodec = 'aac' | 'opus' | 'pcm';
+
+/** Optionen für {@link createEncoder}. */
+export interface EncoderOptions extends FfmpegLocateOptions {
+  /** Ausgabedatei, bei `*-sequence` ein Verzeichnis (Dateien `frame-000000.<ext>`). */
+  readonly output: string;
+  readonly format: OutputFormat;
+  /** Standard je Format: mp4/mov → h264 (mov mit Alpha → prores-4444), webm → vp9, gif → gif, webp → webp, png-sequence → png. */
+  readonly codec?: VideoCodec;
+  readonly width: number;
+  readonly height: number;
+  readonly fps: number;
+  /** 0–100, 100 = beste Qualität (Standard 75). Abbildung siehe Moduldokumentation. */
+  readonly quality?: number;
+  readonly alpha?: boolean;
+  /** Farbraum für die Metadaten (Standard `srgb`). */
+  readonly colorSpace?: ColorSpace;
+  readonly hardware?: HardwareMode;
+  /** WAV-Datei, die als Tonspur gemuxt wird. */
+  readonly audioPath?: string;
+  /** Standard: webm → opus, sonst aac. */
+  readonly audioCodec?: AudioCodec;
+  /** Audio-Bitrate in kbit/s (Standard 192; bei pcm ohne Wirkung). */
+  readonly audioBitrate?: number;
+  /** Feste Threadzahl für den Encoder (Standard 4). */
+  readonly threads?: number;
+  /** Timeout für das Schreiben eines Frames und für den Abschluss in Millisekunden (Standard 600 000). */
+  readonly timeoutMs?: number;
+}
+
+/** Ergebnis eines abgeschlossenen Encodings (für das Manifest). */
+export interface EncodeResult {
+  /** Ausgabedatei oder alle Dateien einer Sequenz. */
+  readonly paths: readonly string[];
+  readonly frames: number;
+  /** Dauer in Sekunden (`frames / fps`). */
+  readonly duration: number;
+  readonly format: OutputFormat;
+  readonly codec: VideoCodec | 'jpeg';
+  /** Verwendeter FFmpeg-Encoder, z. B. `libx264`. */
+  readonly encoder: string;
+  readonly audioEncoder: string | undefined;
+  /** Hardware-Familie oder `undefined` für CPU. */
+  readonly hardware: HardwareFamily | undefined;
+  readonly ffmpeg: string;
+  /** Vollständige FFmpeg-Argumente ohne Programmpfad. */
+  readonly args: readonly string[];
+}
+
+/** Ein laufender Encoder. */
+export interface Encoder {
+  /** Schreibt einen vormultiplizierten Frame. */
+  write(image: RgbaImage): Promise<void>;
+  /** Schließt die Eingabe und wartet auf FFmpeg. */
+  finish(): Promise<EncodeResult>;
+  /** Bricht ab und löscht die bisher geschriebene Ausgabe. */
+  abort(): Promise<void>;
+}
+
+const FORMAT_CODECS: Readonly<Record<OutputFormat, readonly VideoCodec[]>> = {
+  mp4: ['h264', 'h265', 'vp9', 'av1'],
+  mov: ['h264', 'h265', 'prores', 'prores-4444', 'ffv1'],
+  webm: ['vp9', 'av1'],
+  gif: ['gif'],
+  webp: ['webp'],
+  'png-sequence': ['png'],
+  'jpeg-sequence': [],
+  'webp-sequence': ['webp'],
+};
+
+const ALPHA_COMBINATIONS: readonly string[] = ['webm/vp9', 'mov/prores-4444', 'png-sequence/png', 'webp-sequence/webp'];
+
+const SEQUENCE_EXT: Partial<Record<OutputFormat, string>> = { 'png-sequence': 'png', 'jpeg-sequence': 'jpg', 'webp-sequence': 'webp' };
+
+function encodeError(code: string, problem: string, suggestions: readonly string[], details?: Record<string, string | number | boolean>): OpenVideoError {
+  return new OpenVideoError({ code, errorClass: 'EncodeError', problem, suggestions, ...(details !== undefined ? { details } : {}) });
+}
+
+function defaultCodec(format: OutputFormat, alpha: boolean): VideoCodec | 'jpeg' {
+  switch (format) {
+    case 'mp4':
+      return 'h264';
+    case 'mov':
+      return alpha ? 'prores-4444' : 'h264';
+    case 'webm':
+      return 'vp9';
+    case 'gif':
+      return 'gif';
+    case 'webp':
+    case 'webp-sequence':
+      return 'webp';
+    case 'png-sequence':
+      return 'png';
+    case 'jpeg-sequence':
+      return 'jpeg';
+  }
+}
+
+/** Geprüfte, vollständige Encoder-Einstellungen. */
+interface Plan {
+  readonly format: OutputFormat;
+  readonly codec: VideoCodec | 'jpeg';
+  readonly alpha: boolean;
+  readonly quality: number;
+  readonly threads: number;
+  readonly colorSpace: ColorSpace;
+  readonly hardware: HardwareMode;
+  readonly audioCodec: AudioCodec | undefined;
+  readonly audioBitrate: number;
+  readonly sequenceExt: string | undefined;
+}
+
+/** Prüft Format, Codec, Alpha, Maße und Audio ohne Prozessstart. */
+function resolvePlan(o: EncoderOptions): Plan {
+  const alpha = o.alpha ?? false;
+  const allowed = FORMAT_CODECS[o.format];
+  const codec = o.codec ?? defaultCodec(o.format, alpha);
+  if (o.codec !== undefined && !allowed.includes(o.codec)) {
+    throw encodeError(
+      'OV_ENCODE_CODEC_UNSUPPORTED',
+      `Codec "${o.codec}" is not supported in format "${o.format}".`,
+      allowed.length > 0 ? [`Use one of: ${allowed.join(', ')}.`] : [`Omit the codec for format "${o.format}".`],
+      { format: o.format, codec: o.codec },
+    );
+  }
+  if (alpha && !ALPHA_COMBINATIONS.includes(`${o.format}/${codec}`)) {
+    throw encodeError('OV_ENCODE_ALPHA_UNSUPPORTED', `Format "${o.format}" with codec "${codec}" cannot store alpha.`, [
+      'Use format "webm" with codec "vp9" (yuva420p).',
+      'Use format "mov" with codec "prores-4444" (yuva444p10le).',
+      'Use format "png-sequence" or "webp-sequence".',
+      'Or set alpha: false and render over an opaque background.',
+    ], { format: o.format, codec });
+  }
+  if (!Number.isInteger(o.width) || !Number.isInteger(o.height) || o.width < 1 || o.height < 1) {
+    throw encodeError('OV_ENCODE_SIZE', `Invalid frame size ${String(o.width)}x${String(o.height)}.`, ['Use positive integer width and height.']);
+  }
+  if (['h264', 'h265', 'prores', 'prores-4444'].includes(codec) && (o.width % 2 !== 0 || o.height % 2 !== 0)) {
+    throw encodeError('OV_ENCODE_SIZE', `Codec "${codec}" needs an even width and height, got ${String(o.width)}x${String(o.height)}.`, [
+      `Use ${String(o.width + (o.width % 2))}x${String(o.height + (o.height % 2))}.`,
+      'Or use codec "vp9" or a PNG sequence.',
+    ]);
+  }
+  if (!(o.fps > 0) || !Number.isFinite(o.fps)) throw encodeError('OV_ENCODE_FPS', `Invalid frame rate ${String(o.fps)}.`, ['Use a frame rate above 0, e.g. 30.']);
+  let audioCodec: AudioCodec | undefined;
+  if (o.audioPath !== undefined) {
+    const audioAllowed: Partial<Record<OutputFormat, readonly AudioCodec[]>> = { mp4: ['aac', 'opus'], mov: ['aac', 'pcm'], webm: ['opus'] };
+    const list = audioAllowed[o.format];
+    audioCodec = o.audioCodec ?? (o.format === 'webm' ? 'opus' : 'aac');
+    if (list === undefined || !list.includes(audioCodec)) {
+      throw encodeError(
+        'OV_ENCODE_AUDIO_UNSUPPORTED',
+        `Format "${o.format}" cannot carry audio codec "${audioCodec}".`,
+        list === undefined ? ['Use format mp4, mov or webm for video with sound.', 'Or remove audioPath and write the WAV file separately.'] : [`Use audioCodec: ${list.map((c) => `"${c}"`).join(' or ')}.`],
+        { format: o.format, audioCodec },
+      );
+    }
+  }
+  const quality = Math.min(100, Math.max(0, o.quality ?? 75));
+  return {
+    format: o.format,
+    codec,
+    alpha,
+    quality,
+    threads: Math.max(1, Math.floor(o.threads ?? 4)),
+    colorSpace: o.colorSpace ?? 'srgb',
+    hardware: o.hardware ?? 'auto',
+    audioCodec,
+    audioBitrate: o.audioBitrate ?? 192,
+    sequenceExt: SEQUENCE_EXT[o.format],
+  };
+}
+
+/** Wählt die Hardware-Familie: nur bei erfolgreicher Probe, sonst CPU (`undefined`). */
+function pickHardware(plan: Plan, caps: FfmpegCapabilities): HardwareFamily | undefined {
+  if (plan.hardware === 'none' || (plan.codec !== 'h264' && plan.codec !== 'h265')) return undefined;
+  if (plan.hardware !== 'auto') return caps.hardwareEncoders[plan.hardware] ? plan.hardware : undefined;
+  return (['nvenc', 'qsv', 'vaapi', 'videotoolbox'] as const).find((f) => caps.hardwareEncoders[f]);
+}
+
+function need(caps: FfmpegCapabilities, candidates: readonly string[], codec: string): string {
+  const found = candidates.find((c) => caps.encoders.includes(c));
+  if (found === undefined) {
+    throw encodeError('OV_ENCODE_CODEC_UNAVAILABLE', `This FFmpeg build has no encoder for "${codec}" (looked for ${candidates.join(', ')}).`, [
+      'Install an FFmpeg build with the encoder, e.g. a "full" static build.',
+      'Or choose another codec.',
+    ], { codec, ffmpegVersion: caps.version });
+  }
+  return found;
+}
+
+const TRC: Readonly<Record<ColorSpace, string>> = { srgb: 'iec61966-2-1', rec709: 'bt709', linear: 'linear' };
+
+interface VideoArgs {
+  readonly encoder: string;
+  readonly args: readonly string[];
+}
+
+/** Baut die Video-Encoder-Argumente (nach den Eingaben). */
+function videoArgs(plan: Plan, caps: FfmpegCapabilities, hw: HardwareFamily | undefined): VideoArgs {
+  const q = plan.quality;
+  const yuv = (pix: string, extra: readonly string[] = []) => [
+    '-vf', `scale=out_color_matrix=bt709:out_range=tv,format=${pix}`,
+    '-pix_fmt', pix,
+    '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', TRC[plan.colorSpace], '-color_range', 'tv',
+    ...extra,
+  ];
+  const mp4Tag = plan.format === 'mp4' || plan.format === 'mov';
+  if (hw !== undefined && (plan.codec === 'h264' || plan.codec === 'h265')) {
+    const encoder = need(caps, [`${plan.codec === 'h264' ? 'h264' : 'hevc'}_${hw}`], plan.codec);
+    const crf = String(plan.codec === 'h264' ? Math.round(35 - 0.23 * q) : Math.round(38 - 0.24 * q));
+    const tag = plan.codec === 'h265' && mp4Tag ? ['-tag:v', 'hvc1'] : [];
+    switch (hw) {
+      case 'nvenc':
+        return { encoder, args: [...yuv('yuv420p'), '-c:v', encoder, '-rc', 'vbr', '-cq', crf, '-b:v', '0', ...tag] };
+      case 'qsv':
+        return { encoder, args: [...yuv('nv12'), '-c:v', encoder, '-global_quality', crf, ...tag] };
+      case 'vaapi':
+        return {
+          encoder,
+          args: ['-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=nv12,hwupload', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', TRC[plan.colorSpace], '-c:v', encoder, '-qp', crf, ...tag],
+        };
+      case 'videotoolbox':
+        return { encoder, args: [...yuv('nv12'), '-c:v', encoder, '-q:v', String(Math.round(q)), ...tag] };
+    }
+  }
+  switch (plan.codec) {
+    case 'h264':
+      return { encoder: 'libx264', args: [...yuv('yuv420p'), '-c:v', need(caps, ['libx264'], 'h264'), '-crf', String(Math.round(35 - 0.23 * q)), '-preset', 'medium'] };
+    case 'h265':
+      return {
+        encoder: 'libx265',
+        args: [...yuv('yuv420p'), '-c:v', need(caps, ['libx265'], 'h265'), '-crf', String(Math.round(38 - 0.24 * q)), '-preset', 'medium', '-x265-params', `log-level=error:pools=${String(plan.threads)}:frame-threads=1`, ...(mp4Tag ? ['-tag:v', 'hvc1'] : [])],
+      };
+    case 'vp9':
+      return {
+        encoder: 'libvpx-vp9',
+        args: [...yuv(plan.alpha ? 'yuva420p' : 'yuv420p'), '-c:v', need(caps, ['libvpx-vp9'], 'vp9'), '-crf', String(Math.round(55 - 0.4 * q)), '-b:v', '0', '-deadline', 'good', '-cpu-used', '4', '-row-mt', '1'],
+      };
+    case 'av1': {
+      const encoder = need(caps, ['libsvtav1', 'libaom-av1'], 'av1');
+      const crf = String(Math.round(55 - 0.35 * q));
+      const tuning = encoder === 'libsvtav1' ? ['-preset', '8'] : ['-b:v', '0', '-cpu-used', '6', '-row-mt', '1'];
+      return { encoder, args: [...yuv('yuv420p'), '-c:v', encoder, '-crf', crf, ...tuning] };
+    }
+    case 'prores':
+      return { encoder: 'prores_ks', args: [...yuv('yuv422p10le'), '-c:v', need(caps, ['prores_ks'], 'prores'), '-profile:v', 'hq'] };
+    case 'prores-4444':
+      return {
+        encoder: 'prores_ks',
+        args: [...yuv(plan.alpha ? 'yuva444p10le' : 'yuv444p10le'), '-c:v', need(caps, ['prores_ks'], 'prores-4444'), '-profile:v', '4444', ...(plan.alpha ? ['-alpha_bits', '16'] : [])],
+      };
+    case 'ffv1':
+      return { encoder: 'ffv1', args: ['-pix_fmt', 'bgr0', '-c:v', need(caps, ['ffv1'], 'ffv1'), '-level', '3', '-g', '1'] };
+    case 'png':
+      return { encoder: 'png', args: ['-pix_fmt', plan.alpha ? 'rgba' : 'rgb24', '-c:v', need(caps, ['png'], 'png')] };
+    case 'gif':
+      return {
+        encoder: 'gif',
+        args: ['-vf', 'split[a][b];[a]palettegen=reserve_transparent=0:stats_mode=full[p];[b][p]paletteuse=dither=bayer:bayer_scale=3', '-c:v', need(caps, ['gif'], 'gif'), '-loop', '0'],
+      };
+    case 'webp': {
+      if (plan.format === 'webp') {
+        const encoder = need(caps, ['libwebp_anim', 'libwebp'], 'webp');
+        return { encoder, args: ['-pix_fmt', 'bgra', '-c:v', encoder, '-quality', String(Math.round(q)), '-lossless', '0', '-loop', '0'] };
+      }
+      return { encoder: 'libwebp', args: ['-pix_fmt', 'bgra', '-c:v', need(caps, ['libwebp'], 'webp'), '-quality', String(Math.round(q)), '-lossless', '0'] };
+    }
+    case 'jpeg':
+      return { encoder: 'mjpeg', args: ['-pix_fmt', 'yuvj420p', '-c:v', need(caps, ['mjpeg'], 'jpeg'), '-q:v', String(Math.round(31 - 0.29 * q))] };
+  }
+}
+
+function audioEncoderOf(codec: AudioCodec, caps: FfmpegCapabilities): string {
+  switch (codec) {
+    case 'aac':
+      return need(caps, ['aac'], 'aac');
+    case 'opus':
+      return need(caps, ['libopus', 'opus'], 'opus');
+    case 'pcm':
+      return need(caps, ['pcm_s24le', 'pcm_s16le'], 'pcm');
+  }
+}
+
+/** Baut alle Argumente und liefert Encoder-Namen. */
+function buildArgs(o: EncoderOptions, plan: Plan, caps: FfmpegCapabilities): { args: string[]; encoder: string; audioEncoder: string | undefined; hardware: HardwareFamily | undefined; target: string } {
+  const hardware = pickHardware(plan, caps);
+  const video = videoArgs(plan, caps, hardware);
+  const rate = toRational(o.fps);
+  const input = [
+    '-hide_banner', '-loglevel', 'error', '-nostdin', '-y',
+    ...(hardware === 'vaapi' ? ['-vaapi_device', '/dev/dri/renderD128'] : []),
+    '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${String(o.width)}x${String(o.height)}`, '-framerate', `${String(rate.num)}/${String(rate.den)}`, '-i', 'pipe:0',
+  ];
+  let audioEncoder: string | undefined;
+  const audio: string[] = [];
+  if (o.audioPath !== undefined && plan.audioCodec !== undefined) {
+    audioEncoder = audioEncoderOf(plan.audioCodec, caps);
+    input.push('-i', o.audioPath);
+    audio.push('-map', '0:v:0', '-map', '1:a:0', '-c:a', audioEncoder, ...(plan.audioCodec === 'pcm' ? [] : ['-b:a', `${String(plan.audioBitrate)}k`]), '-shortest');
+  } else {
+    audio.push('-map', '0:v:0');
+  }
+  const determinism = ['-threads', String(plan.threads), '-fflags', '+bitexact', '-flags:v', '+bitexact', '-flags:a', '+bitexact', '-map_metadata', '-1'];
+  let target = o.output;
+  let muxer: string[];
+  if (plan.sequenceExt !== undefined) {
+    target = join(o.output, `frame-%06d.${plan.sequenceExt}`);
+    muxer = ['-f', 'image2', '-start_number', '0'];
+  } else {
+    muxer = ['-f', plan.format === 'mov' ? 'mov' : plan.format === 'webp' ? 'webp' : plan.format];
+  }
+  return { args: [...input, ...audio, ...video.args, ...determinism, ...muxer, target], encoder: video.encoder, audioEncoder, hardware, target };
+}
+
+/**
+ * Erzeugt einen Encoder. Prüft Format, Codec, Alpha und Audio sofort; FFmpeg startet mit dem ersten Frame.
+ * `hardware: 'auto'` (Standard) nutzt Hardware nur nach erfolgreicher Probe, sonst CPU.
+ *
+ * @example
+ * ```ts
+ * const enc = createEncoder({ output: 'out.mp4', format: 'mp4', codec: 'h264', width: 1920, height: 1080, fps: 30 });
+ * for (const frame of frames) await enc.write(frame);
+ * const result = await enc.finish();
+ * ```
+ */
+export function createEncoder(options: EncoderOptions): Encoder {
+  const plan = resolvePlan(options);
+  const bins = locateFfmpeg(options);
+  const timeoutMs = options.timeoutMs ?? 600_000;
+  const frameBytes = options.width * options.height * 4;
+  let child: ChildProcessByStdio<Writable, null, Readable> | undefined;
+  let starting: Promise<void> | undefined;
+  let built: ReturnType<typeof buildArgs> | undefined;
+  let stderr = '';
+  let exited: string | undefined;
+  let exitPromise: Promise<string> | undefined;
+  let spawnFailure: unknown;
+  let frames = 0;
+  let state: 'open' | 'finished' | 'aborted' = 'open';
+
+  const failure = (): OpenVideoError =>
+    spawnFailure !== undefined ? spawnError(bins.ffmpeg, spawnFailure) : processError(bins.ffmpeg, built?.args ?? [], stderr, exited ?? 'stdin closed', ['Check details.lastStderr for the FFmpeg message.', 'Check the codec, size and audio options.']);
+
+  const start = async (): Promise<void> => {
+    const caps = await probeCapabilities({ ffmpegPath: bins.ffmpeg, ffprobePath: bins.ffprobe });
+    built = buildArgs(options, plan, caps);
+    try {
+      mkdirSync(plan.sequenceExt !== undefined ? options.output : dirname(options.output), { recursive: true });
+    } catch (error) {
+      throw new OpenVideoError({
+        code: 'OV_ENCODE_OUTPUT',
+        errorClass: 'EncodeError',
+        problem: `Cannot create the output directory for "${options.output}": ${error instanceof Error ? error.message : String(error)}`,
+        details: { output: options.output },
+        suggestions: ['Check the output path and its write permissions.'],
+        cause: error,
+      });
+    }
+    const proc = spawn(bins.ffmpeg, built.args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    child = proc;
+    proc.stderr.setEncoding('utf8');
+    proc.stderr.on('data', (c: string) => { stderr = appendLimited(stderr, c); });
+    proc.stdin.on('error', (error) => { stderr = appendLimited(stderr, `\nstdin: ${error.message}`); });
+    proc.on('error', (error) => { spawnFailure = error; });
+    // Synchron vermerken, damit spätere `close`-Beobachter den Exit-Status schon sehen.
+    proc.once('close', (code: number | null, signal: NodeJS.Signals | null) => {
+      exited = code !== null ? `exit code ${String(code)}` : `signal ${signal ?? 'unknown'}`;
+    });
+    exitPromise = waitForExit(proc);
+  };
+
+  const ensureStarted = (): Promise<void> => {
+    starting ??= start();
+    return starting;
+  };
+
+  const withTimeout = async <T>(promise: Promise<T>, what: string): Promise<T> => {
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        child?.kill('SIGKILL');
+        reject(timeoutError(bins.ffmpeg, built?.args ?? [what], stderr, timeoutMs));
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([promise, limit]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const outputs = (): string[] => {
+    if (plan.sequenceExt === undefined) return [options.output];
+    const ext = plan.sequenceExt;
+    return Array.from({ length: frames }, (_, i) => join(options.output, `frame-${String(i).padStart(6, '0')}.${ext}`));
+  };
+
+  const closed = (): OpenVideoError =>
+    encodeError('OV_ENCODE_CLOSED', `The encoder is already ${state}.`, ['Create a new encoder with createEncoder().']);
+
+  return {
+    async write(image: RgbaImage): Promise<void> {
+      if (state !== 'open') throw closed();
+      if (image.width !== options.width || image.height !== options.height || image.data.length !== frameBytes) {
+        throw encodeError('OV_ENCODE_SIZE', `Frame size ${String(image.width)}x${String(image.height)} does not match the encoder size ${String(options.width)}x${String(options.height)}.`, [
+          'Render frames at the encoder size.',
+          'Or create the encoder with the frame size.',
+        ]);
+      }
+      await ensureStarted();
+      const proc = child;
+      if (proc === undefined || exited !== undefined || spawnFailure !== undefined) throw failure();
+      const buf = Buffer.allocUnsafe(frameBytes);
+      unpremultiplyInto(image, buf);
+      if (!plan.alpha) for (let i = 3; i < buf.length; i += 4) buf[i] = 255;
+      frames++;
+      if (proc.stdin.write(buf)) return;
+      const drained = new Promise<void>((resolve, reject) => {
+        const onDrain = () => { proc.off('close', onClose); resolve(); };
+        const onClose = () => { proc.stdin.off('drain', onDrain); reject(failure()); };
+        proc.stdin.once('drain', onDrain);
+        proc.once('close', onClose);
+      });
+      await withTimeout(drained, 'write');
+    },
+
+    async finish(): Promise<EncodeResult> {
+      if (state !== 'open') throw closed();
+      if (frames === 0) {
+        throw encodeError('OV_ENCODE_EMPTY', 'No frames were written.', ['Write at least one frame before finish().', 'Call abort() to cancel an empty encode.']);
+      }
+      state = 'finished';
+      const proc = child;
+      if (proc === undefined || exitPromise === undefined || built === undefined) throw failure();
+      proc.stdin.end();
+      const desc = await withTimeout(exitPromise, 'finish');
+      if (desc !== 'exit code 0' || spawnFailure !== undefined) throw failure();
+      return {
+        paths: outputs(),
+        frames,
+        duration: frames / options.fps,
+        format: plan.format,
+        codec: plan.codec,
+        encoder: built.encoder,
+        audioEncoder: built.audioEncoder,
+        hardware: built.hardware,
+        ffmpeg: bins.ffmpeg,
+        args: built.args,
+      };
+    },
+
+    async abort(): Promise<void> {
+      if (state === 'aborted') return;
+      state = 'aborted';
+      if (starting !== undefined) {
+        await starting.catch(() => undefined);
+      }
+      const proc = child;
+      if (proc !== undefined && exited === undefined) {
+        proc.kill('SIGKILL');
+        await exitPromise;
+      }
+      for (const p of outputs()) rmSync(p, { force: true });
+    },
+  };
+}
+
+/** Optionen für {@link concatSegments}. */
+export interface ConcatOptions extends FfmpegLocateOptions {
+  readonly timeoutMs?: number;
+}
+
+/**
+ * Fügt Segmente gleicher Kodierung ohne Neukodierung zusammen (concat-Demuxer, Stream Copy).
+ * Für Chunk-Rendering: jedes Segment wurde mit denselben Encoder-Einstellungen erzeugt.
+ *
+ * @example
+ * ```ts
+ * await concatSegments(['part-0.mp4', 'part-1.mp4'], 'out.mp4');
+ * ```
+ */
+export async function concatSegments(paths: readonly string[], outPath: string, options: ConcatOptions = {}): Promise<{ readonly path: string; readonly args: readonly string[] }> {
+  if (paths.length === 0) throw encodeError('OV_ENCODE_EMPTY', 'concatSegments needs at least one segment.', ['Pass the paths of the rendered segments.']);
+  const { ffmpeg } = locateFfmpeg(options);
+  const dir = mkdtempSync(join(tmpdir(), 'openvideo-concat-'));
+  try {
+    const list = join(dir, 'list.txt');
+    writeFileSync(list, paths.map((p) => `file '${resolve(p).replaceAll("'", "'\\''")}'`).join('\n') + '\n');
+    mkdirSync(dirname(outPath), { recursive: true });
+    const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', '-f', 'concat', '-safe', '0', '-i', list, '-map', '0', '-c', 'copy', '-fflags', '+bitexact', '-map_metadata', '-1', outPath];
+    await runProcess(ffmpeg, args, {
+      timeoutMs: options.timeoutMs ?? 600_000,
+      suggestions: ['Check that all segments exist and use the same codec, size, frame rate and audio settings.'],
+    });
+    return { path: outPath, args };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

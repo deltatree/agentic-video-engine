@@ -89,6 +89,7 @@ Fehlen bei `image`, `video`, `svg`, `sprite` die Maße, gilt die Eigengröße de
 - `textPath`: Glyphen folgen dem Pfad ab `offset` Pixeln.
 - `fill` als Verlauf füllt die Textbox; `stroke` zeichnet Glyphenkonturen.
 - `textAnimation`: Jede Einheit (Zeichen, Wort, Zeile) geht von `from` in den Normalzustand über. Den Zustand berechnet `textUnitState(node, i, count, localFrame, fps)`; die Aufteilung `splitTextUnits`. Verschiebung und Skalierung wirken um die Mitte der Einheit.
+- `background`: Box hinter dem gemessenen Text (`color`, `paddingX`, `paddingY`, `radius`); mit `perLine: true` eine Box je Zeile. Die Box gehört zur Node (Opacity, Transform, Maske wirken mit).
 - `rich-text`: `spans` mit eigenen Stilen; Stil-Properties der Node sind Standard für alle Spans.
 
 ### Medien

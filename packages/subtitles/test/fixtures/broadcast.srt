@@ -1,0 +1,20 @@
+﻿1
+00:00:01,000 --> 00:00:03,500
+<i>Welcome back</i> to the show.
+
+2
+00:00:04,000 --> 00:00:06,250
+Tonight we talk about
+open-source video.
+
+3
+this block is broken
+it has no timing line
+
+4
+00:00:08,000 --> 00:00:07,000
+End before start.
+
+5
+12:34:56,789 --> 12:35:01,000
+{\an8}Long-running broadcast.

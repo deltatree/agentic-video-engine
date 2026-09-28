@@ -1,0 +1,35 @@
+{
+  "name": "@agentic-video/compiler",
+  "version": "0.1.0",
+  "description": "TSX → Composition IR: Bündeln, Auswerten in der Sandbox, JSON-Export, AST-Rückschreiben.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/compiler"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/sandbox": "0.1.0",
+    "@agentic-video/sdk": "0.1.0",
+    "esbuild": "^0.28.2",
+    "typescript": "6.0.3"
+  }
+}

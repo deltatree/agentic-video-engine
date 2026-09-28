@@ -27,7 +27,6 @@
   ],
   "dependencies": {
     "@agentic-video/core": "0.1.0",
-    "@agentic-video/png": "0.1.0",
-    "canvaskit-wasm": "0.42.0"
+    "@agentic-video/png": "0.1.0"
   }
 }

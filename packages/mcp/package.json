@@ -1,0 +1,33 @@
+{
+  "name": "@agentic-video/mcp",
+  "version": "0.1.0",
+  "description": "MCP-Server: alle Agent-Operationen als MCP-Tools (stdio).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/mcp"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/agent": "0.1.0",
+    "@agentic-video/core": "0.1.0",
+    "@modelcontextprotocol/sdk": "^1.30.1"
+  }
+}

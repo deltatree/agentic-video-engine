@@ -1,0 +1,32 @@
+{
+  "name": "@agentic-video/cache",
+  "version": "0.1.0",
+  "description": "Inhaltsadressierter Speicher und Cache-Ebenen (Dateisystem, S3-kompatibel).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/cache"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/png": "0.1.0"
+  }
+}

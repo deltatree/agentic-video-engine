@@ -1,0 +1,115 @@
+{
+ "systeminfo": "",
+ "model": {
+  "type": "tiny",
+  "multilingual": false,
+  "vocab": 51864,
+  "audio": {
+   "ctx": 1500,
+   "state": 384,
+   "head": 6,
+   "layer": 4
+  },
+  "text": {
+   "ctx": 448,
+   "state": 384,
+   "head": 6,
+   "layer": 4
+  },
+  "mels": 80,
+  "ftype": 1
+ },
+ "params": {
+  "model": "models/ggml-tiny.en.bin",
+  "language": "en",
+  "translate": false
+ },
+ "result": {
+  "language": "en"
+ },
+ "transcription": [
+  {
+   "timestamps": {
+    "from": "00:00:00,000",
+    "to": "00:00:01,000"
+   },
+   "offsets": {
+    "from": 0,
+    "to": 1000
+   },
+   "text": " Hello world.",
+   "tokens": [
+    {
+     "text": "[_BEG_]",
+     "timestamps": {
+      "from": "00:00:00,000",
+      "to": "00:00:00,000"
+     },
+     "offsets": {
+      "from": 0,
+      "to": 0
+     },
+     "id": 50363,
+     "p": 0.979886,
+     "t_dtw": -1
+    },
+    {
+     "text": " Hello",
+     "timestamps": {
+      "from": "00:00:00,070",
+      "to": "00:00:00,370"
+     },
+     "offsets": {
+      "from": 70,
+      "to": 370
+     },
+     "id": 18435,
+     "p": 0.859693,
+     "t_dtw": -1
+    },
+    {
+     "text": " world",
+     "timestamps": {
+      "from": "00:00:00,370",
+      "to": "00:00:00,750"
+     },
+     "offsets": {
+      "from": 370,
+      "to": 750
+     },
+     "id": 995,
+     "p": 0.380024,
+     "t_dtw": -1
+    },
+    {
+     "text": ".",
+     "timestamps": {
+      "from": "00:00:00,750",
+      "to": "00:00:00,810"
+     },
+     "offsets": {
+      "from": 750,
+      "to": 810
+     },
+     "id": 13,
+     "p": 0.400386,
+     "t_dtw": -1
+    },
+    {
+     "text": "[_TT_50]",
+     "timestamps": {
+      "from": "00:00:01,000",
+      "to": "00:00:01,000"
+     },
+     "offsets": {
+      "from": 1000,
+      "to": 1000
+     },
+     "id": 50413,
+     "p": 0.056285,
+     "t_dtw": -1
+    }
+   ]
+  }
+ ]
+}

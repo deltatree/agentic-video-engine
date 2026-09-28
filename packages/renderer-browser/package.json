@@ -25,6 +25,9 @@
     "LICENSE",
     "README.md"
   ],
+  "scripts": {
+    "build:extra": "node scripts/build-runtime.mjs"
+  },
   "dependencies": {
     "@agentic-video/core": "0.1.0",
     "@agentic-video/png": "0.1.0",

@@ -325,7 +325,20 @@ const TextStyleFields = {
   decoration: Type.Optional(Type.Union([Type.Literal('none'), Type.Literal('underline'), Type.Literal('line-through'), Type.Literal('overline')])),
 } satisfies TProperties;
 
+/** Hintergrundbox hinter gemessenem Text (z. B. für Untertitel und Labels). */
+export const TextBackground = Type.Object(
+  {
+    color: AColor(),
+    paddingX: Type.Optional(ANumber({ minimum: 0 })),
+    paddingY: Type.Optional(ANumber({ minimum: 0 })),
+    radius: Type.Optional(ANumber({ minimum: 0 })),
+    perLine: Type.Optional(Type.Boolean({ description: 'One box per line instead of one box around the paragraph.' })),
+  },
+  { additionalProperties: false },
+);
+
 const ParagraphFields = {
+  background: Type.Optional(TextBackground),
   textAlign: Type.Optional(
     Type.Union([Type.Literal('left'), Type.Literal('center'), Type.Literal('right'), Type.Literal('justify'), Type.Literal('start'), Type.Literal('end')]),
   ),

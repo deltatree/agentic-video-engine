@@ -4,7 +4,7 @@
  * Die Funktion ist rein. Sie hängt nur von IR, Frame, Seed und dem übergebenen
  * Register ab. Frame 471 ist gleich, egal ob Frame 470 vorher ausgewertet wurde.
  */
-import { OpenVideoError, Theme as ThemeSchema, Timing as TimingSchema, Transition as TransitionSchema, type ColorSpace, type Diagnostic, type IrNode, type Theme, type Transition } from '@agentic-video/schema';
+import { OpenVideoError, validateValue, Theme as ThemeSchema, Timing as TimingSchema, Transition as TransitionSchema, type ColorSpace, type Diagnostic, type IrNode, type Theme, type Transition } from '@agentic-video/schema';
 import { computeLocalTime, easing, evaluateAnimated, resolveMarkers, toFrames, type AnimationContext } from '@agentic-video/timeline';
 import type { EvaluatedNode, EvaluatedScene, Reveal } from './contracts.js';
 import { conforms, isRecord } from './guards.js';
@@ -263,6 +263,20 @@ function evaluateNode(raw: unknown, parent: Parent, pointer: string, idPrefix: s
       return undefined;
     }
     const componentProps = isRecord(props['props']) ? { ...props['props'] } : {};
+    if (def.propsSchema !== undefined) {
+      for (const issue of validateValue(def.propsSchema, componentProps)) {
+        ctx.diagnostics.push({
+          code: 'OV_COMPONENT_PROPS',
+          severity: 'error',
+          errorClass: 'ComponentError',
+          problem: `${name}: ${issue.message}`,
+          nodeId: id,
+          path: `composition.${ctx.compositionId}.nodes.${id}.props${issue.segments.length > 0 ? `.${issue.segments.join('.')}` : ''}`,
+          frame: ctx.compositionFrame,
+          suggestions: issue.suggestion !== undefined ? [issue.suggestion] : [`Allowed props of ${name}: ${Object.keys(isRecord(def.propsSchema['properties']) ? def.propsSchema['properties'] : {}).join(', ')}.`],
+        });
+      }
+    }
     if (Array.isArray(raw['children'])) componentProps['children'] = raw['children'];
     delete props['props'];
     delete props['component'];

@@ -32,13 +32,34 @@
       "path": "packages/audio"
     },
     {
-      "path": "packages/renderer-three"
+      "path": "packages/cache"
     },
     {
-      "path": "packages/renderer-pixi"
+      "path": "packages/assets"
     },
     {
-      "path": "packages/renderer-browser"
+      "path": "packages/telemetry"
+    },
+    {
+      "path": "packages/render"
+    },
+    {
+      "path": "packages/agent"
+    },
+    {
+      "path": "packages/mcp"
+    },
+    {
+      "path": "packages/components"
+    },
+    {
+      "path": "packages/subtitles"
+    },
+    {
+      "path": "packages/speech"
+    },
+    {
+      "path": "packages/renderer-blender"
     }
   ]
 }

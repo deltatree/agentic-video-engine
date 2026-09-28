@@ -1,0 +1,44 @@
+{
+  "name": "@agentic-video/render",
+  "version": "0.1.0",
+  "description": "Render-Pipeline: Frame-Render, Compositing, Frame-Cache, Audio, Encoding, Render-Manifest.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/render"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/assets": "0.1.0",
+    "@agentic-video/audio": "0.1.0",
+    "@agentic-video/cache": "0.1.0",
+    "@agentic-video/components": "0.1.0",
+    "@agentic-video/compositor": "0.1.0",
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/ffmpeg": "0.1.0",
+    "@agentic-video/fonts": "0.1.0",
+    "@agentic-video/png": "0.1.0",
+    "@agentic-video/renderer-skia": "0.1.0",
+    "@agentic-video/speech": "0.1.0",
+    "@agentic-video/subtitles": "0.1.0",
+    "@agentic-video/telemetry": "0.1.0",
+    "typebox": "^1.3.34"
+  }
+}

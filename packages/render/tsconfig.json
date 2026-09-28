@@ -1,0 +1,54 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../png"
+    },
+    {
+      "path": "../cache"
+    },
+    {
+      "path": "../fonts"
+    },
+    {
+      "path": "../assets"
+    },
+    {
+      "path": "../ffmpeg"
+    },
+    {
+      "path": "../audio"
+    },
+    {
+      "path": "../compositor"
+    },
+    {
+      "path": "../subtitles"
+    },
+    {
+      "path": "../speech"
+    },
+    {
+      "path": "../components"
+    },
+    {
+      "path": "../renderer-skia"
+    },
+    {
+      "path": "../telemetry"
+    }
+  ]
+}

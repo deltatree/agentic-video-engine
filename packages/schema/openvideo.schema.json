@@ -4214,6 +4214,34 @@
       ],
       "description": "Multiple of font size."
     },
+    "background_2": {
+      "color": {
+        "$ref": "#/$defs/color"
+      },
+      "paddingX": {
+        "$ref": "#/$defs/radius"
+      },
+      "paddingY": {
+        "$ref": "#/$defs/radius"
+      },
+      "radius": {
+        "$ref": "#/$defs/radius"
+      },
+      "perLine": {
+        "type": "boolean",
+        "description": "One box per line instead of one box around the paragraph."
+      }
+    },
+    "background": {
+      "type": "object",
+      "required": [
+        "color"
+      ],
+      "properties": {
+        "$ref": "#/$defs/background_2"
+      },
+      "additionalProperties": false
+    },
     "width": {
       "anyOf": [
         {
@@ -8455,6 +8483,9 @@
             }
           ]
         },
+        "background": {
+          "$ref": "#/$defs/background"
+        },
         "textAlign": {
           "anyOf": [
             {
@@ -8765,6 +8796,9 @@
               "const": "overline"
             }
           ]
+        },
+        "background": {
+          "$ref": "#/$defs/background"
         },
         "textAlign": {
           "anyOf": [
