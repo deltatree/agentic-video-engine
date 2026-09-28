@@ -43,16 +43,16 @@ development_status:
   5-3-untertitel-formate: done
   5-4-untertitel-gestaltung: done
   5-5-voice-und-asr-provider: done
-  epic-6: in-progress
+  epic-6: done
   6-1-browser-host: done
   6-2-html-css-layer: done
-  6-3-pixijs-renderer: in-progress
-  epic-7: in-progress
-  7-1-szene-kameras-lichter-meshes-materialien: in-progress
-  7-2-modelle-und-animation: in-progress
-  7-3-partikel-eigene-materialien-shader: in-progress
-  7-4-postprocessing: in-progress
-  7-5-webgpu-webgl2-auswahl: in-progress
+  6-3-pixijs-renderer: done
+  epic-7: done
+  7-1-szene-kameras-lichter-meshes-materialien: done
+  7-2-modelle-und-animation: done
+  7-3-partikel-eigene-materialien-shader: done
+  7-4-postprocessing: done
+  7-5-webgpu-webgl2-auswahl: done
   epic-8: done
   8-1-blender-headless: done
   8-2-capabilities-und-vorab-pruefung: done
@@ -61,21 +61,21 @@ development_status:
   9-2-compiler-mit-frame-funktionen-und-json-export: done
   9-3-container-sandbox: done
   9-4-ast-rueckschreiben: done
-  epic-10: in-progress
-  10-1-chunk-scheduler-und-lokale-worker: in-progress
-  10-2-docker-worker: in-progress
-  10-3-koordinator-fuer-remote-kubernetes-worker: in-progress
-  10-4-telemetrie: in-progress
-  epic-11: in-progress
-  11-1-studio-grundgeruest-und-vorschau: in-progress
-  11-2-bearbeitung-auf-der-buehne: in-progress
-  11-3-timeline-keyframes-kurven-waveform: in-progress
-  11-4-code-panel-diagnosen-render-queue-roundtrip: in-progress
+  epic-10: done
+  10-1-chunk-scheduler-und-lokale-worker: done
+  10-2-docker-worker: done
+  10-3-koordinator-fuer-remote-kubernetes-worker: done
+  10-4-telemetrie: done
+  epic-11: done
+  11-1-studio-grundgeruest-und-vorschau: done
+  11-2-bearbeitung-auf-der-buehne: done
+  11-3-timeline-keyframes-kurven-waveform: done
+  11-4-code-panel-diagnosen-render-queue-roundtrip: done
   11-5-openvideo-create-und-openvideo-dev: done
-  epic-12: in-progress
+  epic-12: done
   12-1-theme-tokens: done
   12-2-29-komponenten: done
-  12-3-15-templates: in-progress
+  12-3-15-templates: done
   epic-13: done
   13-1-svg-lottie-gltf-html-import: done
   13-2-anime-js-adapter: done
@@ -83,11 +83,11 @@ development_status:
   epic-14: in-progress
   14-1-doctor: done
   14-2-lizenzinventar-und-quality-gates: done
-  14-3-docker-images: backlog
-  14-4-kubernetes: backlog
+  14-3-docker-images: in-progress
+  14-4-kubernetes: in-progress
   14-5-benchmarks: in-progress
   14-6-ci: done
   epic-15: in-progress
-  15-1-agent-dokumentation: backlog
-  15-2-definition-of-done-test: backlog
-  15-3-veroeffentlichung: backlog
+  15-1-agent-dokumentation: done
+  15-2-definition-of-done-test: in-progress
+  15-3-veroeffentlichung: in-progress
