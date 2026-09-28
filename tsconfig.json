@@ -83,6 +83,12 @@
       "path": "packages/render"
     },
     {
+      "path": "packages/worker"
+    },
+    {
+      "path": "packages/scheduler"
+    },
+    {
       "path": "packages/agent"
     },
     {

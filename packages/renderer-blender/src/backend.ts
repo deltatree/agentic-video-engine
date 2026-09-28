@@ -76,6 +76,8 @@ export interface BlenderBackendOptions {
   readonly threads?: number;
   /** Timeout je Frame in Millisekunden. Standard {@link DEFAULT_FRAME_TIMEOUT_MS}. */
   readonly frameTimeoutMs?: number;
+  /** Umgebung für die Blender-Suche (`OPENVIDEO_BLENDER`, `PATH`, `HOME`). Standard: `process.env`. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 /** Das Blender-Backend mit Batch-API. */
@@ -143,7 +145,7 @@ interface RunResult {
 }
 
 /**
- * Erzeugt das Blender-Backend. Blender wird erst beim ersten Render (oder `versions()`) gesucht;
+ * Erzeugt das Blender-Backend. Blender wird erst beim ersten Render gesucht; `versions()` ist ohne Blender leer;
  * `check()` braucht kein Blender.
  *
  * @example
@@ -162,7 +164,7 @@ export function createBlenderBackend(options: BlenderBackendOptions): BlenderBac
 
   const blender = (): BlenderInstall => {
     if (install !== undefined) return install;
-    const found = detectBlender(options.blenderPath === undefined ? {} : { blenderPath: options.blenderPath });
+    const found = detectBlender({ ...(options.blenderPath !== undefined ? { blenderPath: options.blenderPath } : {}), ...(options.env !== undefined ? { env: options.env } : {}) });
     if (!found.found) throw new OpenVideoError(found.diagnostic);
     install = { path: found.path, version: found.version };
     return install;
@@ -283,7 +285,11 @@ export function createBlenderBackend(options: BlenderBackendOptions): BlenderBac
       return launches;
     },
     versions() {
-      return { blender: blender().version };
+      // Ohne Blender liefert das Backend keine Version, statt den Start der Umgebung zu blockieren.
+      // Der Fehler kommt erst, wenn wirklich eine blender-Node gerendert wird.
+      if (install !== undefined) return { blender: install.version };
+      const found = detectBlender({ ...(options.blenderPath !== undefined ? { blenderPath: options.blenderPath } : {}), ...(options.env !== undefined ? { env: options.env } : {}) });
+      return found.found ? { blender: found.version } : {};
     },
     check(node): BackendCheck {
       const diagnostics = checkBlenderNode(node);

@@ -412,3 +412,10 @@ describe.skipIf(!blenderAvailable)('Blender-Render (Blender 4.2)', () => {
     expect(isOpenVideoError(error) && error.diagnostic.code).toBe('OV_BLENDER_TIMEOUT');
   });
 });
+
+describe('Ohne Blender (Regression: Umgebung darf nicht scheitern)', () => {
+  it('liefert leere Versionen statt eines Fehlers', () => {
+    const backend = createBlenderBackend({ workDir: '/tmp/ov-no-blender', blenderPath: '/nicht/vorhanden/blender', env: { PATH: '/nicht/vorhanden', HOME: '/nicht/vorhanden' } });
+    expect(backend.versions()).toEqual({});
+  });
+});
