@@ -32,8 +32,8 @@ describe('PNG', () => {
   });
 
   it('ist lesbar für FFmpeg und liest FFmpeg-PNGs', () => {
-    const ffmpeg = join(process.env['HOME'] ?? '', '.local/bin/ffmpeg');
-    if (!existsSync(ffmpeg)) throw new Error('FFmpeg fehlt: Test braucht ~/.local/bin/ffmpeg');
+    const ffmpeg = process.env['OPENVIDEO_FFMPEG'] ?? join(process.env['HOME'] ?? '', '.local/bin/ffmpeg');
+    if (!existsSync(ffmpeg)) throw new Error('FFmpeg fehlt: Test braucht OPENVIDEO_FFMPEG oder ~/.local/bin/ffmpeg');
     const dir = mkdtempSync(join(tmpdir(), 'ov-png-'));
     const img = opaqueImage(16, 8, 3);
     writeFileSync(join(dir, 'a.png'), encodePng(img));

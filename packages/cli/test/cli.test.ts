@@ -12,7 +12,7 @@ async function cli(args: string[], cwd: string): Promise<{ code: number; stdout:
   return { code, stdout, stderr };
 }
 
-const ffprobe = join(process.env['HOME'] ?? '', '.local/bin/ffprobe');
+const ffprobe = process.env['OPENVIDEO_FFPROBE'] ?? join(process.env['HOME'] ?? '', '.local/bin/ffprobe');
 
 describe('openvideo CLI (FR-77, FR-78)', () => {
   it('legt ein Projekt an, prüft es und rendert einen Frame', async () => {

@@ -8,8 +8,8 @@ import { SCHEMA_VERSION } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
 import { checkProject, createNodeEnvironment, renderFrame, renderVideo, validateManifest, type NodeEnvironment } from '@agentic-video/render';
 
-const ffmpeg = join(process.env['HOME'] ?? '', '.local/bin/ffmpeg');
-const ffprobe = join(process.env['HOME'] ?? '', '.local/bin/ffprobe');
+const ffmpeg = process.env['OPENVIDEO_FFMPEG'] ?? join(process.env['HOME'] ?? '', '.local/bin/ffmpeg');
+const ffprobe = process.env['OPENVIDEO_FFPROBE'] ?? join(process.env['HOME'] ?? '', '.local/bin/ffprobe');
 let dir: string;
 let env: NodeEnvironment;
 
