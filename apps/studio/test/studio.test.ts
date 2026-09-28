@@ -246,6 +246,22 @@ describe('OpenVideo Studio', () => {
     await expect.poll(() => page.getByRole('treeitem', { name: /^box-copy / }).getAttribute('aria-selected')).toBe('true');
   });
 
+  it('lädt mit Token aus dem Fragment und entfernt es aus der Adresse', async () => {
+    const secured = await startAgentServer({ services, port: 0, token: 'studio-test-token', fallback: serveStudio });
+    const tokenPage = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+    try {
+      const unauthorized = await fetch(`${secured.url}/v1/project.inspect`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      expect(unauthorized.status).toBe(401);
+      await tokenPage.goto(`${secured.url}/?project=${projectId}#token=studio-test-token`);
+      await expect.poll(() => tokenPage.getByRole('img', { name: /^Frame / }).count(), { timeout: 30_000 }).toBe(1);
+      expect(tokenPage.url()).not.toContain('studio-test-token');
+      expect(await tokenPage.evaluate(() => sessionStorage.getItem('openvideo.token'))).toBe('studio-test-token');
+    } finally {
+      await tokenPage.close();
+      await secured.close();
+    }
+  });
+
   it('stores a screenshot for visual review', async () => {
     await selectInTree('title');
     await selectInTree('disc', 'Control');

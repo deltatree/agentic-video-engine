@@ -3,6 +3,7 @@
  */
 import { isRecord } from '@agentic-video/core';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { downloadWithAuth, needsAuthFetch } from '../api.js';
 import { useStudio } from '../context.js';
 import { records, str } from '../json.js';
 import { RENDER_PRESETS, type RenderPreset } from '../store.js';
@@ -273,7 +274,18 @@ export function RenderQueue(): ReactNode {
                   </button>
                 )}
                 {j.outputs.map((url) => (
-                  <a key={url} href={url} download>
+                  <a
+                    key={url}
+                    href={url}
+                    download
+                    onClick={(e) => {
+                      if (!needsAuthFetch()) return;
+                      e.preventDefault();
+                      downloadWithAuth(url).catch((error: unknown) => {
+                        console.warn('OpenVideo Studio: download failed', error);
+                      });
+                    }}
+                  >
                     {url.split('/').pop()}
                   </a>
                 ))}

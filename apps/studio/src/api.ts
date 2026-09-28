@@ -13,10 +13,57 @@ export class ApiError extends Error {
   }
 }
 
-/** Optionaler Bearer-Token aus `?token=` (für Server mit `OPENVIDEO_API_TOKEN`). */
+const TOKEN_KEY = 'openvideo.token';
+let cachedToken: string | null | undefined;
+
+/**
+ * Liest das Token einmal aus `#token=` (oder `?token=`), legt es in `sessionStorage`
+ * und entfernt es aus der Adresse. So landet es nicht im Verlauf und nicht im Referer.
+ */
+function apiToken(): string | null {
+  if (cachedToken !== undefined) return cachedToken;
+  const fromHash = new URLSearchParams(window.location.hash.slice(1)).get('token');
+  const search = new URLSearchParams(window.location.search);
+  const fresh = fromHash ?? search.get('token');
+  if (fresh !== null && fresh !== '') {
+    cachedToken = fresh;
+    try {
+      sessionStorage.setItem(TOKEN_KEY, fresh);
+    } catch (error) {
+      // Gesperrter Speicher: Das Token gilt dann nur für diese Seite.
+      console.warn('OpenVideo Studio: token not stored', error);
+    }
+    search.delete('token');
+    const rest = search.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${rest !== '' ? `?${rest}` : ''}`);
+    return fresh;
+  }
+  try {
+    cachedToken = sessionStorage.getItem(TOKEN_KEY);
+  } catch (error) {
+    console.warn('OpenVideo Studio: token storage unavailable', error);
+    cachedToken = null;
+  }
+  return cachedToken;
+}
+
+/** Bearer-Header, wenn der Server ein Token verlangt (`OPENVIDEO_API_TOKEN`). */
 function authHeaders(): Record<string, string> {
-  const token = new URLSearchParams(window.location.search).get('token');
+  const token = apiToken();
   return token !== null && token !== '' ? { authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * `true`, wenn Dateien ein Token brauchen. Dann lädt das Studio sie per `fetch` statt über `src`/`href`.
+ *
+ * @example
+ * ```ts
+ * if (needsAuthFetch()) await downloadWithAuth(url);
+ * ```
+ */
+export function needsAuthFetch(): boolean {
+  const token = apiToken();
+  return token !== null && token !== '';
 }
 
 /**
@@ -102,4 +149,36 @@ export async function fetchText(projectId: string, path: string): Promise<string
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) return `${error.diagnostic.code}: ${error.diagnostic.problem}${error.diagnostic.suggestions[0] !== undefined ? ` ${error.diagnostic.suggestions[0]}` : ''}`;
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Lädt eine Datei mit Token und liefert eine Blob-URL (für `<img src>`).
+ * Der Aufrufer gibt die URL mit `URL.revokeObjectURL` frei.
+ *
+ * @example
+ * ```ts
+ * const url = await fileObjectUrl('demo', 'assets/logo.png');
+ * ```
+ */
+export async function fileObjectUrl(projectId: string, path: string): Promise<string> {
+  return URL.createObjectURL(new Blob([await fetchFile(projectId, path)]));
+}
+
+/**
+ * Lädt eine URL mit Token herunter und speichert sie unter ihrem Dateinamen.
+ *
+ * @example
+ * ```ts
+ * await downloadWithAuth('/v1/files/demo/out/hero.mp4');
+ * ```
+ */
+export async function downloadWithAuth(url: string): Promise<void> {
+  const response = await fetch(url, { headers: authHeaders() });
+  if (!response.ok) throw new ApiError({ code: 'OV_FILE_NOT_FOUND', severity: 'error', errorClass: 'ApiError', problem: `Download failed (HTTP ${String(response.status)}).`, suggestions: ['Check that the render job succeeded.'] });
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = url.split('/').pop() ?? 'download';
+  a.click();
+  URL.revokeObjectURL(objectUrl);
 }

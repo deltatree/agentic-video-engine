@@ -2,8 +2,8 @@
  * Assets- und Components-Tab: Dateien importieren, auf die Bühne ziehen, Komponenten einfügen.
  */
 import { COMPONENTS } from '@agentic-video/components';
-import { useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { call, errorText, fileUrl } from '../api.js';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { call, errorText, fileObjectUrl, fileUrl, needsAuthFetch } from '../api.js';
 import { useStudio } from '../context.js';
 import { rec, records, str } from '../json.js';
 
@@ -104,7 +104,7 @@ export function Assets(): ReactNode {
                 }}
                 className="asset"
               >
-                {(type === 'image' || type === 'svg') && !src.startsWith('http') ? <img src={fileUrl(state.projectId, src)} alt="" className="thumb" /> : <span className="thumb type">{type}</span>}
+                {(type === 'image' || type === 'svg') && !src.startsWith('http') ? <AssetThumb projectId={state.projectId} src={src} /> : <span className="thumb type">{type}</span>}
                 <span className="asset-name">
                   {id}
                   <span className="muted small"> {type}</span>
@@ -143,4 +143,30 @@ export function Components(): ReactNode {
       ))}
     </ul>
   );
+}
+
+/** Vorschaubild eines Assets; mit Token über eine Blob-URL, sonst direkt. */
+function AssetThumb(props: { readonly projectId: string; readonly src: string }) {
+  const direct = !needsAuthFetch();
+  const [url, setUrl] = useState<string | undefined>(direct ? fileUrl(props.projectId, props.src) : undefined);
+  useEffect(() => {
+    if (direct) return undefined;
+    let objectUrl: string | undefined;
+    let alive = true;
+    fileObjectUrl(props.projectId, props.src).then(
+      (u) => {
+        objectUrl = u;
+        if (alive) setUrl(u);
+        else URL.revokeObjectURL(u);
+      },
+      (error: unknown) => {
+        console.warn('OpenVideo Studio: thumbnail failed', error);
+      },
+    );
+    return () => {
+      alive = false;
+      if (objectUrl !== undefined) URL.revokeObjectURL(objectUrl);
+    };
+  }, [direct, props.projectId, props.src]);
+  return url !== undefined ? <img src={url} alt="" className="thumb" /> : <span className="thumb type">…</span>;
 }

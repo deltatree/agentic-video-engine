@@ -9,7 +9,7 @@
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, extname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { startAgentServer, type AgentServices } from '@agentic-video/agent';
@@ -139,14 +139,16 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
       const url = new URL(req.url ?? '/', 'http://localhost');
       const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
       const file = resolve(studio, rel);
-      if (!file.startsWith(studio) || !existsSync(file)) return false;
+      if (!file.startsWith(studio + sep) || !existsSync(file)) return false;
       res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'x-content-type-options': 'nosniff' });
       res.end(await readFile(file));
       return true;
     },
   });
-  const query = new URLSearchParams({ ...(options.projectId !== undefined ? { project: options.projectId } : {}), ...(options.showToken === true && options.token !== undefined ? { token: options.token } : {}) }).toString();
-  const link = `${server.url}/${query !== '' ? `?${query}` : ''}`;
+  const query = new URLSearchParams(options.projectId !== undefined ? { project: options.projectId } : {}).toString();
+  // Das Token steht im Fragment: Der Browser sendet es nie an einen Server, auch nicht im Referer.
+  const fragment = options.showToken === true && options.token !== undefined ? `#token=${encodeURIComponent(options.token)}` : '';
+  const link = `${server.url}/${query !== '' ? `?${query}` : ''}${fragment}`;
   io.stdout(`${PRODUCT_NAME} API: ${server.url}/v1/operations\n`);
   if (options.showToken === true && options.token !== undefined) io.stdout(`API token (send as "Authorization: Bearer <token>"): token=${options.token}\n`);
   io.stdout(studio !== undefined ? `${PRODUCT_NAME} Studio: ${link}\n` : 'Studio files not found (build apps/studio or set OPENVIDEO_STUDIO_DIR).\n');
