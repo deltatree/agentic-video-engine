@@ -41,6 +41,7 @@ Alle Befehle müssen grün sein:
 npx tsc -b packages/<paket>
 npx vitest run packages/<paket>
 npx eslint packages/<paket> --max-warnings 0
+npx tsc -p tsconfig.eslint.json   # prüft auch die Testdateien mit strengem TypeScript
 node scripts/check-deps.mjs
 ```
 
