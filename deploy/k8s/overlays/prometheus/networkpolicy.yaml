@@ -18,3 +18,4 @@ spec:
         - { protocol: TCP, port: 8081 }
         - { protocol: TCP, port: 8082 }
         - { protocol: TCP, port: 7788 }
+        - { protocol: TCP, port: 9464 }

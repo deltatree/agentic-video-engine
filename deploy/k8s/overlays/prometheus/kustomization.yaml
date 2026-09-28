@@ -9,6 +9,15 @@ resources:
   - ../production
   - networkpolicy.yaml
 patches:
+  # Die API exportiert ihre Metriken (u. a. render_duration) für Prometheus auf Port 9464.
+  - target: { kind: Deployment, name: api }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: { name: OPENVIDEO_METRICS, value: prometheus }
+      - op: add
+        path: /spec/template/metadata/annotations
+        value: { prometheus.io/scrape: "true", prometheus.io/port: "9464" }
   - target: { kind: ScaledObject }
     patch: |-
       - op: add

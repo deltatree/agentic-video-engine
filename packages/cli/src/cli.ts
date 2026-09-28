@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { startAgentServer, type AgentServices } from '@agentic-video/agent';
+import { isLoopbackHost, startAgentServer, type AgentServices } from '@agentic-video/agent';
 import { createCache, storeFromEnv, CACHE_TIERS, type CacheTierName } from '@agentic-video/cache';
 import {
   CLI_NAME,
@@ -70,6 +70,7 @@ Commands:
   mcp                   Start the MCP server on stdio
   migrate <file>        Upgrade an older project file (--write)
   worker                Start a render worker (--stdio or --coordinator <url>)
+  coordinator           Start the render coordinator for remote workers (--port --journal)
 
 Server options (serve, dev, studio):
   --host <addr>          Bind address (default 127.0.0.1; others need a token)
@@ -239,6 +240,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         offline: { type: 'boolean' },
         stdio: { type: 'boolean' },
         coordinator: { type: 'string' },
+        journal: { type: 'string' },
         scenario: { type: 'string' },
         resolution: { type: 'string' },
         frames: { type: 'string' },
@@ -320,6 +322,30 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         });
         const token = values.token ?? io.env['OPENVIDEO_WORKER_TOKEN'];
         await worker.runWorkerHttp({ coordinatorUrl: values.coordinator, signal: stop.signal, ...(token !== undefined ? { token } : {}), ...(values.name !== undefined ? { worker: values.name } : {}) });
+        return 0;
+      }
+      case 'coordinator': {
+        const { startCoordinator } = await import('@agentic-video/scheduler');
+        const token = values.token ?? io.env['OPENVIDEO_WORKER_TOKEN'];
+        const host = values.host ?? '127.0.0.1';
+        const port = num(values.port, 'port') ?? 8080;
+        if ((token === undefined || token === '') && !isLoopbackHost(host)) {
+          throw new OpenVideoError({ code: 'OV_API_TOKEN_REQUIRED', errorClass: 'SecurityError', problem: `The coordinator would listen on ${host} without a token.`, suggestions: ['Set OPENVIDEO_WORKER_TOKEN or pass --token <secret>.', 'Or bind to 127.0.0.1 for local use.'] });
+        }
+        const workspaceDir = resolve(io.cwd, values.workspace ?? '.');
+        const store = storeFromEnv(io.env, workspaceDir);
+        const coordinator = await startCoordinator({ port, host, store, journalDir: resolve(io.cwd, values.journal ?? join(workspaceDir, '.openvideo', 'journal')), ...(token !== undefined && token !== '' ? { token } : {}) });
+        out({ url: coordinator.url, store: store.name }, `${PRODUCT_NAME} coordinator: ${coordinator.url} (store ${store.name})`);
+        await new Promise<void>((resolveStop) => {
+          const stop = () => {
+            void coordinator.close().then(resolveStop);
+          };
+          if (io.stop !== undefined) void io.stop.then(stop);
+          else {
+            process.once('SIGINT', stop);
+            process.once('SIGTERM', stop);
+          }
+        });
         return 0;
       }
       case 'validate': {

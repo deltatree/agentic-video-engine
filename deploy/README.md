@@ -209,6 +209,8 @@ Weitere Variablen in den Deployments:
 | `OPENVIDEO_ALLOWED_HOSTS` | `api`, `studio` | Erlaubte Host-Header. Standard: die Service-Namen, zum Beispiel `api,api.openvideo.svc`. |
 | `OPENVIDEO_CACHE_DIR` | alle | Frame-Cache, fest `/cache` (emptyDir). |
 | `OPENVIDEO_WORKSPACE` | `api` | Projekte und Jobs, `/workspace` (PVC). |
+| `OPENVIDEO_COORDINATOR_URL` | `api` | Video-Renders gehen als Chunks an diese Queue, Standard `http://coordinator:8080`. Ohne die Variable rendert die API selbst. |
+| `OPENVIDEO_METRICS` | `api` | `prometheus` exportiert Metriken auf Port 9464 (`OPENVIDEO_METRICS_PORT`). Das Overlay `prometheus` setzt das. |
 
 Erreichen Sie API oder Studio über einen Ingress-Namen, ergänzen Sie ihn in Ihrem Overlay:
 
@@ -309,6 +311,7 @@ Voraussetzungen:
 - Prometheus läuft im Namespace `monitoring` unter `prometheus-operated:9090`.
 - Prometheus sammelt `render_duration` (Histogramm in Sekunden) aus dem Namespace `openvideo`.
 
+Das Overlay setzt in der API `OPENVIDEO_METRICS=prometheus`. Die API liefert ihre Metriken dann auf Port 9464.
 Die NetworkPolicy `prometheus-scrape` erlaubt Prometheus den Zugriff auf Koordinator und API.
 
 ## Updates und Rollback

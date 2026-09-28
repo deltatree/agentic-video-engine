@@ -9,7 +9,7 @@ import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
 import { OpenVideoError, contentHash, isRecord } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
 import { createNodeEnvironment, type BackendProvider, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
-import { createProcessChunkRunner } from '@agentic-video/scheduler';
+import { createProcessChunkRunner, createRemoteChunkRunner } from '@agentic-video/scheduler';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 import { createTemplateCatalog } from '@agentic-video/templates';
 
@@ -82,7 +82,7 @@ export interface LocalServices extends AgentServices {
  */
 export async function createLocalServices(options: LocalServicesOptions): Promise<LocalServices> {
   mkdirSync(options.workspaceDir, { recursive: true });
-  const telemetry = options.telemetry ?? createTelemetry({ serviceName: 'openvideo', exporter: 'none' });
+  const telemetry = options.telemetry ?? telemetryFromEnv(options.env ?? process.env);
   // Immer storeFromEnv: lokal und mit S3 derselbe Pfad (`<workspace>/.openvideo/cache` oder OPENVIDEO_CACHE_DIR).
   const cache = options.cache ?? createCache(storeFromEnv(options.env ?? process.env, options.workspaceDir));
   const jobs = new JobManager(join(options.workspaceDir, 'jobs'), telemetry, options.maxConcurrentJobs ?? 1);
@@ -90,6 +90,9 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
   const isolation = options.isolation ?? 'container';
   const allowOutsidePaths = options.allowOutsidePaths === true;
   const allowHtmlScripts = htmlScriptsAllowed(isolation, options.env ?? process.env);
+  // Im Cluster rendern die Worker am Koordinator; der Cache muss dann der gemeinsame S3-Speicher sein.
+  const coordinatorUrl = nonEmpty((options.env ?? process.env)['OPENVIDEO_COORDINATOR_URL']);
+  const coordinatorToken = nonEmpty((options.env ?? process.env)['OPENVIDEO_WORKER_TOKEN']);
   const create = options.createEnvironment ?? createNodeEnvironment;
   // LRU mit Referenzzählung (B14): Die Map-Reihenfolge ist die Nutzungsreihenfolge.
   const envs = new Map<string, EnvEntry>();
@@ -163,7 +166,9 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
     ...(options.sources !== undefined ? { sources: options.sources } : {}),
     ...(options.chunkRunner !== undefined
       ? { chunkRunner: options.chunkRunner }
-      : options.workers !== undefined
+      : coordinatorUrl !== undefined
+        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => remoteRunner(env, project, coordinatorUrl, coordinatorToken) }
+        : options.workers !== undefined
         ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, options.workers ?? 1, isolation === 'trusted') }
         : {}),
     ...(options.benchmark !== undefined ? { benchmark: options.benchmark } : {}),
@@ -207,6 +212,52 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
 }
 
 /**
+ * Telemetrie nach Umgebung: `OPENVIDEO_METRICS` = `prometheus` (Port `OPENVIDEO_METRICS_PORT`, Standard 9464),
+ * `otlp` (`OTEL_EXPORTER_OTLP_ENDPOINT`) oder `console`. Ohne Angabe gibt es keinen Export.
+ *
+ * @example
+ * ```ts
+ * const telemetry = telemetryFromEnv({ OPENVIDEO_METRICS: 'prometheus' });
+ * ```
+ */
+export function telemetryFromEnv(env: Readonly<Record<string, string | undefined>>): Telemetry {
+  const kind = nonEmpty(env['OPENVIDEO_METRICS']) ?? 'none';
+  const exporter = (['none', 'console', 'otlp', 'prometheus'] as const).find((k) => k === kind);
+  if (exporter === undefined) {
+    throw new OpenVideoError({ code: 'OV_TELEMETRY_EXPORTER', errorClass: 'ConfigError', problem: `OPENVIDEO_METRICS="${kind}" is not a known exporter.`, suggestions: ['Use one of: none, console, otlp, prometheus.'] });
+  }
+  const port = Number(env['OPENVIDEO_METRICS_PORT'] ?? '9464');
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new OpenVideoError({ code: 'OV_TELEMETRY_EXPORTER', errorClass: 'ConfigError', problem: `OPENVIDEO_METRICS_PORT="${String(env['OPENVIDEO_METRICS_PORT'])}" is not a TCP port.`, suggestions: ['Set a port between 1 and 65535, e.g. 9464.'] });
+  }
+  return createTelemetry({ serviceName: 'openvideo', exporter, ...(exporter === 'prometheus' ? { prometheusPort: port } : {}) });
+}
+
+function nonEmpty(value: string | undefined): string | undefined {
+  return value !== undefined && value !== '' ? value : undefined;
+}
+
+function projectDirOf(env: RenderEnvironment): string {
+  const projectDir = 'projectDir' in env && typeof env.projectDir === 'string' ? env.projectDir : undefined;
+  if (projectDir === undefined) {
+    throw new OpenVideoError({ code: 'OV_SCHEDULER_ENV', errorClass: 'SchedulerError', problem: 'Worker processes need a Node render environment with a project directory.', suggestions: ['Create the environment with createNodeEnvironment({ projectDir, project }).'] });
+  }
+  return projectDir;
+}
+
+/**
+ * Chunk-Runner mit Pull-Workern am Koordinator (`OPENVIDEO_COORDINATOR_URL`, Kubernetes).
+ *
+ * @example
+ * ```ts
+ * const runChunks = remoteRunner(env, project, 'http://coordinator:8080', process.env.OPENVIDEO_WORKER_TOKEN);
+ * ```
+ */
+export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, coordinatorUrl: string, token: string | undefined): ChunkRunner {
+  return createRemoteChunkRunner({ coordinatorUrl, projectDir: projectDirOf(env), project, telemetry: env.telemetry, ...(token !== undefined ? { token } : {}) });
+}
+
+/**
  * Chunk-Runner mit lokalen Worker-Prozessen für eine Node-Umgebung (`--workers`).
  *
  * @example
@@ -215,9 +266,5 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
  * ```
  */
 export function processRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, workers: number, trusted: boolean): ChunkRunner {
-  const projectDir = 'projectDir' in env && typeof env.projectDir === 'string' ? env.projectDir : undefined;
-  if (projectDir === undefined) {
-    throw new OpenVideoError({ code: 'OV_SCHEDULER_ENV', errorClass: 'SchedulerError', problem: 'Worker processes need a Node render environment with a project directory.', suggestions: ['Create the environment with createNodeEnvironment({ projectDir, project }).'] });
-  }
-  return createProcessChunkRunner({ concurrency: workers, projectDir, project, cache: env.cache, telemetry: env.telemetry, trusted });
+  return createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted });
 }

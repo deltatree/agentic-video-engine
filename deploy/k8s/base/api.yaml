@@ -71,6 +71,12 @@ spec:
             - name: OPENVIDEO_API_TOKEN
               valueFrom:
                 secretKeyRef: { name: openvideo-secrets, key: api-token }
+            # Video-Renders gehen als Chunks an die CPU-Queue des Koordinators; die Worker skalieren darüber.
+            - name: OPENVIDEO_COORDINATOR_URL
+              value: http://coordinator:8080
+            - name: OPENVIDEO_WORKER_TOKEN
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: worker-token }
             # Erlaubte Host-Header (Service-Namen). Ingress-Namen im Overlay ergänzen.
             - name: OPENVIDEO_ALLOWED_HOSTS
               value: api,api.openvideo,api.openvideo.svc,api.openvideo.svc.cluster.local
