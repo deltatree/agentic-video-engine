@@ -1,0 +1,5 @@
+{
+  "schema": [],
+  "timeline": ["schema"],
+  "core": ["schema", "timeline"]
+}

@@ -1,0 +1,33 @@
+{
+  "name": "agentic-video-engine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "OpenVideo \u2013 Open-Source-Plattform f\u00fcr Video-as-Code, gebaut f\u00fcr Coding Agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -b tsconfig.json",
+    "lint": "tsc -p tsconfig.eslint.json && eslint . --max-warnings 0",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check:deps": "node scripts/check-deps.mjs",
+    "check": "npm run check:deps && npm run build && npm run lint && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^22.13.0",
+    "eslint": "^10.11.0",
+    "fast-check": "^4.10.2",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.2"
+  }
+}

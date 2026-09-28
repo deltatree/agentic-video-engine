@@ -1,0 +1,35 @@
+# Abhängigkeiten und Build-Ausgaben
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.vite/
+
+# Laufzeit-Caches und Render-Ausgaben
+.openvideo/
+out/
+*.log
+
+# Persönliche Agenten-Konfiguration (stammt aus einem privaten Repo)
+.agents/
+.claude/
+.clinerules/
+.codex/
+.cursor/
+.devin/
+.gemini/
+.kiro/
+.rules
+.mcp.json
+.bestaiconfig.lock
+GEMINI.md
+QWEN.md
+memory-bank/
+_bmad/
+.github/agents/
+.github/copilot-instructions.md
+.github/hooks/
+.github/instructions/
+
+# BMAD-Laufzeitdateien
+_bmad-output/**/.memlog.md.lock

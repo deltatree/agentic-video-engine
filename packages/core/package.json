@@ -1,0 +1,33 @@
+{
+  "name": "@agentic-video/core",
+  "version": "0.1.0",
+  "description": "Frame Evaluation, Patches, Registry, Plugins, Diagnosen, Renderer-Verträge.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/core"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/schema": "0.1.0",
+    "@agentic-video/timeline": "0.1.0",
+    "@noble/hashes": "^2.4.0"
+  }
+}
