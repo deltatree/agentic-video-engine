@@ -25,3 +25,4 @@ export * from './plan.js';
 export * from './patches.js';
 export * from './bounds.js';
 export * from './frame-key.js';
+export * from './semantics.js';

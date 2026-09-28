@@ -12,6 +12,7 @@ if (!name || !description) {
   process.exit(1);
 }
 const dom = rest.includes('--dom');
+const nodeTypes = !rest.includes('--isomorphic');
 const deps = [];
 for (let i = 0; i < rest.length; i++) {
   if (rest[i] === '--dep' && rest[i + 1]) deps.push(rest[++i]);
@@ -47,6 +48,7 @@ const tsconfig = {
     rootDir: 'src',
     outDir: 'dist',
     ...(dom ? { lib: ['ES2023', 'DOM', 'DOM.Iterable'] } : {}),
+    types: nodeTypes ? ['node'] : [],
   },
   include: ['src'],
   references: deps.map((d) => ({ path: `../${d}` })),

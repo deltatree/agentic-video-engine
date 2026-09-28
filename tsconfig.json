@@ -1,8 +1,44 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/schema" },
-    { "path": "packages/timeline" },
-    { "path": "packages/core" }
+    {
+      "path": "packages/schema"
+    },
+    {
+      "path": "packages/timeline"
+    },
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/png"
+    },
+    {
+      "path": "packages/testing"
+    },
+    {
+      "path": "packages/fonts"
+    },
+    {
+      "path": "packages/renderer-skia"
+    },
+    {
+      "path": "packages/compositor"
+    },
+    {
+      "path": "packages/ffmpeg"
+    },
+    {
+      "path": "packages/audio"
+    },
+    {
+      "path": "packages/renderer-three"
+    },
+    {
+      "path": "packages/renderer-pixi"
+    },
+    {
+      "path": "packages/renderer-browser"
+    }
   ]
 }

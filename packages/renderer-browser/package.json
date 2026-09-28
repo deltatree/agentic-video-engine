@@ -1,0 +1,39 @@
+{
+  "name": "@agentic-video/renderer-browser",
+  "version": "0.1.0",
+  "description": "Chromium-Host (Playwright): DOM-, PixiJS- und Three.js-Layer mit virtueller Zeit.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/renderer-browser"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/png": "0.1.0",
+    "@agentic-video/renderer-pixi": "0.1.0",
+    "@agentic-video/renderer-three": "0.1.0",
+    "playwright-core": "1.63.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "playwright": "1.63.0"
+  }
+}
