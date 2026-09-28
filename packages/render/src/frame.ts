@@ -19,7 +19,7 @@ import {
   type NodeBounds,
   type RgbaImage,
 } from '@agentic-video/core';
-import { decodeRawFrame, encodeRawFrame } from '@agentic-video/png';
+import { decodeRawFrame, encodeRawFrameAsync } from '@agentic-video/png';
 import type { CompositorNode, RenderEnvironment } from './environment.js';
 
 /** Optionen für {@link renderFrame}. */
@@ -84,6 +84,37 @@ interface PlanContext {
   readonly compositionId: string | undefined;
   readonly counters: { rendered: number; cached: number };
   readonly signal: { readonly aborted: boolean } | undefined;
+  /** Laufende Cache-Schreibvorgänge; {@link renderFrame} wartet am Ende auf alle. */
+  readonly writes: CacheWrites;
+}
+
+/**
+ * Cache-Schreibvorgänge im Hintergrund: Die zlib-Kompression eines Layers (1080p: rund 150 ms)
+ * läuft im Thread-Pool, während der Haupt-Thread weitere Layer und den Compositor rechnet.
+ */
+class CacheWrites {
+  readonly #pending: Promise<void>[] = [];
+  #error: unknown;
+  #failed = false;
+
+  add(image: RgbaImage, put: (bytes: Uint8Array) => Promise<void>): void {
+    this.#pending.push(
+      encodeRawFrameAsync(image)
+        .then(put)
+        .catch((error: unknown) => {
+          if (!this.#failed) {
+            this.#failed = true;
+            this.#error = error;
+          }
+        }),
+    );
+  }
+
+  /** Wartet auf alle Schreibvorgänge; wirft den ersten Fehler. */
+  async flush(): Promise<void> {
+    await Promise.all(this.#pending);
+    if (this.#failed) throw this.#error;
+  }
 }
 
 async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: readonly EvaluatedNode[], layerId: string): Promise<RgbaImage> {
@@ -129,7 +160,7 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
     });
   }
   ctx.counters.rendered++;
-  await tier.put(key, encodeRawFrame(image));
+  ctx.writes.add(image, (bytes) => tier.put(key, bytes));
   return image;
 }
 
@@ -239,31 +270,40 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
   }
   const plan = await time('framePlan', () => planFrame(scene, env.registry, { renderer2d: renderer2dOf(project) }));
   const counters = { rendered: 0, cached: 0 };
-  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal };
-  const tree = await time('renderers', () => buildTree(ctx, plan));
-  if (options.debug !== undefined && env.overlays !== undefined && Object.values(options.debug).some((v) => v === true)) {
-    const overlays = env.overlays;
-    const debug = options.debug;
-    tree.push({ kind: 'image', image: await time('debugOverlay', () => overlays.debugOverlay(scene, bounds, debug, { ...size, scale })) });
+  const writes = new CacheWrites();
+  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal, writes };
+  let image: RgbaImage;
+  try {
+    const tree = await time('renderers', () => buildTree(ctx, plan));
+    if (options.debug !== undefined && env.overlays !== undefined && Object.values(options.debug).some((v) => v === true)) {
+      const overlays = env.overlays;
+      const debug = options.debug;
+      tree.push({ kind: 'image', image: await time('debugOverlay', () => overlays.debugOverlay(scene, bounds, debug, { ...size, scale })) });
+    }
+    const settings = isRecord(project['settings']) ? project['settings'] : {};
+    const outputSpace = settings['outputColorSpace'] === 'rec709' ? 'rec709' : 'srgb';
+    image = await time('compositor', () =>
+      env.composite({
+        width: size.width,
+        height: size.height,
+        scale,
+        background: scene.background,
+        workingSpace: scene.colorSpace,
+        outputSpace,
+        layers: tree,
+        frame: scene.frame,
+        seed: scene.seed,
+        effects: env.registry.effects,
+        ...(env.resolveLut !== undefined ? { resolveLut: (id: string) => env.resolveLut?.(id) } : {}),
+      }),
+    );
+  } catch (error) {
+    // Der Render-Fehler hat Vorrang; laufende Schreibvorgänge enden trotzdem, bevor er weiterfliegt.
+    await writes.flush().catch(() => undefined);
+    throw error;
   }
-  const settings = isRecord(project['settings']) ? project['settings'] : {};
-  const outputSpace = settings['outputColorSpace'] === 'rec709' ? 'rec709' : 'srgb';
-  const image = await time('compositor', () =>
-    env.composite({
-      width: size.width,
-      height: size.height,
-      scale,
-      background: scene.background,
-      workingSpace: scene.colorSpace,
-      outputSpace,
-      layers: tree,
-      frame: scene.frame,
-      seed: scene.seed,
-      effects: env.registry.effects,
-      ...(env.resolveLut !== undefined ? { resolveLut: (id: string) => env.resolveLut?.(id) } : {}),
-    }),
-  );
-  if (options.useCache !== false) await time('frameCache', () => tier.put(key, encodeRawFrame(image)));
+  if (options.useCache !== false) writes.add(image, (bytes) => tier.put(key, bytes));
+  await time('frameCache', () => writes.flush());
   env.telemetry.metrics.recordFrameDuration(Object.values(timings).reduce((a, b) => a + b, 0), { composition: scene.compositionId });
   return { image, key, cached: false, scene, bounds, diagnostics, timings, layers: counters };
 }

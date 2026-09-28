@@ -93,7 +93,7 @@ export function renderDebugOverlay(canvasKit: CanvasKit, fonts: FontResolver, sc
   const scope = new Scope();
   const engine = new TextEngine(canvasKit, fonts);
   try {
-    const surface = scope.add(makeSurface(canvasKit, size.width, size.height));
+    const surface = makeSurface(canvasKit, size.width, size.height, scope);
     const canvas = surface.getCanvas();
     canvas.clear(canvasKit.TRANSPARENT);
     canvas.scale(size.width / scene.width, size.height / scene.height);
@@ -139,7 +139,7 @@ export function renderContactSheet(canvasKit: CanvasKit, fonts: FontResolver, fr
   const scope = new Scope();
   const engine = new TextEngine(ck, fonts);
   try {
-    const surface = scope.add(makeSurface(ck, width, height));
+    const surface = makeSurface(ck, width, height, scope);
     const canvas = surface.getCanvas();
     canvas.clear(toColor(ck, options.background));
     const paint = scope.add(new ck.Paint());

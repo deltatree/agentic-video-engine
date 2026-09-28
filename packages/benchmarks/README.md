@@ -106,37 +106,39 @@ Die Datei `baseline.json` enthält dieselben Werte.
 
 | Szenario | Auflösung | Frames | fps | Mittel ms | p50 ms | p95 ms | Start ms | CPU % | Spitzen-RAM MB | GPU % | Cache-Treffer | Encoder fps | Worker |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| text-heavy | 1080p30 | 5 | 0.14 | 7285.0 | 7222.9 | 7565.2 | 1075 | 110 | 580 | no GPU | 0 % | 8.0 | 1 |
-| text-heavy | 1080p60 | 5 | 0.14 | 7068.5 | 7060.4 | 7099.4 | 1049 | 109 | 570 | no GPU | 0 % | 8.2 | 1 |
-| text-heavy | 4k30 | 5 | 0.04 | 27729.4 | 27805.6 | 27880.4 | 1841 | 105 | 1352 | no GPU | 0 % | 2.0 | 1 |
-| text-heavy | 4k60 | 5 | 0.03 | 29128.8 | 28953.7 | 30405.7 | 2167 | 105 | 1319 | no GPU | 0 % | 1.9 | 1 |
-| vector-heavy | 1080p30 | 5 | 2.38 | 419.6 | 419.5 | 448.4 | 1066 | 144 | 496 | no GPU | 0 % | 7.2 | 1 |
-| vector-heavy | 1080p60 | 5 | 2.29 | 435.8 | 438.1 | 490.9 | 1108 | 161 | 478 | no GPU | 0 % | 7.4 | 1 |
-| vector-heavy | 4k30 | 5 | 0.81 | 1227.9 | 1223.4 | 1281.8 | 1722 | 145 | 1049 | no GPU | 0 % | 1.9 | 1 |
-| vector-heavy | 4k60 | 5 | 0.71 | 1409.9 | 1415.2 | 1441.2 | 1926 | 144 | 1150 | no GPU | 0 % | 1.8 | 1 |
-| image-heavy | 1080p30 | 5 | 0.05 | 19141.9 | 18661.4 | 20282.9 | 1803 | 104 | 491 | no GPU | 0 % | 5.0 | 1 |
-| image-heavy | 1080p60 | 5 | 0.05 | 18280.7 | 18177.6 | 18796.8 | 1707 | 103 | 493 | no GPU | 0 % | 5.8 | 1 |
-| image-heavy | 4k30 | 5 | 0.01 | 78099.9 | 78279.4 | 82344.8 | 5549 | 102 | 1172 | no GPU | 0 % | 1.3 | 1 |
-| image-heavy | 4k60 | 5 | 0.01 | 73726.3 | 74490.3 | 74835.5 | 4533 | 102 | 1174 | no GPU | 0 % | 1.5 | 1 |
-| video-heavy | 1080p30 | 5 | 1.01 | 986.7 | 951.9 | 1119.3 | 1769 | 186 | 792 | no GPU | 0 % | 9.5 | 1 |
-| video-heavy | 1080p60 | 5 | 0.96 | 1039.6 | 1066.2 | 1168.4 | 1873 | 193 | 781 | no GPU | 0 % | 9.2 | 1 |
-| video-heavy | 4k30 | 5 | 0.33 | 3044.6 | 2990.4 | 3231.3 | 3600 | 142 | 1349 | no GPU | 0 % | 2.4 | 1 |
-| video-heavy | 4k60 | 5 | 0.33 | 3041.0 | 2990.3 | 3283.7 | 3650 | 144 | 1398 | no GPU | 0 % | 2.3 | 1 |
-| 3d-heavy | 1080p30 | 5 | 0.47 | 2109.8 | 2053.9 | 2354.0 | 4262 | 209 | 2249 | no GPU | 0 % | 9.7 | 1 |
-| 3d-heavy | 1080p60 | 5 | 0.47 | 2116.7 | 2057.8 | 2357.4 | 4069 | 211 | 2254 | no GPU | 0 % | 9.3 | 1 |
-| 3d-heavy | 4k30 | 5 | 0.12 | 8150.6 | 8043.9 | 8788.0 | 10901 | 193 | 4452 | no GPU | 0 % | 2.9 | 1 |
-| 3d-heavy | 4k60 | 5 | 0.11 | 8882.7 | 8425.2 | 10610.4 | 10836 | 190 | 4402 | no GPU | 0 % | 2.9 | 1 |
-| mixed | 1080p30 | 5 | 0.10 | 10348.4 | 10251.5 | 10854.8 | 12667 | 133 | 2399 | no GPU | 0 % | 6.4 | 1 |
-| mixed | 1080p60 | 5 | 0.10 | 10018.1 | 10034.4 | 10238.3 | 12523 | 135 | 2356 | no GPU | 0 % | 7.3 | 1 |
-| mixed | 4k30 | 5 | 0.01 | 71889.4 | 73860.0 | 75409.9 | 69876 | 116 | 4778 | no GPU | 0 % | 2.3 | 1 |
-| mixed | 4k60 | 5 | 0.01 | 72077.5 | 71849.6 | 75482.9 | 68332 | 116 | 4839 | no GPU | 0 % | 2.4 | 1 |
-| audio-heavy | 1080p30 | 5 | 7.07 | 141.5 | 142.7 | 168.9 | 910 | 155 | 501 | no GPU | 0 % | 14.4 | 1 |
-| audio-heavy | 1080p60 | 5 | 7.47 | 133.9 | 130.2 | 154.5 | 938 | 160 | 548 | no GPU | 0 % | 12.7 | 1 |
-| audio-heavy | 4k30 | 5 | 1.65 | 607.8 | 601.5 | 627.8 | 1319 | 145 | 1158 | no GPU | 0 % | 3.1 | 1 |
-| audio-heavy | 4k60 | 5 | 1.67 | 597.7 | 609.4 | 633.6 | 1311 | 144 | 1155 | no GPU | 0 % | 3.3 | 1 |
+| text-heavy | 1080p30 | 5 | 1.94 | 516.1 | 508.1 | 578.8 | 1190 | 182 | 554 | no GPU | 0 % | 7.0 | 1 |
+| text-heavy | 1080p60 | 5 | 1.48 | 675.6 | 639.4 | 840.4 | 1351 | 163 | 584 | no GPU | 0 % | 6.2 | 1 |
+| text-heavy | 4k30 | 5 | 0.46 | 2192.4 | 2142.0 | 2831.9 | 2094 | 135 | 1135 | no GPU | 0 % | 1.4 | 1 |
+| text-heavy | 4k60 | 5 | 0.48 | 2078.3 | 1998.8 | 2436.0 | 1780 | 136 | 1087 | no GPU | 0 % | 1.4 | 1 |
+| vector-heavy | 1080p30 | 5 | 2.36 | 424.5 | 442.8 | 493.0 | 1501 | 165 | 453 | no GPU | 0 % | 5.1 | 1 |
+| vector-heavy | 1080p60 | 5 | 2.61 | 382.6 | 364.9 | 438.8 | 1457 | 166 | 447 | no GPU | 0 % | 5.6 | 1 |
+| vector-heavy | 4k30 | 5 | 0.90 | 1105.8 | 1063.8 | 1313.9 | 2416 | 147 | 930 | no GPU | 0 % | 1.6 | 1 |
+| vector-heavy | 4k60 | 5 | 0.99 | 1011.8 | 1021.0 | 1269.2 | 1822 | 155 | 916 | no GPU | 0 % | 1.7 | 1 |
+| image-heavy | 1080p30 | 5 | 0.90 | 1109.4 | 934.2 | 1548.1 | 2332 | 153 | 469 | no GPU | 0 % | 3.7 | 1 |
+| image-heavy | 1080p60 | 5 | 0.87 | 1151.1 | 1045.5 | 1428.6 | 2000 | 155 | 454 | no GPU | 0 % | 3.9 | 1 |
+| image-heavy | 4k30 | 5 | 0.25 | 3973.7 | 3775.1 | 5091.7 | 5818 | 146 | 985 | no GPU | 0 % | 1.2 | 1 |
+| image-heavy | 4k60 | 5 | 0.26 | 3810.8 | 3898.4 | 4135.7 | 4884 | 147 | 1045 | no GPU | 0 % | 1.1 | 1 |
+| video-heavy | 1080p30 | 5 | 0.89 | 1119.4 | 1089.2 | 1288.1 | 2380 | 189 | 767 | no GPU | 0 % | 6.6 | 1 |
+| video-heavy | 1080p60 | 5 | 0.85 | 1175.5 | 1164.8 | 1437.3 | 2561 | 186 | 765 | no GPU | 0 % | 6.7 | 1 |
+| video-heavy | 4k30 | 5 | 0.30 | 3291.4 | 2978.2 | 4546.3 | 4007 | 145 | 1330 | no GPU | 0 % | 2.0 | 1 |
+| video-heavy | 4k60 | 5 | 0.31 | 3194.2 | 3013.6 | 4088.4 | 4549 | 147 | 1298 | no GPU | 0 % | 2.0 | 1 |
+| 3d-heavy | 1080p30 | 5 | 0.46 | 2155.0 | 2012.4 | 2615.2 | 4525 | 186 | 2104 | no GPU | 0 % | 6.8 | 1 |
+| 3d-heavy | 1080p60 | 5 | 0.47 | 2125.3 | 2059.5 | 2568.9 | 5320 | 179 | 2110 | no GPU | 0 % | 6.7 | 1 |
+| 3d-heavy | 4k30 | 5 | 0.15 | 6518.9 | 6438.3 | 7961.1 | 10411 | 181 | 3889 | no GPU | 0 % | 2.2 | 1 |
+| 3d-heavy | 4k60 | 5 | 0.14 | 6971.4 | 7126.0 | 8016.6 | 10521 | 178 | 3920 | no GPU | 0 % | 2.3 | 1 |
+| mixed | 1080p30 | 5 | 0.34 | 2921.4 | 2880.3 | 3236.9 | 5558 | 171 | 2077 | no GPU | 0 % | 7.2 | 1 |
+| mixed | 1080p60 | 5 | 0.36 | 2776.8 | 2860.4 | 2978.3 | 5824 | 173 | 2059 | no GPU | 0 % | 8.2 | 1 |
+| mixed | 4k30 | 5 | 0.10 | 9714.9 | 9478.6 | 10545.1 | 14610 | 159 | 3534 | no GPU | 0 % | 1.7 | 1 |
+| mixed | 4k60 | 5 | 0.09 | 11458.7 | 10855.8 | 13452.9 | 15087 | 150 | 3536 | no GPU | 0 % | 1.9 | 1 |
+| audio-heavy | 1080p30 | 5 | 6.98 | 143.3 | 145.2 | 159.4 | 1252 | 161 | 473 | no GPU | 0 % | 9.0 | 1 |
+| audio-heavy | 1080p60 | 5 | 8.26 | 121.1 | 131.2 | 135.5 | 1093 | 165 | 466 | no GPU | 0 % | 8.6 | 1 |
+| audio-heavy | 4k30 | 5 | 1.97 | 508.3 | 481.0 | 592.3 | 1548 | 138 | 1059 | no GPU | 0 % | 2.2 | 1 |
+| audio-heavy | 4k60 | 5 | 1.48 | 674.6 | 626.4 | 1072.1 | 1516 | 125 | 1067 | no GPU | 0 % | 2.1 | 1 |
 
 Beobachtungen aus dieser Messung:
 
+- Die Messung lief, während ein anderer Test acht Worker-Prozesse rechnen ließ (Load etwa 12 bei 16 Threads). Die Werte sind deshalb eher zu hoch; wiederhole sie auf einer freien Maschine.
 - Die Cache-Trefferquote ist 0 %, weil sich in jedem Szenario jeder Layer pro Frame bewegt.
-- `text-heavy`, `image-heavy` und `mixed` brauchen mehrere Sekunden pro Frame in 1080p. Das ist ein Hinweis für Optimierungen in den Renderern, nicht im Benchmark.
+- Gegenüber der ersten Basis sind `image-heavy` etwa 17-mal, `text-heavy` 14-mal und `mixed` 3,5-mal schneller (1080p30). Ursache war eine Skia-Surface mit nicht vormultipliziertem Alpha und ein Gauß-Weichzeichner, der das ganze Bild faltete.
+- `mixed` und `3d-heavy` hängen am Software-Rendering von Chromium (SwiftShader): Rücklesen der WebGL-Pixel und das Abfangen der Frame-Übertragung durch Playwright.
 - 1080p60 und 4k60 kosten pro Frame etwa so viel wie 30 fps. Ein Video mit 60 fps braucht also doppelt so lange.

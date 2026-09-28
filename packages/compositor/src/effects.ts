@@ -45,6 +45,37 @@ function required(e: Readonly<Record<string, unknown>>, type: string, key: strin
 // Gauß-Weichzeichner
 // ---------------------------------------------------------------------------
 
+/** Kleinstes Rechteck (inklusive Grenzen), das alle Pixel mit einem Kanal ungleich 0 enthält. */
+function nonZeroBounds(data: Float32Array, w: number, h: number): { x0: number; y0: number; x1: number; y1: number } | undefined {
+  let x0 = w;
+  let y0 = h;
+  let x1 = -1;
+  let y1 = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w * 4;
+    let first = -1;
+    for (let i = row; i < row + w * 4; i++) {
+      if (data[i] !== 0) {
+        first = (i - row) >> 2;
+        break;
+      }
+    }
+    if (first < 0) continue;
+    let last = first;
+    for (let i = row + w * 4 - 1; i >= row + first * 4; i--) {
+      if (data[i] !== 0) {
+        last = (i - row) >> 2;
+        break;
+      }
+    }
+    if (y0 === h) y0 = y;
+    y1 = y;
+    if (first < x0) x0 = first;
+    if (last > x1) x1 = last;
+  }
+  return x1 < 0 ? undefined : { x0, y0, x1, y1 };
+}
+
 /**
  * Separabler Gauß-Weichzeichner auf einem vormultiplizierten Float-Bild.
  * `sigma` ist die Standardabweichung in Pixeln; der Kernel reicht über ±3σ.
@@ -70,15 +101,23 @@ export function gaussianBlur(image: FloatImage, sigma: number): FloatImage {
   const src = image.data;
   const tmp = new Float32Array(src.length);
   const out = new Float32Array(src.length);
-  for (let y = 0; y < h; y++) {
+  // Nur der Bereich mit Inhalt (plus Kernel-Radius) wird gerechnet. Außerhalb sind alle Pixel 0;
+  // ihre Summanden (0 · Gewicht) ändern eine Float-Summe nicht. Das Ergebnis bleibt bitgleich,
+  // kostet bei kleinen Inhalten auf großen Layern aber nur einen Bruchteil.
+  const content = nonZeroBounds(src, w, h);
+  if (content === undefined) return { width: w, height: h, data: out };
+  const { x0, y0, x1, y1 } = content;
+  const cx0 = Math.max(0, x0 - r);
+  const cx1 = Math.min(w - 1, x1 + r);
+  for (let y = y0; y <= y1; y++) {
     const row = y * w;
-    for (let x = 0; x < w; x++) {
+    for (let x = cx0; x <= cx1; x++) {
       let a0 = 0;
       let a1 = 0;
       let a2 = 0;
       let a3 = 0;
-      const k0 = Math.max(-r, -x);
-      const k1 = Math.min(r, w - 1 - x);
+      const k0 = Math.max(-r, x0 - x);
+      const k1 = Math.min(r, x1 - x);
       for (let k = k0; k <= k1; k++) {
         const wt = kernel[k + r] ?? 0;
         const j = (row + x + k) * 4;
@@ -94,10 +133,12 @@ export function gaussianBlur(image: FloatImage, sigma: number): FloatImage {
       tmp[o + 3] = a3;
     }
   }
-  for (let y = 0; y < h; y++) {
-    const k0 = Math.max(-r, -y);
-    const k1 = Math.min(r, h - 1 - y);
-    for (let x = 0; x < w; x++) {
+  const cy0 = Math.max(0, y0 - r);
+  const cy1 = Math.min(h - 1, y1 + r);
+  for (let y = cy0; y <= cy1; y++) {
+    const k0 = Math.max(-r, y0 - y);
+    const k1 = Math.min(r, y1 - y);
+    for (let x = cx0; x <= cx1; x++) {
       let a0 = 0;
       let a1 = 0;
       let a2 = 0;

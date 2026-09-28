@@ -14,7 +14,7 @@
  * const back = decodePng(bytes);
  * ```
  */
-import { deflateSync, inflateSync, constants } from 'node:zlib';
+import { deflate, deflateSync, inflateSync, constants } from 'node:zlib';
 import { OpenVideoError, type RgbaImage } from '@agentic-video/core';
 
 const SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
@@ -273,24 +273,88 @@ const RAW_MAGIC = 'OVRF';
  * ```
  */
 export function encodeRawFrame(image: RgbaImage, level = 1): Uint8Array {
-  const header = new Uint8Array(12);
-  const view = new DataView(header.buffer);
-  for (let i = 0; i < 4; i++) header[i] = RAW_MAGIC.charCodeAt(i);
-  view.setUint32(4, image.width);
-  view.setUint32(8, image.height);
   const body = deflateSync(image.data, { level });
-  return concat([header, new Uint8Array(body.buffer, body.byteOffset, body.byteLength)]);
+  return concat([rawHeader(image), new Uint8Array(body.buffer, body.byteOffset, body.byteLength)]);
 }
 
-/** Dekodiert {@link encodeRawFrame}. */
+function rawHeader(image: RgbaImage, magic = RAW_MAGIC, extra = 0): Uint8Array {
+  const header = new Uint8Array(12 + extra);
+  const view = new DataView(header.buffer);
+  for (let i = 0; i < 4; i++) header[i] = magic.charCodeAt(i);
+  view.setUint32(4, image.width);
+  view.setUint32(8, image.height);
+  return header;
+}
+
+/** Rohformat mit mehreren unabhängig komprimierten Abschnitten (parallel kodierbar). */
+const RAW_CHUNKED_MAGIC = 'OVRC';
+/** Abschnitte je Frame; Node rechnet standardmäßig vier zlib-Aufträge gleichzeitig. */
+const RAW_CHUNKS = 4;
+
+function deflateAsync(data: Uint8Array, level: number): Promise<Uint8Array> {
+  return new Promise((resolvePromise, reject) => {
+    deflate(data, { level }, (error, body) => {
+      if (error !== null) {
+        reject(pngError(`Compressing a raw frame failed: ${error.message}`));
+        return;
+      }
+      resolvePromise(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+    });
+  });
+}
+
+/**
+ * Wie {@link encodeRawFrame}, aber die Kompression läuft im Thread-Pool von Node, in vier
+ * Abschnitten gleichzeitig (Kopf `OVRC`). Der Haupt-Thread rechnet derweil weiter,
+ * z. B. im Compositor. {@link decodeRawFrame} liest beide Formate; die Pixel sind bitgleich.
+ *
+ * @example
+ * ```ts
+ * const bytes = await encodeRawFrameAsync(image);
+ * const back = decodeRawFrame(bytes); // bitgleich
+ * ```
+ */
+export async function encodeRawFrameAsync(image: RgbaImage, level = 1): Promise<Uint8Array> {
+  const data = image.data;
+  const count = data.length >= RAW_CHUNKS * 4096 ? RAW_CHUNKS : 1;
+  const step = Math.ceil(data.length / count);
+  const bodies = await Promise.all(Array.from({ length: count }, (_, i) => deflateAsync(data.subarray(i * step, Math.min(data.length, (i + 1) * step)), level)));
+  // Kopf: Magic, Breite, Höhe, Anzahl der Abschnitte, dann die Länge jedes Abschnitts.
+  const header = rawHeader(image, RAW_CHUNKED_MAGIC, 4 + 4 * count);
+  const view = new DataView(header.buffer);
+  view.setUint32(12, count);
+  bodies.forEach((b, i) => {
+    view.setUint32(16 + 4 * i, b.byteLength);
+  });
+  return concat([header, ...bodies]);
+}
+
+/** Dekodiert {@link encodeRawFrame} (`OVRF`) und {@link encodeRawFrameAsync} (`OVRC`). */
 export function decodeRawFrame(bytes: Uint8Array): RgbaImage {
   const magic = String.fromCharCode(bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0, bytes[3] ?? 0);
-  if (magic !== RAW_MAGIC) throw pngError('Not an OpenVideo raw frame.');
+  if (magic !== RAW_MAGIC && magic !== RAW_CHUNKED_MAGIC) throw pngError('Not an OpenVideo raw frame.');
+  if (bytes.length < 12) throw pngError('Raw frame is truncated.');
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const width = view.getUint32(4);
   const height = view.getUint32(8);
-  const body = inflateSync(bytes.subarray(12));
-  const data = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  let data: Uint8Array;
+  if (magic === RAW_MAGIC) {
+    const body = inflateSync(bytes.subarray(12));
+    data = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  } else {
+    const count = bytes.length >= 16 ? view.getUint32(12) : 0;
+    let offset = 16 + 4 * count;
+    if (count === 0 || offset > bytes.length) throw pngError('Raw frame is truncated.');
+    const parts: Uint8Array[] = [];
+    for (let i = 0; i < count; i++) {
+      const length = view.getUint32(16 + 4 * i);
+      if (offset + length > bytes.length) throw pngError('Raw frame is truncated.');
+      const body = inflateSync(bytes.subarray(offset, offset + length));
+      parts.push(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+      offset += length;
+    }
+    data = concat(parts);
+  }
   if (data.length !== width * height * 4) throw pngError('Raw frame is truncated.');
   return { width, height, data };
 }

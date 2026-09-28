@@ -72,6 +72,8 @@ export async function sendCanvas(
     ctx.drawImage(source, 0, 0, place.width, place.height);
   }
   const data = ctx.getImageData(0, 0, width, height).data;
-  const response = await fetch(frameUrl, { method: 'POST', body: data, headers: { 'content-type': 'application/octet-stream' } });
+  // Als Blob senden: Ein TypedArray als Body kostet in Chromium bei 1080p über eine Sekunde,
+  // ein Blob mit denselben Bytes nur einen Bruchteil davon.
+  const response = await fetch(frameUrl, { method: 'POST', body: new Blob([data]), headers: { 'content-type': 'application/octet-stream' } });
   if (!response.ok) throw new Error(`Frame upload failed with HTTP ${String(response.status)}.`);
 }

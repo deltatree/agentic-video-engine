@@ -3,7 +3,7 @@
  */
 import type { CanvasKit, Image, ImageInfo, Surface } from 'canvaskit-wasm';
 import { OpenVideoError, type RgbaImage } from '@agentic-video/core';
-import { nullable } from './scope.js';
+import { nullable, type Scope } from './scope.js';
 
 /**
  * Bildformat aller Ausgaben: RGBA 8 Bit, vormultipliziert, sRGB.
@@ -50,7 +50,8 @@ export function rgbaFromImage(ck: CanvasKit, img: Image): RgbaImage {
   if (!(pixels instanceof Uint8Array)) {
     throw new OpenVideoError({ code: 'OV_SKIA_READBACK', errorClass: 'SkiaRendererError', problem: 'Reading pixels from the Skia image failed.', suggestions: ['Check that width and height are positive and fit into memory.'] });
   }
-  return { width, height, data: new Uint8Array(pixels) };
+  // `readPixels` liefert bereits eine eigene Kopie außerhalb des WASM-Speichers.
+  return { width, height, data: pixels };
 }
 
 /**
@@ -72,15 +73,40 @@ export function rgbaFromSurface(ck: CanvasKit, surface: Surface): RgbaImage {
 }
 
 /**
- * Erzeugt eine Raster-Surface; wirft `OV_SKIA_SURFACE`, wenn das nicht geht.
+ * Erzeugt eine Raster-Surface (RGBA 8 Bit, vormultipliziert, sRGB) und meldet sie beim Scope an.
+ * Wirft `OV_SKIA_SURFACE`, wenn das nicht geht.
+ *
+ * Warum nicht `ck.MakeSurface`: Diese Fabrik reserviert den Pixelpuffer mit `malloc` und gibt ihn
+ * nur in `surface.dispose()` frei, nie in `delete()`. Das leckte pro Layer einen ganzen Frame
+ * (1080p: 8 MB), bis der WASM-Speicher voll war. Außerdem legt sie eine Surface mit
+ * nicht-vormultipliziertem Alpha an; darauf rechnet Skia jede Zeichnung und jeden
+ * `saveLayer` über einen langsamen Pfad (bis zu 14-mal langsamer).
+ * Hier gehören Puffer und Surface dem Scope; `scope.dispose()` gibt beide frei.
  *
  * @example
  * ```ts
- * const surface = makeSurface(ck, 1920, 1080);
+ * const scope = new Scope();
+ * const surface = makeSurface(ck, 1920, 1080, scope);
+ * scope.dispose();
  * ```
  */
-export function makeSurface(ck: CanvasKit, width: number, height: number): Surface {
-  const surface = Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0 ? nullable(ck.MakeSurface(width, height)) : null;
+export function makeSurface(ck: CanvasKit, width: number, height: number, scope: Scope): Surface {
+  const valid = Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0;
+  let surface: Surface | null = null;
+  if (valid) {
+    const pixels = ck.Malloc(Uint8Array, width * height * 4);
+    // Reihenfolge: Der Scope gibt rückwärts frei, also erst die Surface, dann den Puffer.
+    scope.add({
+      delete: () => {
+        ck.Free(pixels);
+      },
+    });
+    surface = nullable(ck.MakeRasterDirectSurface(rgbaInfo(ck, width, height), pixels, width * 4));
+    if (surface !== null) {
+      scope.add(surface);
+      surface.getCanvas().clear(ck.TRANSPARENT);
+    }
+  }
   if (surface === null) {
     throw new OpenVideoError({
       code: 'OV_SKIA_SURFACE',

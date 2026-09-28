@@ -454,6 +454,32 @@ function drawContent(canvas: Canvas, node: EvaluatedNode, box: Box, ctx: DrawCon
 }
 
 /**
+ * Begrenzung für `saveLayer`, wenn der Inhalt sicher in der Box liegt.
+ *
+ * Ohne Begrenzung ist ein Layer so groß wie der ganze Canvas; Anlegen und Zurückschreiben
+ * kosten dann pro Node einen vollen Frame (1080p: rund 8 ms). Außerhalb der Box ist der Layer
+ * leer, und leere Pixel ändern das Ziel bei `normal` (SrcOver) nicht. Innen kann sich ein Kanal
+ * um 1 ändern, weil Skia Bildkoordinaten relativ zum Layer-Ursprung rundet; das Ergebnis bleibt
+ * deterministisch. Deshalb nur ohne Filter, Maske und Blend Mode, und nur für Nodes, deren
+ * Zeichnung die Box nie verlässt (Bilder werden auf die Box beschnitten, Flächen ohne Kontur).
+ */
+function layerBounds(node: EvaluatedNode, box: Box, blend: unknown, hasFilter: boolean): Box | undefined {
+  if (hasFilter || node.mask !== undefined || (blend !== undefined && blend !== 'normal')) return undefined;
+  if (!(box.width > 0 && box.height > 0)) return undefined;
+  switch (node.type) {
+    case 'image':
+    case 'video':
+    case 'sprite':
+      return box;
+    case 'rect':
+    case 'ellipse':
+      return node.props['stroke'] === undefined ? box : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
  * Zeichnet eine Node mit Transform, Reveal-Clip, Opacity, Blend Mode, Filtern, Schatten und Maske.
  *
  * @example
@@ -489,7 +515,9 @@ export function drawNode(canvas: Canvas, node: EvaluatedNode, ctx: DrawContext):
     layer.setAlphaf(transform.opacity);
     layer.setBlendMode(blendModeOf(ck, blend));
     if (imageFilter !== null) layer.setImageFilter(imageFilter);
-    canvas.saveLayer(layer);
+    const bounds = layerBounds(node, box, blend, imageFilter !== null);
+    if (bounds !== undefined) canvas.saveLayer(layer, ck.XYWHRect(bounds.x, bounds.y, bounds.width, bounds.height));
+    else canvas.saveLayer(layer);
   }
   drawContent(canvas, node, box, ctx);
   if (node.mask !== undefined) {

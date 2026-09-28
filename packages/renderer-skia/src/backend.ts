@@ -292,7 +292,7 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
         const text = engineFor(req.fonts);
         const resources = await prepare(req, scope);
         if (req.signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_ABORTED', errorClass: 'SkiaRendererError', problem: 'Rendering was aborted.', suggestions: ['Start the render again.'] });
-        const surface = scope.add(makeSurface(ck, req.width, req.height));
+        const surface = makeSurface(ck, req.width, req.height, scope);
         const canvas = surface.getCanvas();
         canvas.clear(ck.TRANSPARENT);
         canvas.scale(req.scale, req.scale);

@@ -12,225 +12,225 @@
       "scenario": "text-heavy",
       "resolution": "1080p30",
       "frames": 5,
-      "framesPerSecond": 0.13726854892107448,
-      "meanFrameMs": 7284.9899548,
-      "p95FrameMs": 7565.167331000001
+      "framesPerSecond": 1.937508273862676,
+      "meanFrameMs": 516.1268282,
+      "p95FrameMs": 578.8298420000001
     },
     {
       "scenario": "text-heavy",
       "resolution": "1080p60",
       "frames": 5,
-      "framesPerSecond": 0.14147189963216097,
-      "meanFrameMs": 7068.541545,
-      "p95FrameMs": 7099.356804999999
+      "framesPerSecond": 1.4802606068311361,
+      "meanFrameMs": 675.5567198000001,
+      "p95FrameMs": 840.4154490000001
     },
     {
       "scenario": "text-heavy",
       "resolution": "4k30",
       "frames": 5,
-      "framesPerSecond": 0.03606277899266375,
-      "meanFrameMs": 27729.421523600002,
-      "p95FrameMs": 27880.429973999995
+      "framesPerSecond": 0.4561134481857405,
+      "meanFrameMs": 2192.436999999999,
+      "p95FrameMs": 2831.8887239999995
     },
     {
       "scenario": "text-heavy",
       "resolution": "4k60",
       "frames": 5,
-      "framesPerSecond": 0.034330236414447324,
-      "meanFrameMs": 29128.841058,
-      "p95FrameMs": 30405.712421999997
+      "framesPerSecond": 0.48117090993151995,
+      "meanFrameMs": 2078.263626,
+      "p95FrameMs": 2436.0495659999997
     },
     {
       "scenario": "vector-heavy",
       "resolution": "1080p30",
       "frames": 5,
-      "framesPerSecond": 2.383425968520396,
-      "meanFrameMs": 419.56411200000014,
-      "p95FrameMs": 448.36473600000045
+      "framesPerSecond": 2.3558553606826513,
+      "meanFrameMs": 424.47427659999977,
+      "p95FrameMs": 492.98584200000005
     },
     {
       "scenario": "vector-heavy",
       "resolution": "1080p60",
       "frames": 5,
-      "framesPerSecond": 2.294405166285313,
-      "meanFrameMs": 435.8428122000003,
-      "p95FrameMs": 490.85369100000025
+      "framesPerSecond": 2.6140362997241073,
+      "meanFrameMs": 382.55015820000006,
+      "p95FrameMs": 438.76666699999987
     },
     {
       "scenario": "vector-heavy",
       "resolution": "4k30",
       "frames": 5,
-      "framesPerSecond": 0.8144072699854045,
-      "meanFrameMs": 1227.8868778,
-      "p95FrameMs": 1281.8255199999994
+      "framesPerSecond": 0.904314855679497,
+      "meanFrameMs": 1105.809546,
+      "p95FrameMs": 1313.8968260000001
     },
     {
       "scenario": "vector-heavy",
       "resolution": "4k60",
       "frames": 5,
-      "framesPerSecond": 0.7092467564147173,
-      "meanFrameMs": 1409.9465255999999,
-      "p95FrameMs": 1441.1960409999992
+      "framesPerSecond": 0.9883029487517924,
+      "meanFrameMs": 1011.8354916000005,
+      "p95FrameMs": 1269.2083190000012
     },
     {
       "scenario": "image-heavy",
       "resolution": "1080p30",
       "frames": 5,
-      "framesPerSecond": 0.05224133273238149,
-      "meanFrameMs": 19141.9312582,
-      "p95FrameMs": 20282.87079799999
+      "framesPerSecond": 0.9014013465850108,
+      "meanFrameMs": 1109.3837432000003,
+      "p95FrameMs": 1548.0579800000014
     },
     {
       "scenario": "image-heavy",
       "resolution": "1080p60",
       "frames": 5,
-      "framesPerSecond": 0.05470261311820485,
-      "meanFrameMs": 18280.662348600003,
-      "p95FrameMs": 18796.829719
+      "framesPerSecond": 0.8687697444659107,
+      "meanFrameMs": 1151.0529762,
+      "p95FrameMs": 1428.554591
     },
     {
       "scenario": "image-heavy",
       "resolution": "4k30",
       "frames": 5,
-      "framesPerSecond": 0.012804109321131794,
-      "meanFrameMs": 78099.92674380001,
-      "p95FrameMs": 82344.786398
+      "framesPerSecond": 0.25165567688565443,
+      "meanFrameMs": 3973.6834565999998,
+      "p95FrameMs": 5091.666316999999
     },
     {
       "scenario": "image-heavy",
       "resolution": "4k60",
       "frames": 5,
-      "framesPerSecond": 0.013563677868296114,
-      "meanFrameMs": 73726.3159528,
-      "p95FrameMs": 74835.490109
+      "framesPerSecond": 0.2624112214363968,
+      "meanFrameMs": 3810.8126418,
+      "p95FrameMs": 4135.70954
     },
     {
       "scenario": "video-heavy",
       "resolution": "1080p30",
       "frames": 5,
-      "framesPerSecond": 1.013505966934388,
-      "meanFrameMs": 986.6740133999998,
-      "p95FrameMs": 1119.2900959999988
+      "framesPerSecond": 0.893354068505309,
+      "meanFrameMs": 1119.3770031999998,
+      "p95FrameMs": 1288.060958
     },
     {
       "scenario": "video-heavy",
       "resolution": "1080p60",
       "frames": 5,
-      "framesPerSecond": 0.9618632089396166,
-      "meanFrameMs": 1039.6488717999998,
-      "p95FrameMs": 1168.3905019999993
+      "framesPerSecond": 0.8506676166119578,
+      "meanFrameMs": 1175.5472766,
+      "p95FrameMs": 1437.2801490000002
     },
     {
       "scenario": "video-heavy",
       "resolution": "4k30",
       "frames": 5,
-      "framesPerSecond": 0.3284466114784022,
-      "meanFrameMs": 3044.634851,
-      "p95FrameMs": 3231.2764119999993
+      "framesPerSecond": 0.30382149456437396,
+      "meanFrameMs": 3291.4063615999994,
+      "p95FrameMs": 4546.315319999998
     },
     {
       "scenario": "video-heavy",
       "resolution": "4k60",
       "frames": 5,
-      "framesPerSecond": 0.3288365268871834,
-      "meanFrameMs": 3041.024698399999,
-      "p95FrameMs": 3283.7488639999974
+      "framesPerSecond": 0.31306274864399125,
+      "meanFrameMs": 3194.2478123999995,
+      "p95FrameMs": 4088.3609080000006
     },
     {
       "scenario": "3d-heavy",
       "resolution": "1080p30",
       "frames": 5,
-      "framesPerSecond": 0.4739727887939134,
-      "meanFrameMs": 2109.8257614000004,
-      "p95FrameMs": 2354.0493290000004
+      "framesPerSecond": 0.4640269579156269,
+      "meanFrameMs": 2155.0472078000003,
+      "p95FrameMs": 2615.236218
     },
     {
       "scenario": "3d-heavy",
       "resolution": "1080p60",
       "frames": 5,
-      "framesPerSecond": 0.47243011224541215,
-      "meanFrameMs": 2116.715201,
-      "p95FrameMs": 2357.3717780000006
+      "framesPerSecond": 0.4705122940341749,
+      "meanFrameMs": 2125.3429776000003,
+      "p95FrameMs": 2568.9076809999997
     },
     {
       "scenario": "3d-heavy",
       "resolution": "4k30",
       "frames": 5,
-      "framesPerSecond": 0.12269052156943282,
-      "meanFrameMs": 8150.588873600001,
-      "p95FrameMs": 8788.019631000001
+      "framesPerSecond": 0.15339902362977517,
+      "meanFrameMs": 6518.946316200002,
+      "p95FrameMs": 7961.055143000001
     },
     {
       "scenario": "3d-heavy",
       "resolution": "4k60",
       "frames": 5,
-      "framesPerSecond": 0.11257857988731951,
-      "meanFrameMs": 8882.6844414,
-      "p95FrameMs": 10610.44215
+      "framesPerSecond": 0.14344271869471925,
+      "meanFrameMs": 6971.423918199999,
+      "p95FrameMs": 8016.6280510000015
     },
     {
       "scenario": "mixed",
       "resolution": "1080p30",
       "frames": 5,
-      "framesPerSecond": 0.09663305436527946,
-      "meanFrameMs": 10348.425873199998,
-      "p95FrameMs": 10854.790881
+      "framesPerSecond": 0.3423024208001198,
+      "meanFrameMs": 2921.3933038000005,
+      "p95FrameMs": 3236.8567620000013
     },
     {
       "scenario": "mixed",
       "resolution": "1080p60",
       "frames": 5,
-      "framesPerSecond": 0.09981890333900836,
-      "meanFrameMs": 10018.1425216,
-      "p95FrameMs": 10238.308138
+      "framesPerSecond": 0.3601312750552642,
+      "meanFrameMs": 2776.7652221999997,
+      "p95FrameMs": 2978.2685829999973
     },
     {
       "scenario": "mixed",
       "resolution": "4k30",
       "frames": 5,
-      "framesPerSecond": 0.01391026391034061,
-      "meanFrameMs": 71889.3621606,
-      "p95FrameMs": 75409.85316600002
+      "framesPerSecond": 0.1029341905925824,
+      "meanFrameMs": 9714.9449978,
+      "p95FrameMs": 10545.115944000001
     },
     {
       "scenario": "mixed",
       "resolution": "4k60",
       "frames": 5,
-      "framesPerSecond": 0.013873962232372689,
-      "meanFrameMs": 72077.4630384,
-      "p95FrameMs": 75482.89797600004
+      "framesPerSecond": 0.08727010319794444,
+      "meanFrameMs": 11458.6778674,
+      "p95FrameMs": 13452.936400000006
     },
     {
       "scenario": "audio-heavy",
       "resolution": "1080p30",
       "frames": 5,
-      "framesPerSecond": 7.066865732359453,
-      "meanFrameMs": 141.5054478000001,
-      "p95FrameMs": 168.87304800000038
+      "framesPerSecond": 6.976414464474696,
+      "meanFrameMs": 143.3401076000001,
+      "p95FrameMs": 159.40479300000015
     },
     {
       "scenario": "audio-heavy",
       "resolution": "1080p60",
       "frames": 5,
-      "framesPerSecond": 7.470522755283279,
-      "meanFrameMs": 133.85944100000006,
-      "p95FrameMs": 154.51063000000022
+      "framesPerSecond": 8.260350302358392,
+      "meanFrameMs": 121.06024120000002,
+      "p95FrameMs": 135.5217660000003
     },
     {
       "scenario": "audio-heavy",
       "resolution": "4k30",
       "frames": 5,
-      "framesPerSecond": 1.645245222879133,
-      "meanFrameMs": 607.8121279999999,
-      "p95FrameMs": 627.7719339999994
+      "framesPerSecond": 1.967240773256374,
+      "meanFrameMs": 508.3261864000002,
+      "p95FrameMs": 592.2777029999997
     },
     {
       "scenario": "audio-heavy",
       "resolution": "4k60",
       "frames": 5,
-      "framesPerSecond": 1.6730061151264464,
-      "meanFrameMs": 597.7264464,
-      "p95FrameMs": 633.5668679999999
+      "framesPerSecond": 1.4824265910246053,
+      "meanFrameMs": 674.5696589999997,
+      "p95FrameMs": 1072.107606999999
     }
   ]
 }

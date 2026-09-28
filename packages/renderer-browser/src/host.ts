@@ -372,7 +372,7 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
   }
 
   const capture = async (entry: PageEntry, width: number, height: number): Promise<RgbaImage> => {
-    const shot = await entry.cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false });
+    const shot = await entry.cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false, optimizeForSpeed: true });
     const image = decodePng(new Uint8Array(Buffer.from(shot.data, 'base64')));
     if (image.width !== width || image.height !== height) {
       throw hostError('OV_BROWSER_CAPTURE', `Screenshot has size ${String(image.width)}×${String(image.height)}, expected ${String(width)}×${String(height)}.`, ['Check that no device scale factor is forced on the render host.']);

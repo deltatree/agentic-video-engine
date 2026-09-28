@@ -360,6 +360,48 @@ describe('Effekte', () => {
     expect(px(edge, 4, 4)[3]).toBe(255);
   });
 
+  it('blur: rechnet nur den Inhaltsbereich und bleibt bitgleich zur vollen Faltung', () => {
+    // Referenz: volle separable Faltung über das ganze Bild (Stand vor der Optimierung).
+    const reference = (src: Float32Array, w: number, h: number, sigma: number): Float32Array => {
+      const r = Math.ceil(3 * sigma);
+      const kernel = new Float32Array(2 * r + 1);
+      let sum = 0;
+      for (let i = -r; i <= r; i++) {
+        const v = Math.exp(-(i * i) / (2 * sigma * sigma));
+        kernel[i + r] = v;
+        sum += v;
+      }
+      for (let i = 0; i < kernel.length; i++) kernel[i] = (kernel[i] ?? 0) / sum;
+      const tmp = new Float32Array(src.length);
+      const out = new Float32Array(src.length);
+      for (let pass = 0; pass < 2; pass++) {
+        const from = pass === 0 ? src : tmp;
+        const to = pass === 0 ? tmp : out;
+        for (let y = 0; y < h; y++) {
+          for (let x = 0; x < w; x++) {
+            const acc = [0, 0, 0, 0];
+            const pos = pass === 0 ? x : y;
+            const len = pass === 0 ? w : h;
+            for (let k = Math.max(-r, -pos); k <= Math.min(r, len - 1 - pos); k++) {
+              const j = (pass === 0 ? y * w + x + k : (y + k) * w + x) * 4;
+              for (let c = 0; c < 4; c++) acc[c] = (acc[c] ?? 0) + (from[j + c] ?? 0) * (kernel[k + r] ?? 0);
+            }
+            for (let c = 0; c < 4; c++) to[(y * w + x) * 4 + c] = acc[c] ?? 0;
+          }
+        }
+      }
+      return out;
+    };
+    const w = 64;
+    const h = 40;
+    const f = createFloatImage(w, h);
+    // Dünner Inhalt mitten im Bild, dazu ein Pixel am Rand.
+    for (let y = 12; y < 18; y++) for (let x = 20; x < 44; x++) f.data.set([((x * 7) % 11) / 11, 0.3, ((y * 5) % 7) / 7, 0.8], (y * w + x) * 4);
+    f.data.set([0.5, 0.25, 0.125, 1], (39 * w + 63) * 4);
+    for (const sigma of [0.7, 2, 5]) expect(Array.from(gaussianBlur(f, sigma).data)).toEqual(Array.from(reference(f.data, w, h, sigma)));
+    expect(Array.from(gaussianBlur(createFloatImage(8, 8), 3).data).every((v) => v === 0)).toBe(true);
+  });
+
   it('color-grade: exposure +1 verdoppelt lineares Licht, contrast hält 0.18 fest', () => {
     expectClose(gradeColor([0.18, 0.18, 0.18], { ...NEUTRAL_GRADE, exposure: 1 }), [0.36, 0.36, 0.36], 1e-9);
     expectClose(gradeColor([0.18, 0.5, 0.05], { ...NEUTRAL_GRADE, contrast: 2 }).slice(0, 1), [0.18], 1e-9);

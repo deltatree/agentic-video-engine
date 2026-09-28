@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decodePng, decodeRawFrame, encodePng, encodeRawFrame, premultiply, unpremultiply } from '@agentic-video/png';
+import { decodePng, decodeRawFrame, encodePng, encodeRawFrame, encodeRawFrameAsync, premultiply, unpremultiply } from '@agentic-video/png';
 
 function opaqueImage(width: number, height: number, seed: number) {
   const data = new Uint8Array(width * height * 4);
@@ -55,5 +55,15 @@ describe('Rohformat', () => {
         expect(decodeRawFrame(encodeRawFrame(img))).toEqual(img);
       }),
     );
+  });
+
+  it('ist auch parallel kodiert (OVRC) bitgleich, klein und groß', async () => {
+    const small = { width: 4, height: 4, data: Uint8Array.from({ length: 64 }, (_, i) => (i * 37) % 256) };
+    expect(decodeRawFrame(await encodeRawFrameAsync(small))).toEqual(small);
+    const big = { width: 97, height: 61, data: Uint8Array.from({ length: 97 * 61 * 4 }, (_, i) => (i * 131) % 251) };
+    const bytes = await encodeRawFrameAsync(big);
+    expect(String.fromCharCode(...bytes.subarray(0, 4))).toBe('OVRC');
+    expect(decodeRawFrame(bytes)).toEqual(big);
+    expect(() => decodeRawFrame(bytes.subarray(0, bytes.length - 10))).toThrow(/truncated/u);
   });
 });
