@@ -1,0 +1,22 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "OpenVideo API",
+  "entryPointStrategy": "packages",
+  "entryPoints": ["packages/*"],
+  "packageOptions": {
+    "entryPoints": ["src/index.ts"],
+    "tsconfig": "tsconfig.json",
+    "readme": "none",
+    "excludePrivate": true,
+    "excludeInternal": true
+  },
+  "plugin": ["typedoc-plugin-markdown"],
+  "out": "docs/api",
+  "readme": "none",
+  "hidePageHeader": true,
+  "hideBreadcrumbs": true,
+  "useCodeBlocks": true,
+  "githubPages": false,
+  "gitRevision": "main",
+  "validation": { "notExported": false, "invalidLink": true, "notDocumented": false }
+}

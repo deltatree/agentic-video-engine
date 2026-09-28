@@ -65,6 +65,7 @@ Nach jedem Patch rendert OpenVideo nur die Frames neu, die sich wirklich ändern
 | [Rezepte](docs/guide/recipes.md) | Fertige IR-Bausteine für typische Aufgaben |
 | [Agent API](docs/guide/api.md) | Alle Operationen mit Beispielen |
 | [Kommandozeile](docs/guide/cli.md) | Alle Befehle von `openvideo` |
+| [API-Referenz](docs/api/README.md) | Alle exportierten Funktionen und Typen je Paket (TypeDoc) |
 | [Render-Semantik](docs/reference/node-semantics.md) | Verbindliche Bedeutung jedes Node-Typs |
 | [Architektur-Entscheidungen](docs/adr/README.md) | ADR 0001–0017 |
 | [Betrieb mit Docker und Kubernetes](deploy/README.md) | Images, Skalierung, Updates |
