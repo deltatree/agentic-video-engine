@@ -1,0 +1,38 @@
+{
+  "name": "@agentic-video/worker",
+  "version": "0.1.0",
+  "description": "Render-Worker: Chunk-Protokoll über stdio (Prozess, Docker) und HTTP-Pull (Kubernetes).",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/worker"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "openvideo-worker": "./dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/scheduler": "0.1.0",
+    "@agentic-video/render": "0.1.0",
+    "@agentic-video/cache": "0.1.0",
+    "@agentic-video/telemetry": "0.1.0"
+  }
+}

@@ -1,37 +1,188 @@
 {
   "schema": [],
-  "timeline": ["schema"],
-  "core": ["schema", "timeline"],
-  "png": ["core"],
-  "testing": ["core", "png"],
-  "fonts": ["core"],
-  "cache": ["core", "png"],
-  "ffmpeg": ["core"],
-  "audio": ["core", "ffmpeg"],
-  "assets": ["core", "cache", "ffmpeg", "fonts", "png"],
-  "renderer-skia": ["core"],
-  "renderer-three": ["core"],
-  "renderer-pixi": ["core"],
-  "renderer-browser": ["core", "renderer-three", "renderer-pixi", "png"],
-  "renderer-blender": ["core", "png"],
-  "compositor": ["core"],
-  "subtitles": ["core"],
-  "speech": ["core", "cache", "ffmpeg"],
-  "components": ["core"],
-  "sdk": ["core"],
-  "templates": ["core", "sdk", "components"],
-  "sandbox": ["core"],
-  "compiler": ["core", "sdk", "sandbox"],
-  "telemetry": ["core"],
-  "render": ["core", "png", "cache", "fonts", "assets", "ffmpeg", "audio", "compositor", "subtitles", "speech", "components", "renderer-skia", "renderer-browser", "renderer-blender", "telemetry"],
-  "scheduler": ["core", "render", "cache", "telemetry"],
-  "worker": ["core", "scheduler", "render", "cache", "telemetry"],
-  "importers": ["core"],
-  "anime": ["core"],
-  "motion-canvas-adapter": ["core"],
-  "agent": ["core", "render", "scheduler", "compiler", "templates", "components", "assets", "cache", "fonts", "ffmpeg", "telemetry", "importers", "png", "speech", "subtitles"],
-  "mcp": ["core", "agent"],
-  "cli": ["core", "agent", "render", "scheduler", "worker", "compiler", "templates", "assets", "cache", "fonts", "ffmpeg", "renderer-browser", "renderer-skia", "renderer-blender", "telemetry", "importers", "mcp", "speech", "png"],
-  "benchmarks": ["core", "render", "scheduler", "cache", "testing", "png"],
-  "apps/studio": ["core", "agent", "renderer-skia", "compositor", "sdk", "components"]
+  "timeline": [
+    "schema"
+  ],
+  "core": [
+    "schema",
+    "timeline"
+  ],
+  "png": [
+    "core"
+  ],
+  "testing": [
+    "core",
+    "png"
+  ],
+  "fonts": [
+    "core"
+  ],
+  "cache": [
+    "core",
+    "png"
+  ],
+  "ffmpeg": [
+    "core"
+  ],
+  "audio": [
+    "core",
+    "ffmpeg"
+  ],
+  "assets": [
+    "core",
+    "cache",
+    "ffmpeg",
+    "fonts",
+    "png"
+  ],
+  "renderer-skia": [
+    "core"
+  ],
+  "renderer-three": [
+    "core"
+  ],
+  "renderer-pixi": [
+    "core"
+  ],
+  "renderer-browser": [
+    "core",
+    "renderer-three",
+    "renderer-pixi",
+    "png"
+  ],
+  "renderer-blender": [
+    "core",
+    "png"
+  ],
+  "compositor": [
+    "core"
+  ],
+  "subtitles": [
+    "core"
+  ],
+  "speech": [
+    "core",
+    "cache",
+    "ffmpeg"
+  ],
+  "components": [
+    "core"
+  ],
+  "sdk": [
+    "core"
+  ],
+  "templates": [
+    "core",
+    "sdk",
+    "components"
+  ],
+  "sandbox": [
+    "core"
+  ],
+  "compiler": [
+    "core",
+    "sdk",
+    "sandbox"
+  ],
+  "telemetry": [
+    "core"
+  ],
+  "render": [
+    "core",
+    "png",
+    "cache",
+    "fonts",
+    "assets",
+    "ffmpeg",
+    "audio",
+    "compositor",
+    "subtitles",
+    "speech",
+    "components",
+    "renderer-skia",
+    "renderer-browser",
+    "renderer-blender",
+    "telemetry"
+  ],
+  "scheduler": [
+    "core",
+    "render",
+    "cache",
+    "telemetry"
+  ],
+  "worker": [
+    "core",
+    "scheduler",
+    "render",
+    "cache",
+    "telemetry"
+  ],
+  "importers": [
+    "core"
+  ],
+  "anime": [
+    "core"
+  ],
+  "motion-canvas-adapter": [
+    "core"
+  ],
+  "agent": [
+    "core",
+    "render",
+    "scheduler",
+    "compiler",
+    "templates",
+    "components",
+    "assets",
+    "cache",
+    "fonts",
+    "ffmpeg",
+    "telemetry",
+    "importers",
+    "png",
+    "speech",
+    "subtitles"
+  ],
+  "mcp": [
+    "core",
+    "agent"
+  ],
+  "cli": [
+    "core",
+    "agent",
+    "render",
+    "scheduler",
+    "worker",
+    "compiler",
+    "templates",
+    "assets",
+    "cache",
+    "fonts",
+    "ffmpeg",
+    "renderer-browser",
+    "renderer-skia",
+    "renderer-blender",
+    "telemetry",
+    "importers",
+    "mcp",
+    "speech",
+    "png",
+    "sandbox"
+  ],
+  "benchmarks": [
+    "core",
+    "render",
+    "scheduler",
+    "cache",
+    "testing",
+    "png"
+  ],
+  "apps/studio": [
+    "core",
+    "agent",
+    "renderer-skia",
+    "compositor",
+    "sdk",
+    "components"
+  ]
 }

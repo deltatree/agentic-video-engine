@@ -1,0 +1,75 @@
+# Quality Gates (Auftrag A37, NFR-6): kein Merge bei TypeScript-, Lint-, Test-, E2E- oder
+# Golden-Fehlern, Schwachstellen ab "high", Lizenzverstößen oder veraltetem JSON Schema.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      OPENVIDEO_FFMPEG: /usr/local/bin/ffmpeg
+      OPENVIDEO_FFPROBE: /usr/local/bin/ffprobe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: FFmpeg (statischer Build mit allen Encodern)
+        run: |
+          curl -sSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o ff.tar.xz
+          tar xf ff.tar.xz
+          sudo cp ffmpeg-*-static/ffmpeg ffmpeg-*-static/ffprobe /usr/local/bin/
+          ffmpeg -version | head -1
+      - name: Blender 4.2 LTS (Cache)
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/opt/blender-4.2.23-linux-x64
+          key: blender-4.2.23
+      - name: Blender und espeak-ng
+        run: |
+          if [ ! -x ~/.local/opt/blender-4.2.23-linux-x64/blender ]; then
+            mkdir -p ~/.local/opt
+            curl -sSL https://download.blender.org/release/Blender4.2/blender-4.2.23-linux-x64.tar.xz | tar xJ -C ~/.local/opt
+          fi
+          sudo apt-get update && sudo apt-get install -y espeak-ng libxi6 libxkbcommon0 libsm6 libgl1
+          echo "OPENVIDEO_BLENDER=$HOME/.local/opt/blender-4.2.23-linux-x64/blender" >> "$GITHUB_ENV"
+      - name: Abhängigkeiten
+        run: npm ci
+      - name: Chromium für Playwright
+        run: npx playwright install --with-deps chromium chromium-headless-shell
+      - name: Abhängigkeitsregeln (AD-14)
+        run: npm run check:deps
+      - name: Build (TypeScript, Bundles, JSON Schema)
+        run: npm run build
+      - name: JSON Schema ist aktuell (API-Schema-Verstoß)
+        run: git diff --exit-code packages/schema/openvideo.schema.json
+      - name: Lint (strenges TypeScript)
+        run: npm run lint
+      - name: Lizenzen
+        run: node scripts/licenses.mjs --check
+      - name: Schwachstellen ab high
+        run: npm audit --omit=dev --audit-level=high
+      - name: Tests (Unit, Property, Integration, Golden, Audio, E2E, Determinismus, Security)
+        run: npm test
+      - name: Diff-Bilder bei Golden-Fehlern
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-diffs
+          path: |
+            packages/*/test/golden/*.actual.png
+            packages/*/test/golden/*.diff.png
+          if-no-files-found: ignore

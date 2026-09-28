@@ -41,6 +41,45 @@
       "path": "packages/telemetry"
     },
     {
+      "path": "packages/renderer-three"
+    },
+    {
+      "path": "packages/renderer-pixi"
+    },
+    {
+      "path": "packages/renderer-browser"
+    },
+    {
+      "path": "packages/renderer-blender"
+    },
+    {
+      "path": "packages/subtitles"
+    },
+    {
+      "path": "packages/speech"
+    },
+    {
+      "path": "packages/components"
+    },
+    {
+      "path": "packages/sdk"
+    },
+    {
+      "path": "packages/sandbox"
+    },
+    {
+      "path": "packages/compiler"
+    },
+    {
+      "path": "packages/importers"
+    },
+    {
+      "path": "packages/anime"
+    },
+    {
+      "path": "packages/motion-canvas-adapter"
+    },
+    {
       "path": "packages/render"
     },
     {
@@ -50,16 +89,7 @@
       "path": "packages/mcp"
     },
     {
-      "path": "packages/components"
-    },
-    {
-      "path": "packages/subtitles"
-    },
-    {
-      "path": "packages/speech"
-    },
-    {
-      "path": "packages/renderer-blender"
+      "path": "packages/cli"
     }
   ]
 }

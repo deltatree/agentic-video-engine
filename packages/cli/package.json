@@ -1,0 +1,47 @@
+{
+  "name": "@agentic-video/cli",
+  "version": "0.1.0",
+  "description": "Kommandozeile openvideo: create, dev, studio, validate, render, render-frame, inspect, doctor, benchmark, cache, fonts, assets, serve, mcp, worker.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/cli"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/agent": "0.1.0",
+    "@agentic-video/assets": "0.1.0",
+    "@agentic-video/cache": "0.1.0",
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/png": "0.1.0",
+    "@agentic-video/render": "0.1.0",
+    "@agentic-video/telemetry": "0.1.0",
+    "@agentic-video/compiler": "0.1.0",
+    "@agentic-video/fonts": "0.1.0",
+    "@agentic-video/ffmpeg": "0.1.0",
+    "@agentic-video/renderer-blender": "0.1.0",
+    "@agentic-video/sandbox": "0.1.0",
+    "@agentic-video/mcp": "0.1.0",
+    "playwright-core": "1.63.0"
+  },
+  "bin": {
+    "openvideo": "./dist/bin.js"
+  }
+}

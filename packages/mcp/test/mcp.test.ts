@@ -44,7 +44,7 @@ describe('MCP-Server (FR-22)', () => {
     const client = new Client({ name: 'test', version: '1.0.0' });
     await Promise.all([server.connect(a), client.connect(b)]);
     const tools = await client.listTools();
-    expect(tools.tools).toHaveLength(23);
+    expect(tools.tools).toHaveLength(24);
     expect(tools.tools.map((t) => t.name)).toContain('composition_validate');
     expect(tools.tools.every((t) => /^[A-Za-z0-9_-]{1,64}$/u.test(t.name))).toBe(true);
     const created = await client.callTool({ name: toolName('project.create'), arguments: { name: 'Mcp', project: { schemaVersion: '1.0.0', compositions: [{ id: 'main', width: 8, height: 8, fps: 10, duration: 5, nodes: [] }] } } });

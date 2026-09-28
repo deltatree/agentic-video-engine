@@ -1,0 +1,58 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "types": [
+      "node"
+    ],
+    "lib": [
+      "ES2023",
+      "DOM"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../agent"
+    },
+    {
+      "path": "../render"
+    },
+    {
+      "path": "../cache"
+    },
+    {
+      "path": "../png"
+    },
+    {
+      "path": "../telemetry"
+    },
+    {
+      "path": "../assets"
+    },
+    {
+      "path": "../compiler"
+    },
+    {
+      "path": "../fonts"
+    },
+    {
+      "path": "../ffmpeg"
+    },
+    {
+      "path": "../renderer-blender"
+    },
+    {
+      "path": "../sandbox"
+    },
+    {
+      "path": "../mcp"
+    }
+  ]
+}

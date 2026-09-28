@@ -1,0 +1,44 @@
+{
+  "name": "@agentic-video/benchmarks",
+  "version": "0.1.0",
+  "description": "Reproduzierbare Benchmarks: Szenarien, Auflösungen, Messwerte, Regressionserkennung.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/benchmarks"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "baseline.json",
+    "LICENSE",
+    "README.md"
+  ],
+  "dependencies": {
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/render": "0.1.0",
+    "@agentic-video/cache": "0.1.0",
+    "@agentic-video/testing": "0.1.0",
+    "@agentic-video/png": "0.1.0"
+  },
+  "bin": {
+    "openvideo-bench": "./dist/bin.js"
+  },
+  "scripts": {
+    "bench": "node dist/bin.js",
+    "bench:baseline": "node dist/bin.js --resolution all --update-baseline",
+    "bench:compare": "node dist/bin.js --resolution all --compare"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "name": "@agentic-video/templates",
+  "version": "0.1.0",
+  "description": "15 Templates als lesbarer TSX-Quellcode mit Katalog.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/deltatree/agentic-video-engine.git",
+    "directory": "packages/templates"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "templates"
+  ],
+  "dependencies": {
+    "@agentic-video/components": "0.1.0",
+    "@agentic-video/core": "0.1.0",
+    "@agentic-video/sdk": "0.1.0"
+  }
+}

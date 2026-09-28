@@ -19,7 +19,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:deps": "node scripts/check-deps.mjs",
-    "check": "npm run check:deps && npm run build && npm run lint && npm test"
+    "check": "npm run check:deps && npm run build && npm run lint && node scripts/licenses.mjs --check && npm test",
+    "licenses": "node scripts/licenses.mjs",
+    "docs": "node scripts/generate-docs.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

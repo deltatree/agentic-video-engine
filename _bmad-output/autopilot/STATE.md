@@ -33,6 +33,9 @@ Phase 9 (Build): Epic 1 fertig; Welle 1 (Skia, Compositor, FFmpeg/Audio, Three/P
 | D8 | TypeScript 6.0.3 | typescript-eslint unterstützt nur < 6.1 (2026-09-28). |
 | D9 | Build-Workflow angepasst: ein Spec je zusammenhängendem Slice, Review je Epic, Haltepunkte autonom entschieden | 71 Stories mit je 5 Haltepunkten wären unverhältnismäßig (delivery-loop: right-size). |
 | D10 | SeaweedFS (Apache-2.0) statt MinIO als S3-kompatibler Speicher | MinIO-Images sind auf Docker Hub und Quay nicht mehr frei abrufbar (Probe 2026-09-28). |
+| D11 | `spring({frame, from})` in Frame-Funktionen folgt Remotion (from = Startwert); gesampelte Werte werden auf Schema-Grenzen geklemmt und mit `OV_SDK_CLAMPED` gemeldet | Auftrag A4 ist ein Beispiel; Remotion-Kompatibilität ist für Agents wertvoller; Klemmen wie CSS verhindert ungültige IR. |
+| D12 | Komponenten-Props werden gegen `propsSchema` geprüft (`OV_COMPONENT_PROPS`) | Stille Rückfälle auf Standardwerte täuschen Agents (E2E-Befund). |
+| D13 | Three/Pixi-Festlegungen übernommen: Ortho-Kamera 10 m ÷ zoom, Postprocessing DoF → Bloom → Tone Mapping → Grading → Vignette → LUT, Pixi-GLSL `mainImage(out vec4, in vec2)` | Vom Renderer-Agenten begründet, in READMEs dokumentiert. |
 | D7 | Persönliche Agenten-Konfiguration (.claude, .cursor, _bmad …) wird nicht veröffentlicht | Stammt aus einem privaten Repo. |
 
 ## Umgebung

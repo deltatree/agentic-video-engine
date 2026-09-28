@@ -1,0 +1,15 @@
+/**
+ * @packageDocumentation
+ * Kommandozeile und lokale Dienste von OpenVideo.
+ *
+ * @example
+ * ```ts
+ * import { createLocalServices } from '@agentic-video/cli';
+ * const services = await createLocalServices({ workspaceDir: '/tmp/ws' });
+ * ```
+ */
+export * from './services.js';
+export * from './cli.js';
+export * from './project.js';
+export * from './doctor.js';
+export * from './sources.js';

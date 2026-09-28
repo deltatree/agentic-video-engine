@@ -39,6 +39,8 @@
     "@agentic-video/speech": "0.1.0",
     "@agentic-video/subtitles": "0.1.0",
     "@agentic-video/telemetry": "0.1.0",
-    "typebox": "^1.3.34"
+    "typebox": "^1.3.34",
+    "@agentic-video/renderer-browser": "0.1.0",
+    "@agentic-video/renderer-blender": "0.1.0"
   }
 }

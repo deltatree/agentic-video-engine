@@ -112,7 +112,7 @@ describe('Agent API (FR-21, FR-23)', () => {
     const res = await fetch(`${server.url}/v1/operations`, { headers: { authorization: `Bearer ${TOKEN}` } });
     const json = (await res.json()) as { operations: { name: string; input: unknown; output: unknown; example: unknown }[] };
     const names = json.operations.map((o) => o.name);
-    expect(names).toHaveLength(23);
+    expect(names).toHaveLength(24);
     for (const expected of ['project.create', 'project.inspect', 'composition.create', 'composition.get', 'composition.validate', 'composition.patch', 'asset.import', 'asset.inspect', 'frame.render', 'frame.inspect', 'preview.render', 'preview.contactSheet', 'video.render', 'render.status', 'render.cancel', 'diagnostics.get', 'fonts.list', 'templates.list', 'templates.inspect', 'scene.describe', 'scene.tree', 'timeline.inspect', 'benchmark.run']) {
       expect(names).toContain(expected);
     }

@@ -27,7 +27,8 @@ function importsOf(dir) {
       if (statSync(p).isDirectory()) walk(p);
       else if (/\.(ts|tsx)$/.test(e)) {
         // Kommentare (z. B. TSDoc-Beispiele) sind keine Abhängigkeiten.
-        const text = readFileSync(p, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        // Template-Literale (z. B. erzeugter Beispielcode) sind keine Importe.
+        const text = readFileSync(p, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/`(?:\\[\s\S]|[^`\\])*`/g, '``');
         for (const m of text.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)['"](@agentic-video\/[a-z0-9-]+)/g)) out.add(m[1].slice(SCOPE.length));
       }
     }

@@ -49,6 +49,12 @@
     },
     {
       "path": "../telemetry"
+    },
+    {
+      "path": "../renderer-browser"
+    },
+    {
+      "path": "../renderer-blender"
     }
   ]
 }

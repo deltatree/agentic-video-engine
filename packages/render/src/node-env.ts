@@ -19,6 +19,8 @@ import { createSkiaBackend, createSkiaTextMeasurer, loadCanvasKitNode, renderCon
 import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, synthesizeVoices } from '@agentic-video/speech';
 import { registerSubtitles } from '@agentic-video/subtitles';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
+import { createLazyBrowserBackends } from '@agentic-video/renderer-browser';
+import { createBlenderBackend } from '@agentic-video/renderer-blender';
 import { createAudioEngine, type SynthesizedVoice } from './audio-engine.js';
 import type { EncodeOptions, FrameEncoder, MediaTools, RenderEnvironment } from './environment.js';
 import { OPENVIDEO_VERSION } from './version.js';
@@ -42,8 +44,10 @@ export interface NodeEnvironmentOptions {
   readonly trusted?: boolean;
   readonly offline?: boolean;
   readonly allowOutsidePaths?: boolean;
-  /** Weitere Backends (Browser, Blender). */
+  /** Weitere Backends; Standard: Browser (träge) und Blender. */
   readonly providers?: readonly BackendProvider[];
+  /** Standard-Backends für Browser und Blender weglassen (z. B. in Tests). */
+  readonly skipDefaultProviders?: boolean;
   /** Ordner für erzeugte Stimmen (Standard `<projekt>/.openvideo/voices`). */
   readonly voicesDir?: string;
 }
@@ -131,6 +135,46 @@ export async function registerLocalSpeech(registry: Registry, env: Readonly<Reco
   });
 }
 
+/** Größte Composition eines Projekts (für die Seitengröße des Browsers). */
+function largestComposition(project: Readonly<Record<string, unknown>>): { width: number; height: number } {
+  const comps = Array.isArray(project['compositions']) ? project['compositions'].filter(isRecord) : [];
+  return comps.reduce<{ width: number; height: number }>((acc, c) => ({ width: Math.max(acc.width, Number(c['width']) || 0), height: Math.max(acc.height, Number(c['height']) || 0) }), { width: 1, height: 1 });
+}
+
+/**
+ * Standard-Provider: Browser-Backends (`browser`, `three`, `pixi`, Chromium startet erst bei Bedarf)
+ * und Blender (startet pro Chunk einen Prozess, nur wenn eine `blender`-Node gerendert wird).
+ */
+export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>): BackendProvider[] {
+  let lazy: ReturnType<typeof createLazyBrowserBackends> | undefined;
+  let blender: ReturnType<typeof createBlenderBackend> | undefined;
+  return [
+    {
+      ids: ['browser', 'three', 'pixi'],
+      register(registry, ctx) {
+        const size = largestComposition(project);
+        lazy = createLazyBrowserBackends({ assets: ctx.assets, fonts: ctx.fonts, width: size.width, height: size.height, ...(process.env['OPENVIDEO_CHROMIUM'] !== undefined ? { executablePath: process.env['OPENVIDEO_CHROMIUM'] } : {}) });
+        for (const b of [lazy.browser, lazy.three, lazy.pixi]) if (!registry.backends.has(b.id)) registry.registerBackend(b);
+        return Promise.resolve({ chromium: lazy.browser.versions()['chromium'] ?? 'unknown' });
+      },
+      async dispose() {
+        await lazy?.dispose();
+      },
+    },
+    {
+      ids: ['blender'],
+      register(registry) {
+        blender = createBlenderBackend({ workDir: join(projectDir, '.openvideo', 'blender') });
+        if (!registry.backends.has('blender')) registry.registerBackend(blender);
+        return Promise.resolve({});
+      },
+      async dispose() {
+        await blender?.dispose();
+      },
+    },
+  ];
+}
+
 /**
  * Baut die Render-Umgebung eines Projekts.
  *
@@ -171,7 +215,9 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
     registerSubtitles(registry, { loadTrackText: (id) => texts.get(id) });
   }
   if (registry.voiceProviders.size === 0) await registerLocalSpeech(registry);
-  for (const provider of options.providers ?? []) Object.assign(versions, await provider.register(registry, { assets, fonts, telemetry }));
+  const providers: BackendProvider[] = [...(options.providers ?? [])];
+  if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project));
+  for (const provider of providers) Object.assign(versions, await provider.register(registry, { assets, fonts, telemetry }));
   for (const b of registry.backends.values()) {
     versions[`backend:${b.id}`] = Object.values(b.versions()).join('+') || '1';
     Object.assign(versions, b.versions());
@@ -220,8 +266,8 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
     async dispose() {
       measurer.dispose();
       await assets.close();
-      for (const provider of options.providers ?? []) await provider.dispose();
-      for (const b of registry.backends.values()) await b.dispose();
+      for (const provider of providers) await provider.dispose();
+      for (const b of registry.backends.values()) if (!providers.some((p) => p.ids.includes(b.id))) await b.dispose();
     },
   };
 }

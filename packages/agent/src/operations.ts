@@ -225,6 +225,25 @@ const projectInspect = defineOperation({
   },
 });
 
+const projectUpdate = defineOperation({
+  name: 'project.update',
+  summary: 'Replace the whole IR of a JSON project after validation (used by code editors).',
+  input: Type.Object({ projectId: ProjectId, project: AnyObject }, { additionalProperties: false }),
+  output: Type.Object({ ok: Type.Boolean(), diagnostics: Diagnostics }),
+  example: { input: { projectId: 'launch-video', project: { schemaVersion: '1.0.0', compositions: [] } } },
+  async handler(input, ctx) {
+    const cfg = await ctx.services.workspace.config(input.projectId);
+    if (cfg.entry.endsWith('.tsx')) {
+      throw new OpenVideoError({ code: 'OV_PROJECT_TSX', errorClass: 'ProjectError', problem: 'TSX projects are edited in their source file.', suggestions: ['Edit src/video.tsx, or use composition.patch (AST write-back).'] });
+    }
+    const env = await ctx.services.environment(ctx.services.workspace.projectDir(input.projectId), input.project);
+    const diagnostics = checkProject(env, input.project);
+    if (diagnostics.some((d) => d.severity === 'error')) return { ok: false, diagnostics: plainDiagnostics(diagnostics) };
+    await ctx.services.workspace.save(input.projectId, input.project);
+    return { ok: true, diagnostics: plainDiagnostics(diagnostics) };
+  },
+});
+
 const compositionCreate = defineOperation({
   name: 'composition.create',
   summary: 'Add a composition to a project.',
@@ -694,6 +713,7 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
   [
     projectCreate,
     projectInspect,
+    projectUpdate,
     compositionCreate,
     compositionGet,
     compositionValidate,

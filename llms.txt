@@ -1,0 +1,26 @@
+# OpenVideo
+
+> OpenVideo is an open-source Video-as-Code platform built for coding agents. A video is a JSON document (the Composition IR); every frame is a pure function of composition, assets, frame and seed. Agents create, validate, render single frames, inspect, patch and render final videos through one API (HTTP, MCP, CLI).
+
+Documentation is written in German; identifiers, JSON keys and error messages are English.
+
+## Start here
+
+- [Agent guide](docs/ai/AGENTS.md): workflow, rules, animation, node types, patches, diagnostics
+- [Recipes](docs/guide/recipes.md): small verified IR snippets for common tasks
+- [Getting started](docs/guide/getting-started.md): install, create, dev, render
+- [Capability manifest](docs/ai/capabilities.json): node types, components, operations, backends, formats (generated)
+
+## Reference
+
+- [JSON Schema of the Composition IR](packages/schema/openvideo.schema.json)
+- [Render semantics](docs/reference/node-semantics.md): coordinates, boxes, paint, text, media, 3D
+- [Agent API operations](docs/guide/api.md): all operations with input examples
+- [CLI](docs/guide/cli.md): commands, options, exit codes
+- [Architecture](_bmad-output/planning-artifacts/architecture/architecture-agentic-video-engine-2026-09-28/ARCHITECTURE-SPINE.md) and [ADRs](docs/adr/README.md)
+- [API reference](docs/api/README.md): TypeScript packages (generated)
+
+## Optional
+
+- [PRD](_bmad-output/planning-artifacts/prds/prd-agentic-video-engine-2026-09-28/prd.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
