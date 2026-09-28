@@ -5,6 +5,10 @@
   "description": "OpenVideo Studio: visuelle Bearbeitung von Compositions (React, Monaco).",
   "license": "Apache-2.0",
   "type": "module",
+  "scripts": {
+    "build:extra": "vite build",
+    "dev": "vite"
+  },
   "dependencies": {
     "@agentic-video/components": "0.1.0",
     "@agentic-video/core": "0.1.0",

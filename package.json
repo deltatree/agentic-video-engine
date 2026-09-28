@@ -15,7 +15,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -b tsconfig.json",
-    "lint": "tsc -p tsconfig.eslint.json && eslint . --max-warnings 0",
+    "lint": "tsc -p tsconfig.eslint.json && tsc -p apps/studio/tsconfig.json && eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
     "check:deps": "node scripts/check-deps.mjs",
