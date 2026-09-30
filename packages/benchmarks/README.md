@@ -31,7 +31,10 @@ Weitere Optionen:
 | `--frames <n>` | Gemessene Frames je Szenario (Standard 10). |
 | `--workers <n>` | Zusätzlicher Durchsatzlauf mit N Worker-Prozessen. |
 | `--no-encode` | Die MP4-Kodierung überspringen. |
-| `--tolerance <x>` | Erlaubter fps-Verlust für `--compare` (Standard 0.2 = 20 %). |
+| `--baseline <file>` | Basisdatei für `--compare` und `--update-baseline` (Standard `packages/benchmarks/baseline.json`). So hält CI eine eigene Basis je Runner-Typ. |
+| `--tolerance <x>` | Erlaubter fps-Verlust für `--compare` (Standard 0.2 = 20 %). Kurzform für `--tolerances fps=<x>`. |
+| `--tolerances <liste>` | Toleranzen je Metrik, z. B. `fps=0.2,peakRssMb=0.25,startupMs=0.5,encodingFps=0.25,cacheHitRatio=0.05`. Fehlende Metriken behalten ihren Standard (die Werte in diesem Beispiel). Ein Eintrag hier gewinnt gegen `--tolerance`. |
+| `--require-comparison` | Mit `--compare`: Exit-Code 2, wenn nichts verglichen werden konnte (z. B. Basis einer anderen Maschine). Ohne die Option endet so ein Lauf mit 0 und meldet nur „skipped“. |
 
 Exit-Codes:
 
@@ -39,16 +42,17 @@ Exit-Codes:
 |---|---|
 | 0 | Messung fertig, keine Regression. |
 | 1 | `--compare` fand mindestens eine Regression. |
-| 2 | Falsche Eingabe, Fehler beim Messen oder ein abgebrochenes Szenario. Die übrigen Szenarien laufen trotzdem. |
+| 2 | Falsche Eingabe, Fehler beim Messen oder ein abgebrochenes Szenario. Die übrigen Szenarien laufen trotzdem. Mit `--require-comparison` auch: kein einziges Szenario war vergleichbar. |
 
 Aus Code:
 
 ```ts
-import { runBenchmark, runSuite, compareToBaseline, parseBaseline } from '@agentic-video/benchmarks';
+import { runBenchmark, runSuite, compareToBaseline, formatRegression, parseBaseline } from '@agentic-video/benchmarks';
 
 const r = await runBenchmark({ scenario: 'mixed', resolution: '1080p30', frames: 10, workers: 1, encode: true });
 const suite = await runSuite({ resolutions: ['1080p30', '4k30'], frames: 5 });
-const c = compareToBaseline(suite.results, parseBaseline(baselineJson), { tolerance: 0.2 });
+const c = compareToBaseline(suite.results, parseBaseline(baselineJson), { tolerances: { fps: 0.2, peakRssMb: 0.3 } });
+for (const r of c.regressions) console.error(formatRegression(r));
 ```
 
 ## Szenarien
@@ -94,7 +98,26 @@ Ablauf einer Messung:
 
 ## Regressionserkennung
 
-- `compareToBaseline(results, baseline, { tolerance: 0.2 })` meldet Szenarien, deren fps mehr als 20 % unter der Basis liegen.
+- `compareToBaseline(results, baseline, { tolerances })` vergleicht je Szenario und Auflösung fünf Metriken und
+  meldet jede, die schlechter ist als ihre Toleranz:
+
+  | Metrik | Schlechter heißt | Standard-Toleranz |
+  |---|---|---:|
+  | `fps` | relativer Verlust an Frames pro Sekunde | 0.2 (20 %) |
+  | `peakRssMb` | relativer Anstieg des Spitzen-RAM | 0.25 |
+  | `startupMs` | relativer Anstieg der Startzeit | 0.5 |
+  | `encodingFps` | relativer Verlust des Encoder-Durchsatzes (nur mit Kodierung) | 0.25 |
+  | `cacheHitRatio` | absoluter Verlust in Prozentpunkten (0.05 = 5 Punkte) | 0.05 |
+
+  Metriken, die in Basis oder Messung fehlen, werden übersprungen. `{ tolerance: 0.2 }` ist die ältere Kurzform für fps.
+- Jede Regression ist ein Objekt `Regression` mit `scenario`, `resolution`, `metric`, `baseline` (Basiswert),
+  `current` (Messwert), `change` (Änderung in Richtung „schlechter“: relativ, z. B. `-0.35` = 35 % weniger fps oder
+  `0.4` = 40 % mehr RAM; bei `cacheHitRatio` absolut) und `tolerance` (angewandte Toleranz).
+  Das Ergebnis `Comparison` enthält zusätzlich `compared` (verglichene Paare), `comparedMetrics`, `skipped` (mit Grund)
+  und die angewandten `tolerances`; mit `--json` steht es unter `comparison`.
+- Auf der Konsole erscheint je Regression eine Zeile (`formatRegression`), z. B.
+  `REGRESSION mixed 1080p30 fps: 3.00 vs. baseline 4.00 (-25.0 %, tolerance 20.0 %)`,
+  danach eine Zeile je übersprungenem Paar.
 - Die Basis liegt in `packages/benchmarks/baseline.json`. Sie enthält eine Beschreibung der Maschine.
 - Werte einer anderen Maschine (CPU, Kerne, RAM, Plattform oder GPU verschieden) vergleicht das Paket nicht. Es meldet sie als übersprungen mit Grund.
 

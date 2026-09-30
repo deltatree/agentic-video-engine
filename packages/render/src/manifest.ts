@@ -246,7 +246,7 @@ export const FrameManifestSchema = Type.Object(
     trusted: Type.Boolean(),
     timestamp: Type.String(),
   },
-  { additionalProperties: false, $id: 'https://raw.githubusercontent.com/deltatree/agentic-video-engine/main/packages/render/frame-manifest.schema.json' },
+  { additionalProperties: false },
 );
 export type FrameManifest = Static<typeof FrameManifestSchema>;
 

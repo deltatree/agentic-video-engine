@@ -10,13 +10,13 @@
  *   (`openvideo-plugin-hello`, aus `node_modules` des Projekts).
  */
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fetchAsset } from '@agentic-video/assets';
-import { OpenVideoError, isPermission, isPlugin, isRecord, type ExporterDefinition, type HostServices, type Permission, type Plugin, type Registry, type RgbaImage } from '@agentic-video/core';
+import { OpenVideoError, isPermission, minimalChildEnv, isPlugin, isRecord, type ExporterDefinition, type HostServices, type Permission, type Plugin, type Registry, type RgbaImage } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
 import type { EncodeOptions, FrameEncoder } from './environment.js';
 
@@ -129,9 +129,40 @@ export function resolvePluginModule(projectDir: string, spec: string, allowOutsi
 }
 
 /**
+ * Pfad mit aufgelösten Symlinks: `realpath` des nächsten existierenden Vorfahren plus der Rest.
+ * `undefined`, wenn ein vorhandener Eintrag nicht auflösbar ist (z. B. ein Symlink ins Leere).
+ */
+function realPathOf(full: string): string | undefined {
+  const rest: string[] = [];
+  let at = full;
+  for (;;) {
+    try {
+      lstatSync(at);
+      break;
+    } catch (error: unknown) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) return undefined;
+    }
+    const parent = dirname(at);
+    if (parent === at) return undefined;
+    rest.unshift(basename(at));
+    at = parent;
+  }
+  try {
+    return join(realpathSync(at), ...rest);
+  } catch (error: unknown) {
+    // Vorhandener, aber nicht auflösbarer Eintrag (Symlink ins Leere, Schleife): nicht zulassen.
+    if (error instanceof Error) return undefined;
+    throw error;
+  }
+}
+
+/**
  * Dienste des Hosts für Plugins. Dateizugriffe sind auf den Projektordner begrenzt (außer
- * `allowOutsidePaths`), Netz geht über den abgesicherten Fetcher (keine privaten Adressen),
- * Prozesse laufen ohne Shell mit Timeout, Umgebungsvariablen nur lesend.
+ * `allowOutsidePaths`), auch über Symlinks hinweg (realpath des nächsten existierenden
+ * Vorfahren, Review Q4). Netz geht über den abgesicherten Fetcher (keine privaten Adressen),
+ * Prozesse laufen ohne Shell mit Timeout und erben nur die minimale Umgebung
+ * (`minimalChildEnv`); erst mit dem Recht `env` die volle Umgebung des Hosts.
+ * Umgebungsvariablen sind nur lesbar.
  *
  * @example
  * ```ts
@@ -141,13 +172,20 @@ export function resolvePluginModule(projectDir: string, spec: string, allowOutsi
  */
 export function pluginHostServices(projectDir: string, granted: readonly Permission[], env: Readonly<Record<string, string | undefined>>, allowOutsidePaths = false): Partial<HostServices> {
   const grant = new Set(granted);
+  const outside = (path: string): OpenVideoError =>
+    new OpenVideoError({ code: 'OV_PATH_OUTSIDE', errorClass: 'SecurityError', problem: `Plugin file access "${path}" is outside the project directory.`, suggestions: ['Use paths relative to the project directory.', 'Symbolic links must also point into the project directory.'] });
   const inProject = (path: string): string => {
     const full = resolve(projectDir, path);
-    if (!allowOutsidePaths && !isInside(projectDir, full)) {
-      throw new OpenVideoError({ code: 'OV_PATH_OUTSIDE', errorClass: 'SecurityError', problem: `Plugin file access "${path}" is outside the project directory.`, suggestions: ['Use paths relative to the project directory.'] });
-    }
-    return full;
+    if (allowOutsidePaths) return full;
+    if (!isInside(projectDir, full)) throw outside(path);
+    const root = realPathOf(resolve(projectDir));
+    const real = realPathOf(full);
+    if (root === undefined || real === undefined || !isInside(root, real)) throw outside(path);
+    return real;
   };
+  const childEnv: Record<string, string> = grant.has('env')
+    ? Object.fromEntries(Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined))
+    : minimalChildEnv(env);
   return {
     ...(grant.has('fs:read') ? { readFile: async (path: string) => new Uint8Array(await readFile(inProject(path))) } : {}),
     ...(grant.has('fs:write')
@@ -164,7 +202,7 @@ export function pluginHostServices(projectDir: string, granted: readonly Permiss
       ? {
           spawn: (command: string, args: readonly string[], options?: { readonly input?: Uint8Array; readonly timeoutMs?: number }) =>
             new Promise<{ code: number; stdout: Uint8Array; stderr: string }>((done) => {
-              const child = execFile(command, [...args], { encoding: 'buffer', timeout: options?.timeoutMs ?? 120_000, maxBuffer: 256 * 1024 * 1024, cwd: projectDir }, (error, stdout, stderr) => {
+              const child = execFile(command, [...args], { encoding: 'buffer', timeout: options?.timeoutMs ?? 120_000, maxBuffer: 256 * 1024 * 1024, cwd: projectDir, env: childEnv }, (error, stdout, stderr) => {
                 const code = error === null ? 0 : typeof error.code === 'number' ? error.code : 1;
                 done({ code, stdout: new Uint8Array(stdout), stderr: stderr.toString('utf8') });
               });

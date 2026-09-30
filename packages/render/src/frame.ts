@@ -499,6 +499,8 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
     }
   };
   const scale = options.scale ?? 1;
+  // fromAudio-Transkripte zum aktuellen Stand der Deklarationen (Review Q3); danach ohne Kosten.
+  if (env.prepare !== undefined) await time('prepare', () => env.prepare?.(project) ?? Promise.resolve());
   const scene = await time('timelineEvaluator', () => resolveAnimatedImages(env.assets, evaluateScene(project, options.compositionId, options.frame, { registry: env.registry })));
   const size = outputSize(scene, scale);
   const bounds = await time('bounds', () => computeBounds(scene, env.measurer));

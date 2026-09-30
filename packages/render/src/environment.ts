@@ -132,6 +132,7 @@ export interface OverlayTools {
 /** Ergebnis der WebGL2/WebGPU-Probe auf der Render-Seite (Story 21.5). */
 export interface GraphicsInfoLike {
   readonly webgl2: string;
+  readonly webgl2MaxTextureSize?: number;
   readonly webgpu: string;
   readonly webgpuAvailable: boolean;
 }
@@ -171,4 +172,10 @@ export interface RenderEnvironment {
   readonly platform: { readonly os: string; readonly containerImage?: string; readonly gpu?: string; readonly browserGpu?: 'swiftshader' | 'native' };
   /** Tatsächliche Versionen und GPU-Speicher zum Zeitpunkt des Aufrufs (für Manifest und `gpu_memory`). */
   runtime?(): Promise<RuntimeInfo>;
+  /**
+   * Bereitet das Rendern eines Projekts vor: transkribiert `fromAudio`-Tracks, sobald sich ihre
+   * Deklarationen ändern (Review Q3). `renderFrame`, `renderVideo` und `missingFrames` rufen es auf;
+   * Operationen ohne Frames (validate, plugins.list) warten nicht auf ASR.
+   */
+  prepare?(project: Readonly<Record<string, unknown>>): Promise<void>;
 }

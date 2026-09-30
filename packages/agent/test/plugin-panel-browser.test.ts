@@ -4,13 +4,14 @@
  * meldet sich zurück. Prüft Server-Route, CSP und Seitenskript zusammen in Chromium.
  */
 import { mkdtempSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 import { expect, it } from 'vitest';
 import { Registry, isPlugin, isRecord } from '@agentic-video/core';
-import { OPERATIONS, invokeOperation, startAgentServer } from '@agentic-video/agent';
+import { OPERATIONS, invokeOperation, servePluginPanel, startAgentServer } from '@agentic-video/agent';
 import { smallProject, testServices } from './helpers.js';
 
 const ENTRY = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'examples', 'plugin-hello', 'index.mjs');
@@ -67,5 +68,56 @@ it('lädt das Panel im sandboxed iframe, liefert das Projekt und empfängt Meldu
   } finally {
     await browser.close();
     await server.close();
+  }
+}, 60_000);
+
+it('lädt das Panel auch mit absoluter Modul-URL in der CSP (ohne strict-dynamic, Review Q5)', async () => {
+  const registry = new Registry();
+  const mod: unknown = await import(pathToFileURL(ENTRY).href);
+  const plugin = isRecord(mod) ? mod['default'] : undefined;
+  if (!isPlugin(plugin)) throw new Error('example plugin has no default export');
+  await registry.use(plugin, { readFile: () => Promise.resolve(new Uint8Array()), writeFile: () => Promise.resolve() }, { origin: ENTRY });
+  const services = testServices(mkdtempSync(join(tmpdir(), 'ov-panel-browser-abs-')), { registry });
+  const created = await invokeOperation(OPERATIONS, 'project.create', { name: 'Panel', project: smallProject() }, { services, via: 'test' });
+  if (!created.ok || !isRecord(created.result)) throw new Error('project.create failed');
+  const listed = await invokeOperation(OPERATIONS, 'plugins.list', { projectId: created.result['projectId'] }, { services, via: 'test' });
+  const panels: unknown = listed.ok && isRecord(listed.result) ? listed.result['studioPanels'] : undefined;
+  const first: unknown = Array.isArray(panels) ? panels[0] : undefined;
+  if (!isRecord(first) || typeof first['url'] !== 'string') throw new Error('no panel');
+  const panelUrl = first['url'];
+  const csps: string[] = [];
+  const server = createServer((req, res) => {
+    const path = req.url ?? '/';
+    if (path === '/host.html') {
+      res.writeHead(200, { 'content-type': 'text/html', 'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'" });
+      res.end(hostPage(panelUrl));
+      return;
+    }
+    void servePluginPanel(services, path, { origin: `http://${req.headers.host ?? ''}` }).then((r) => {
+      if (r === undefined) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      const csp = r.headers['content-security-policy'];
+      if (csp !== undefined) csps.push(csp);
+      res.writeHead(r.status, r.headers);
+      res.end(r.body);
+    });
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const address = server.address();
+  const port = typeof address === 'object' && address !== null ? address.port : 0;
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${String(port)}/host.html`);
+    const types = (): Promise<string[]> => page.evaluate(() => (Reflect.get(window, 'msgs') as { type: string }[]).map((m) => m.type));
+    await expect.poll(types, { timeout: 15_000 }).toContain('openvideo.panel.ready');
+    expect(csps[0]).toContain(`http://127.0.0.1:${String(port)}${panelUrl}module.js`);
+    expect(csps[0]).not.toContain('strict-dynamic');
+  } finally {
+    await browser.close();
+    await new Promise<void>((done) => server.close(() => { done(); }));
   }
 }, 60_000);

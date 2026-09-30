@@ -20,7 +20,7 @@ import {
   type Diagnostic,
   type Patch,
 } from '@agentic-video/core';
-import { checkProject, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, type OutputProfile } from '@agentic-video/render';
+import { FrameManifestSchema, buildFrameManifest, checkProject, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, type ManifestFrame, type OutputProfile } from '@agentic-video/render';
 import { assertFps, assertFrameCount, assertImageSize, sampleFrames } from './guards.js';
 import { describeOperations } from './describe.js';
 import { projectImport } from './importing.js';
@@ -333,7 +333,8 @@ const assetImport = defineOperation({
     const service = ctx.services.assets;
     if (service === undefined) throw new OpenVideoError({ code: 'OV_ASSETS_UNAVAILABLE', errorClass: 'ApiError', problem: 'No asset service is configured.', suggestions: ['Start the host with the asset service (openvideo serve/mcp include it).', 'Copy the file into the project assets/ folder and declare it with an addAsset patch.'] });
     const loaded = await loadProject(ctx, input.projectId);
-    const imported = await service.import(loaded.dir, input);
+    // Mit dem Projekt: Asset Loader aus Plugins gelten auch beim Import (Story 21.1).
+    const imported = await service.import(loaded.dir, input, loaded.project);
     const declared = Array.isArray(loaded.project['assets']) ? loaded.project['assets'].filter(isRecord) : [];
     const exists = declared.some((a) => a['id'] === imported.id);
     const sameFile = declared.filter((a) => a['id'] !== imported.id && a['src'] === imported.src).map((a) => String(a['id']));
@@ -381,7 +382,7 @@ const frameRender = defineOperation({
     },
     { additionalProperties: false },
   ),
-  output: Type.Object({ image: ImageResult, key: Type.String(), cached: Type.Boolean(), diagnostics: Diagnostics }),
+  output: Type.Object({ image: ImageResult, key: Type.String(), cached: Type.Boolean(), diagnostics: Diagnostics, manifest: FrameManifestSchema }),
   example: { input: { projectId: 'launch-video', frame: '2s', scale: 0.5, debug: { showBounds: true } } },
   check: (input) => (isRecord(input) && input['patches'] !== undefined ? checkPatchList(input['patches'], 'patches') : undefined),
   async handler(input, ctx) {
@@ -397,7 +398,9 @@ const frameRender = defineOperation({
       // Transiente Vorschauen überschreiben eine feste Datei, statt je Zwischenstand eine neue anzulegen.
       const variant = input.patches !== undefined ? '-preview' : input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
       const image = await imageOutput(ctx, input.projectId, `${fileSafe(r.scene.compositionId)}-${String(frame)}${variant}.png`, ctx.services.encodePng(r.image), r.image, input.inline !== false);
-      return { image, key: r.key, cached: r.cached, diagnostics: plainDiagnostics(r.diagnostics) };
+      // Kurzmanifest (Story 21.5): Eingaben, Pixel-Hash, genutzte Backends, Grafik, Chromium, GPU.
+      const manifest = await buildFrameManifest(env, loaded.project, [{ frame, ...r }], scale);
+      return { image, key: r.key, cached: r.cached, diagnostics: plainDiagnostics(r.diagnostics), manifest };
     });
   },
 });
@@ -436,7 +439,7 @@ const frameRenderMany = defineOperation({
     },
     { additionalProperties: false },
   ),
-  output: Type.Object({ frames: Type.Array(Type.Number()), images: Type.Array(ImageResult), keys: Type.Array(Type.String()), diagnostics: Diagnostics }),
+  output: Type.Object({ frames: Type.Array(Type.Number()), images: Type.Array(ImageResult), keys: Type.Array(Type.String()), diagnostics: Diagnostics, manifest: FrameManifestSchema }),
   example: { input: { projectId: 'launch-video', frames: [0, '2s', 'marker:outro'], scale: 0.5 } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
@@ -452,15 +455,17 @@ const frameRenderMany = defineOperation({
       const images = [];
       const keys: string[] = [];
       const diagnostics: Diagnostic[] = [];
+      const rendered: ManifestFrame[] = [];
       const variant = input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
       for (const frame of frames) {
         const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame, scale, ...(input.debug !== undefined ? { debug: input.debug } : {}) });
         images.push(await imageOutput(ctx, input.projectId, `${fileSafe(r.scene.compositionId)}-${String(frame)}${variant}.png`, ctx.services.encodePng(r.image), r.image, input.inline !== false));
         keys.push(r.key);
+        rendered.push({ frame, ...r });
         // Gleiche Meldung an mehreren Frames nur einmal (Frame steht in der Diagnose).
         for (const d of r.diagnostics) if (d.severity !== 'info' && !diagnostics.some((x) => x.code === d.code && x.path === d.path && x.problem === d.problem)) diagnostics.push(d);
       }
-      return { frames, images, keys, diagnostics: plainDiagnostics(diagnostics) };
+      return { frames, images, keys, diagnostics: plainDiagnostics(diagnostics), manifest: await buildFrameManifest(env, loaded.project, rendered, scale) };
     });
   },
 });
@@ -474,7 +479,9 @@ const frameInspect = defineOperation({
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
     const frame = frameOf(loaded.project, input.compositionId, input.frame);
-    return withEnv(ctx, loaded, (env) => {
+    return withEnv(ctx, loaded, async (env) => {
+      // fromAudio-Transkripte wie beim Render (Review Q3).
+      await env.prepare?.(loaded.project);
       const scene = evaluateScene(loaded.project, input.compositionId, frame, { registry: env.registry });
       const bounds = computeBounds(scene, env.measurer);
       return Promise.resolve({ frame, tree: sceneTree(scene, bounds).map((n) => ({ ...n })), diagnostics: plainDiagnostics([...scene.diagnostics, ...analyzeScene(scene, bounds)]), description: describeScene(scene, bounds) });
@@ -503,7 +510,7 @@ const previewContactSheet = defineOperation({
     { projectId: ProjectId, compositionId: CompositionId, frames: Type.Optional(Type.Array(FrameRef, { minItems: 1, maxItems: 64 })), count: Type.Optional(Type.Integer({ minimum: 1, maximum: 64 })), columns: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })), cellWidth: Type.Optional(Type.Integer({ minimum: 64, maximum: 1920 })), inline: Type.Optional(Type.Boolean()) },
     { additionalProperties: false },
   ),
-  output: Type.Object({ image: ImageResult, frames: Type.Array(Type.Number()), diagnostics: Diagnostics }),
+  output: Type.Object({ image: ImageResult, frames: Type.Array(Type.Number()), diagnostics: Diagnostics, manifest: FrameManifestSchema }),
   example: { input: { projectId: 'launch-video', frames: [0, 90, 180, 360] } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
@@ -520,15 +527,17 @@ const previewContactSheet = defineOperation({
       if (overlays === undefined) throw new OpenVideoError({ code: 'OV_BACKEND_MISSING', errorClass: 'RendererError', problem: 'Contact sheets need the Skia backend.', suggestions: ['Run `openvideo doctor`.'] });
       const diagnostics: Diagnostic[] = [];
       const cells = [];
+      const rendered: ManifestFrame[] = [];
       for (const f of frames) {
         const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame: f, scale });
+        rendered.push({ frame: f, ...r });
         diagnostics.push(...r.diagnostics.filter((d) => d.severity !== 'info'));
         cells.push({ image: r.image, label: `#${String(f)} · ${(f / fps).toFixed(2)}s` });
       }
       const sheet = overlays.contactSheet(cells, { columns, cellWidth, background: '#1B1D24' });
       const name = `contact-sheet-${fileSafe(String(comp['id']))}-${shortHash({ frames, columns, cellWidth })}.png`;
       const image = await imageOutput(ctx, input.projectId, name, ctx.services.encodePng(sheet), sheet, input.inline !== false);
-      return { image, frames, diagnostics: plainDiagnostics(diagnostics) };
+      return { image, frames, diagnostics: plainDiagnostics(diagnostics), manifest: await buildFrameManifest(env, loaded.project, rendered, scale) };
     });
   },
 });
@@ -683,9 +692,10 @@ const diagnosticsGet = defineOperation({
   example: { input: { projectId: 'launch-video', frame: 120 } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    const list = await withEnv(ctx, loaded, (env) => {
+    const list = await withEnv(ctx, loaded, async (env) => {
       const out: Diagnostic[] = [...checkProject(env, loaded.project)];
       if (input.frame !== undefined && out.every((d) => d.severity !== 'error')) {
+        await env.prepare?.(loaded.project);
         const scene = evaluateScene(loaded.project, input.compositionId, frameOf(loaded.project, input.compositionId, input.frame), { registry: env.registry });
         out.push(...scene.diagnostics, ...analyzeScene(scene, computeBounds(scene, env.measurer)));
       }

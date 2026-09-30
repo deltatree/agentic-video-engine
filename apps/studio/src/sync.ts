@@ -44,17 +44,20 @@ export function parseSse(buffer: string): { events: SseEvent[]; rest: string } {
 }
 
 /**
- * Entscheidet, ob eine gemeldete Revision eine Fremdänderung ist.
+ * Entscheidet, ob eine gemeldete Revision auf eine Fremdänderung hindeuten kann.
  *
- * Eigene Schreibvorgänge laufen über die Patch-Warteschlange; solange sie arbeitet, wird eine
- * gemeldete Revision nur vorgemerkt. Nach dem Neuladen („loaded“) zählt die Revision der geladenen
- * Datei. Weicht die zuletzt gemeldete danach noch ab, kam die Änderung von außen.
+ * Ereignisse sind nur Hinweise: Das Echo einer eigenen Speicherung kann vor oder nach deren Antwort
+ * eintreffen, der Anfangsstand eines neuen Stroms kann älter sein als eine gerade laufende Speicherung.
+ * Eine abweichende Revision heißt darum nur „prüfen“: Der Store liest die Revision der Datei in der
+ * Schreib-Warteschlange nach (`acknowledge`) und lädt nur neu, wenn sie wirklich von der geladenen abweicht.
+ * Während eigener Schreibvorgänge (`busy`) wird eine Meldung nur vorgemerkt.
  *
  * @example
  * ```ts
  * const t = new RevisionTracker();
  * t.loaded('a');
- * t.remote('b', false); // true → Fremdänderung, neu laden
+ * t.remote('b', false); // true → Datei-Revision prüfen
+ * t.acknowledge('b'); // geprüft; pending() ist wieder false
  * ```
  */
 export class RevisionTracker {
@@ -66,14 +69,19 @@ export class RevisionTracker {
     return this.known;
   }
 
+  /** Zuletzt gemeldete, noch nicht geprüfte Revision. */
+  get reported(): string | undefined {
+    return this.latest;
+  }
+
   /** Das Studio hat Daten mit dieser Revision geladen. */
   loaded(revision: string | undefined): void {
     if (revision !== undefined) this.known = revision;
   }
 
   /**
-   * Der Server meldet eine Revision. Liefert `true`, wenn jetzt neu geladen werden muss
-   * (Fremdänderung). Während eigener Schreibvorgänge (`busy`) wird nur vorgemerkt.
+   * Der Server meldet eine Revision. Liefert `true`, wenn jetzt geprüft werden muss.
+   * Während eigener Schreibvorgänge (`busy`) wird nur vorgemerkt.
    */
   remote(revision: string, busy: boolean): boolean {
     this.latest = revision;
@@ -81,7 +89,15 @@ export class RevisionTracker {
     return revision !== this.known;
   }
 
-  /** Nach eigenen Schreibvorgängen und Neuladen: Steht eine Fremdänderung aus? */
+  /**
+   * Die gemeldete Revision `revision` ist geprüft (die Datei wurde danach gelesen). Kam inzwischen
+   * eine neuere Meldung, bleibt diese vorgemerkt.
+   */
+  acknowledge(revision: string | undefined): void {
+    if (this.latest === revision) this.latest = undefined;
+  }
+
+  /** Steht eine ungeprüfte, abweichende Meldung aus? */
   pending(): boolean {
     return this.latest !== undefined && this.known !== undefined && this.latest !== this.known;
   }
@@ -90,22 +106,35 @@ export class RevisionTracker {
 /** Zustand der Verbindung. */
 export type LiveState = 'connecting' | 'live' | 'offline';
 
+/** Wartezeiten der Wiederverbindung. */
+export interface ReconnectOptions {
+  /** Erste Wartezeit nach einem Abbruch (Standard 1000 ms). */
+  readonly minDelayMs?: number;
+  /** Obergrenze der wachsenden Wartezeit (Standard 15 000 ms). */
+  readonly maxDelayMs?: number;
+}
+
 /**
  * Abonniert `/v1/events` und meldet Revisionen; bricht die Verbindung ab, wird mit wachsender
- * Wartezeit (1 s … 15 s) neu verbunden.
+ * Wartezeit (1 s … 15 s) neu verbunden. Die Wartezeit fällt erst zurück, wenn eine Verbindung ein
+ * Ereignis geliefert hat – ein Server, der Ströme sofort wieder schließt, erzeugt so keine
+ * Sekundentakt-Schleife. Die zurückgegebene Funktion beendet Strom und Wiederverbindung endgültig.
  *
  * @example
  * ```ts
  * const stop = subscribeRevisions('demo', (rev) => studio.onRemoteRevision(rev), (s) => console.log(s));
  * ```
  */
-export function subscribeRevisions(projectId: string, onRevision: (revision: string) => void, onState: (state: LiveState) => void): () => void {
+export function subscribeRevisions(projectId: string, onRevision: (revision: string) => void, onState: (state: LiveState) => void, options: ReconnectOptions = {}): () => void {
+  const minDelay = options.minDelayMs ?? 1000;
+  const maxDelay = Math.max(minDelay, options.maxDelayMs ?? 15_000);
   let stopped = false;
   let controller: AbortController | undefined;
-  let retry = 1000;
+  let retry = minDelay;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const connect = async (): Promise<void> => {
+    if (stopped) return;
     controller = new AbortController();
     onState('connecting');
     try {
@@ -115,18 +144,25 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
       const reader = body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+      if (stopped) {
+        await reader.cancel();
+        return;
+      }
       onState('live');
-      retry = 1000;
       for (;;) {
         const chunk = await reader.read();
-        if (chunk.done) break;
+        if (chunk.done || stopped) break;
         buffer += decoder.decode(chunk.value, { stream: true });
         const parsed = parseSse(buffer);
         buffer = parsed.rest;
         for (const e of parsed.events) {
           if (e.event !== 'revision') continue;
           const data: unknown = JSON.parse(e.data);
-          if (typeof data === 'object' && data !== null && 'revision' in data && typeof data.revision === 'string') onRevision(data.revision);
+          if (typeof data === 'object' && data !== null && 'revision' in data && typeof data.revision === 'string') {
+            // Die Verbindung trägt: nach dem nächsten Abbruch wieder mit kurzer Wartezeit beginnen.
+            retry = minDelay;
+            onRevision(data.revision);
+          }
         }
       }
     } catch (error) {
@@ -136,15 +172,17 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
     if (stopped) return;
     onState('offline');
     timer = setTimeout(() => {
+      timer = undefined;
       void connect();
     }, retry);
-    retry = Math.min(15_000, retry * 2);
+    retry = Math.min(maxDelay, retry * 2);
   };
 
   void connect();
   return () => {
     stopped = true;
     if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
     controller?.abort();
   };
 }

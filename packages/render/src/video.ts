@@ -376,6 +376,7 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
   let done = 0;
   const signal = options.signal;
   throwIfCancelled(signal);
+  await env.prepare?.(project);
 
   await mkdir(dirname(options.outPath), { recursive: true });
   let audio: { path: string; durationSeconds: number; loudness?: number; voices?: Readonly<Record<string, string>> } | undefined;
@@ -456,6 +457,13 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
       });
     };
 
+    // Abbruch auch bei einem Fehler der Encoder-Pumpe (Review Q7): Runner und Worker hören sonst erst
+    // nach dem letzten Chunk auf, obwohl das Ergebnis schon verloren ist.
+    const runSignal: CancelSignal = {
+      get aborted() {
+        return signal?.aborted === true || pumpState.failed;
+      },
+    };
     const runner: ChunkRunner =
       options.runChunks ??
       (async (list, onDone) => {
@@ -465,7 +473,7 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
           await pump;
           const inOrder = c.start === nextStart && ready.size === 0 && !pumpState.failed;
           if (inOrder) direct.add(c.start);
-          const r = await renderChunk(env, project, c, signal, inOrder ? writeFrame : undefined);
+          const r = await renderChunk(env, project, c, runSignal, inOrder ? writeFrame : undefined);
           onDone(r);
           results.push(r);
         }
@@ -482,7 +490,7 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
             options.onProgress?.({ stage: 'render', done, total });
             enqueue(r);
           },
-          signal !== undefined ? { signal } : {},
+          { signal: runSignal },
         ),
       );
       await pump;
@@ -490,6 +498,8 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
     } catch (error) {
       await pump.catch(() => undefined);
       await encoder.abort();
+      // Hat die Pumpe den Abbruch ausgelöst, zählt ihr Fehler, nicht `OV_RENDER_CANCELLED`.
+      if (pumpState.failed && signal?.aborted !== true) throw pumpState.error;
       throw error;
     }
     const ordered = [...results].sort((a, b) => a.start - b.start);
@@ -646,6 +656,7 @@ export async function frameFromCache(env: RenderEnvironment, key: string): Promi
  */
 export async function missingFrames(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, compositionId: string | undefined, frames: readonly number[], scale = 1): Promise<number[]> {
   const out: number[] = [];
+  await env.prepare?.(project);
   for (const f of frames) {
     // Wie renderFrame: animierte Bilder laufen als Video-Nodes; sonst wiche der Schlüssel ab und
     // jeder Frame mit animiertem Bild gälte als fehlend (Story 18.9).

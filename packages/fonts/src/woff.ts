@@ -11,9 +11,37 @@
  *
  * Die Ausgabe hat sortierte Tabellen, 4-Byte-Ausrichtung, neue Prüfsummen und ein neues
  * `head.checkSumAdjustment`. Gleiche Eingabe ergibt bitgleiche Ausgabe.
+ *
+ * Schutz vor Dekompressionsbomben (Review Q1): Jede Dekompression ist auf die im Verzeichnis
+ * angegebene Länge begrenzt (`maxOutputLength`), alle Größenangaben und die erzeugte SFNT-Datei
+ * sind auf {@link MAX_SFNT_BYTES} begrenzt, Tabellen-Tags dürfen je Schrift nur einmal vorkommen,
+ * und eine kurze `loca` (indexFormat 0) wird abgelehnt, wenn ihre Offsets nicht in 16 Bit passen.
  */
 import { brotliDecompressSync, inflateSync } from 'node:zlib';
 import { OpenVideoError } from '@agentic-video/core';
+
+/**
+ * Obergrenze in Bytes für entpackte Schriftdaten und die erzeugte SFNT-Datei (64 MiB).
+ * Größere Angaben in WOFF/WOFF2/TTC werden mit `OV_FONT_INVALID` abgelehnt, bevor
+ * Speicher angefordert wird.
+ *
+ * @example
+ * ```ts
+ * if (bytes.byteLength > MAX_SFNT_BYTES) throw new Error('font too large');
+ * ```
+ */
+export const MAX_SFNT_BYTES = 64 * 1024 * 1024;
+
+function tooLarge(what: string, size: number): OpenVideoError {
+  return invalid(
+    `${what} is ${String(size)} bytes; fonts larger than ${String(MAX_SFNT_BYTES)} bytes are rejected.`,
+    'Use a smaller font file (for example a subset) or convert it to .ttf/.otf with a font tool and check the file.',
+  );
+}
+
+function duplicateTag(tag: string): OpenVideoError {
+  return invalid(`Font table "${tag}" occurs more than once in one font.`, 'Download the font file again or rebuild it with a font tool.');
+}
 
 /** Container-Format einer Schriftdatei. */
 export type FontContainer = 'sfnt' | 'woff' | 'woff2' | 'collection';
@@ -186,6 +214,14 @@ function buildSfnt(flavor: number, input: readonly Table[]): Uint8Array {
     return { tag: t.tag, data: copy };
   });
   const n = prepared.length;
+  let total = 12 + n * 16;
+  for (let i = 0; i < n; i++) {
+    const t = prepared[i];
+    if (t === undefined) continue;
+    if (i > 0 && prepared[i - 1]?.tag === t.tag) throw duplicateTag(t.tag);
+    total += (t.data.length + 3) & ~3;
+    if (total > MAX_SFNT_BYTES) throw tooLarge('The resulting font', total);
+  }
   let entrySelector = 0;
   while (1 << (entrySelector + 1) <= n) entrySelector++;
   const searchRange = (1 << entrySelector) * 16;
@@ -295,8 +331,12 @@ export function woffToSfnt(bytes: Uint8Array): Uint8Array {
   const length = r.u32();
   if (length !== bytes.byteLength) throw invalid(`WOFF header says ${String(length)} bytes, the file has ${String(bytes.byteLength)}.`, 'Download the font file again.');
   const numTables = r.u16();
+  r.u16();
+  const totalSfntSize = r.u32();
+  if (totalSfntSize > MAX_SFNT_BYTES) throw tooLarge('The WOFF font (totalSfntSize)', totalSfntSize);
   r.offset = 44;
   const tables: Table[] = [];
+  let sum = 0;
   for (let i = 0; i < numTables; i++) {
     const tag = r.tag();
     const offset = r.u32();
@@ -305,12 +345,15 @@ export function woffToSfnt(bytes: Uint8Array): Uint8Array {
     r.u32();
     const data = new Reader(bytes, offset, `WOFF table "${tag}"`).take(compLength);
     if (compLength > origLength) throw invalid(`WOFF table "${tag}" is larger compressed than uncompressed.`);
+    sum += origLength;
+    if (sum > totalSfntSize) throw invalid(`WOFF tables are larger (${String(sum)} bytes) than totalSfntSize (${String(totalSfntSize)} bytes).`, 'Download the font file again.');
     let table: Uint8Array;
     if (compLength === origLength) {
       table = data;
     } else {
       try {
-        table = new Uint8Array(inflateSync(data));
+        // Nie mehr entpacken als angegeben (Dekompressionsbombe, Review Q1).
+        table = new Uint8Array(inflateSync(data, { maxOutputLength: origLength }));
       } catch (error: unknown) {
         throw invalid(`WOFF table "${tag}" cannot be decompressed: ${error instanceof Error ? error.message : String(error)}.`);
       }
@@ -346,6 +389,8 @@ interface Woff2Directory {
   readonly collection?: readonly { readonly flavor: number; readonly indices: readonly number[] }[];
   readonly compressedOffset: number;
   readonly compressedLength: number;
+  /** Summe der Tabellenlängen im entpackten Strom (höchstens {@link MAX_SFNT_BYTES}). */
+  readonly decompressedLength: number;
 }
 
 function readWoff2Directory(bytes: Uint8Array): Woff2Directory {
@@ -356,7 +401,8 @@ function readWoff2Directory(bytes: Uint8Array): Woff2Directory {
   if (length !== bytes.byteLength) throw invalid(`WOFF2 header says ${String(length)} bytes, the file has ${String(bytes.byteLength)}.`, 'Download the font file again.');
   const numTables = r.u16();
   r.u16();
-  r.u32();
+  const totalSfntSize = r.u32();
+  if (totalSfntSize > MAX_SFNT_BYTES) throw tooLarge('The WOFF2 font (totalSfntSize)', totalSfntSize);
   const compressedLength = r.u32();
   r.offset = 48;
   const entries: Woff2Entry[] = [];
@@ -370,10 +416,12 @@ function readWoff2Directory(bytes: Uint8Array): Woff2Directory {
     const glyfLike = tag === 'glyf' || tag === 'loca';
     const transformed = glyfLike ? transform === 0 : transform !== 0;
     const length = transformed ? r.base128() : origLength;
+    if (origLength > MAX_SFNT_BYTES) throw tooLarge(`WOFF2 table "${tag}"`, origLength);
     if (transformed && !glyfLike && !(tag === 'hmtx' && transform === 1)) throw invalid(`WOFF2 table "${tag}" uses unknown transform ${String(transform)}.`);
     if (glyfLike && transform !== 0 && transform !== 3) throw invalid(`WOFF2 table "${tag}" uses unknown transform ${String(transform)}.`);
     entries.push({ tag, transform: transformed ? (glyfLike ? 0 : transform) : -1, origLength, length, offset });
     offset += length;
+    if (offset > MAX_SFNT_BYTES) throw tooLarge('The WOFF2 decompressed data', offset);
   }
   let collection: { flavor: number; indices: number[] }[] | undefined;
   if (flavor === 0x74746366) {
@@ -384,15 +432,26 @@ function readWoff2Directory(bytes: Uint8Array): Woff2Directory {
       const count = r.u255();
       const fontFlavor = r.u32();
       const indices: number[] = [];
+      const tags = new Set<string>();
       for (let i = 0; i < count; i++) {
         const index = r.u255();
-        if (index >= entries.length) throw invalid(`WOFF2 collection font ${String(f)} references table ${String(index)} of ${String(entries.length)}.`);
+        const entry = entries[index];
+        if (entry === undefined) throw invalid(`WOFF2 collection font ${String(f)} references table ${String(index)} of ${String(entries.length)}.`);
+        if (tags.has(entry.tag)) throw duplicateTag(entry.tag);
+        tags.add(entry.tag);
         indices.push(index);
       }
       collection.push({ flavor: fontFlavor, indices });
     }
   }
-  return { flavor, entries, ...(collection !== undefined ? { collection } : {}), compressedOffset: r.offset, compressedLength };
+  if (collection === undefined) {
+    const tags = new Set<string>();
+    for (const e of entries) {
+      if (tags.has(e.tag)) throw duplicateTag(e.tag);
+      tags.add(e.tag);
+    }
+  }
+  return { flavor, entries, decompressedLength: offset, ...(collection !== undefined ? { collection } : {}), compressedOffset: r.offset, compressedLength };
 }
 
 /** Punkt-Flags im `glyf`-Format. */
@@ -458,6 +517,7 @@ function reconstructGlyf(data: Uint8Array): { glyf: Uint8Array; loca: Uint8Array
   const optionFlags = h.u16();
   const numGlyphs = h.u16();
   const indexFormat = h.u16();
+  if (indexFormat !== 0 && indexFormat !== 1) throw invalid(`Transformed glyf table has an invalid indexFormat ${String(indexFormat)}.`);
   const sizes = [h.u32(), h.u32(), h.u32(), h.u32(), h.u32(), h.u32(), h.u32()];
   let at = h.offset;
   const streams = sizes.map((size) => {
@@ -480,6 +540,7 @@ function reconstructGlyf(data: Uint8Array): { glyf: Uint8Array; loca: Uint8Array
   const xMins = new Int16Array(numGlyphs);
   for (let g = 0; g < numGlyphs; g++) {
     offsets.push(glyf.length);
+    if (glyf.length > MAX_SFNT_BYTES) throw tooLarge('The reconstructed glyf table', glyf.length);
     const nContours = nContourStream.i16();
     const hasBbox = hasBit(bboxBitmap, g);
     if (nContours === 0) {
@@ -594,6 +655,14 @@ function reconstructGlyf(data: Uint8Array): { glyf: Uint8Array; loca: Uint8Array
     glyf.pad(indexFormat === 0 ? 2 : 4);
   }
   offsets.push(glyf.length);
+  if (glyf.length > MAX_SFNT_BYTES) throw tooLarge('The reconstructed glyf table', glyf.length);
+  // Kurze loca speichert Offset/2 als uint16: höchstens 0x1FFFE Bytes glyf (Review Q1).
+  if (indexFormat === 0 && glyf.length > 0x1fffe) {
+    throw invalid(
+      `The reconstructed glyf table has ${String(glyf.length)} bytes, too many for a short loca table (indexFormat 0, at most 131070 bytes).`,
+      'Re-encode the WOFF2 file from a font with a long loca table (head.indexToLocFormat = 1).',
+    );
+  }
   const loca = new Writer();
   for (const o of offsets) {
     if (indexFormat === 0) loca.u16(o >> 1);
@@ -635,7 +704,8 @@ export function woff2ToSfnt(bytes: Uint8Array, faceIndex = 0): Uint8Array {
   const compressed = new Reader(bytes, dir.compressedOffset, 'WOFF2 compressed data').take(dir.compressedLength);
   let stream: Uint8Array;
   try {
-    stream = new Uint8Array(brotliDecompressSync(compressed));
+    // Höchstens die Summe der Tabellenlängen entpacken (Dekompressionsbombe, Review Q1).
+    stream = new Uint8Array(brotliDecompressSync(compressed, { maxOutputLength: Math.max(1, dir.decompressedLength) }));
   } catch (error: unknown) {
     throw invalid(`WOFF2 data cannot be decompressed: ${error instanceof Error ? error.message : String(error)}.`);
   }

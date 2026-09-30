@@ -31,11 +31,11 @@ import {
 import { encodePng } from '@agentic-video/png';
 import { defaultWorkerCount } from '@agentic-video/scheduler';
 import { createTemplateCatalog } from '@agentic-video/templates';
-import { cacheMaxBytesFromEnv, checkProject, createNodeEnvironment, describeScene, encoderThreadsFor, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
+import { buildFrameManifest, cacheMaxBytesFromEnv, checkProject, createNodeEnvironment, describeScene, encoderThreadsFor, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
 import { cannotOpenReason, openBrowser } from './browser.js';
 import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
-import { createLocalServices, htmlScriptsAllowed, processRunner, workersFromEnv, type LocalServices } from './services.js';
+import { createLocalServices, dockerRunner, dockerSettingsFromEnv, htmlScriptsAllowed, processRunner, renderIsolationFromEnv, workersFromEnv, type LocalServices, type RenderIsolation } from './services.js';
 import { createSourceService } from './sources.js';
 import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
 import { watchProject, type WatchEvent } from './watch.js';
@@ -66,12 +66,13 @@ Commands:
   dev [dir]             Studio with live preview; watches src/** and project.json, opens the browser (--no-open)
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
-  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>, default by cores and memory)
-  render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
+  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>, default by cores and memory;
+                        --isolation docker renders chunks in containers: --image <worker image> --gpus all|1|device=0)
+  render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe; --manifest writes <out>.manifest.json)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
   op <name>             Run any Agent API operation, same as HTTP/MCP (--input <json|@file>; op --list)
   patch [path]          Apply semantic patches (--input <json|@file> with a patch list; --dry-run)
-  contact-sheet [path]  Render several frames into one image (--frames 0,2s,4s | --count 8 --out sheet.png)
+  contact-sheet [path]  Render several frames into one image (--frames 0,2s,4s | --count 8 --out sheet.png; --manifest writes <out>.manifest.json)
   import <file> [path]  Import SVG, Lottie, glTF, HTML, anime/motion-canvas JSON (--format --id-prefix)
   doctor                Check the environment and suggest fixes
   benchmark             Run reproducible benchmarks (--scenario --resolution --frames --compare)
@@ -90,6 +91,8 @@ Server options (serve, dev, studio):
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
   --workers <n>          Render videos with n local worker processes (default by cores and memory; 1 = in process)
+  --isolation <mode>     Where video chunks render: process (default) or docker (OPENVIDEO_RENDER_ISOLATION;
+                         image OPENVIDEO_WORKER_IMAGE / --image, GPU quota OPENVIDEO_WORKER_GPUS / --gpus)
   --open / --no-open     Open the Studio in the browser (default on for dev/studio, off for serve)
 
 Project and workspace (serve, mcp, op):
@@ -323,6 +326,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         'dry-run': { type: 'boolean' },
         'id-prefix': { type: 'string' },
         count: { type: 'string' },
+        isolation: { type: 'string' },
+        image: { type: 'string' },
+        gpus: { type: 'string' },
+        manifest: { type: 'boolean' },
       },
     });
   } catch (error) {
@@ -357,6 +364,19 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     } finally {
       await env.dispose();
     }
+  };
+  const isolationValue = values.isolation;
+  if (isolationValue !== undefined && isolationValue !== 'process' && isolationValue !== 'docker') {
+    io.stderr(`--isolation must be "process" or "docker".\n\n${HELP}\n`);
+    return 2;
+  }
+  // Render-Isolation (Story 21.3): Flag vor OPENVIDEO_RENDER_ISOLATION; Docker-Einstellungen aus --image/--gpus und Umgebung.
+  const renderIsolationOption = (): { renderIsolation?: RenderIsolation; docker?: { image?: string; gpus?: string } } => {
+    const mode: RenderIsolation | undefined = isolationValue ?? renderIsolationFromEnv(io.env);
+    return {
+      ...(mode !== undefined ? { renderIsolation: mode } : {}),
+      ...(values.image !== undefined || values.gpus !== undefined ? { docker: { ...(values.image !== undefined ? { image: values.image } : {}), ...(values.gpus !== undefined ? { gpus: values.gpus } : {}) } } : {}),
+    };
   };
   try {
     const serverWorkers = num(values.workers, 'workers');
@@ -463,8 +483,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           const file = resolve(io.cwd, values.out ?? join(loaded.dir, 'out', `frame-${String(frame)}.png`));
           await mkdir(dirname(file), { recursive: true });
           await writeFile(file, encodePng(r.image));
+          // Kurzmanifest (Story 21.5): Eingabe-Hashes, Pixel-Hash, genutzte Backends, Grafik, Chromium, GPU.
+          const manifestFile = values.manifest === true ? `${file}.manifest.json` : undefined;
+          if (manifestFile !== undefined) await writeFile(manifestFile, `${JSON.stringify(await buildFrameManifest(env, loaded.project, [{ frame, ...r }], num(values.scale, 'scale') ?? 1), null, 2)}\n`);
           if (!json) printDiagnostics(io, r.diagnostics.filter((d) => d.severity !== 'info'));
-          out({ file, frame, key: r.key, cached: r.cached, width: r.image.width, height: r.image.height, diagnostics: r.diagnostics, timings: r.timings }, `Wrote ${file} (${String(r.image.width)}×${String(r.image.height)}, frame ${String(frame)}${r.cached ? ', cached' : ''}).`);
+          out({ file, frame, key: r.key, cached: r.cached, width: r.image.width, height: r.image.height, diagnostics: r.diagnostics, timings: r.timings, ...(manifestFile !== undefined ? { manifest: manifestFile } : {}) }, `Wrote ${file} (${String(r.image.width)}×${String(r.image.height)}, frame ${String(frame)}${r.cached ? ', cached' : ''}).${manifestFile !== undefined ? `\nManifest: ${manifestFile}` : ''}`);
           return r.diagnostics.some((d) => d.severity === 'error') ? 1 : 0;
         });
       }
@@ -499,9 +522,16 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           let last = '';
           // Standard: mehrere Worker-Prozesse nach Kernen und Speicher (Story 18.7); `--workers 1` rendert im Prozess.
           const workers = Math.max(1, Math.floor(num(values.workers, 'workers') ?? workersFromEnv(io.env) ?? defaultWorkerCount()));
-          const runChunks = workers > 1 ? processRunner(env, loaded.project, workers, trusted) : undefined;
+          // `--isolation docker` (Story 21.3): Chunks in Containern, optional mit GPU-Quota (`--gpus`).
+          const isolationChoice = renderIsolationOption();
+          const runChunks =
+            isolationChoice.renderIsolation === 'docker'
+              ? dockerRunner(env, loaded.project, workers, dockerSettingsFromEnv(io.env, isolationChoice.docker ?? {}))
+              : workers > 1
+                ? processRunner(env, loaded.project, workers, trusted)
+                : undefined;
           const r = await renderVideo(env, loaded.project, {
-            ...(runChunks !== undefined ? { runChunks, localRenderProcesses: workers } : {}),
+            ...(runChunks !== undefined ? { runChunks, localRenderProcesses: isolationChoice.renderIsolation === 'docker' ? 0 : workers } : {}),
             // Encoder-Threads nach freien Kernen (Story 18.6) und Cache-Budget (Story 18.9) aus der Umgebung des Aufrufs.
             encoderThreads: encoderThreadsFor(workers, io.env),
             ...cacheBudget(io.env),
@@ -531,6 +561,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           if (values.frame !== undefined) {
             const { evaluateScene, computeBounds } = await import('@agentic-video/core');
             const frame = frameOf(loaded.project, values.composition, values.frame);
+            await env.prepare?.(loaded.project);
             const scene = evaluateScene(loaded.project, values.composition, frame, { registry: env.registry });
             const bounds = computeBounds(scene, env.measurer);
             out({ frame, tree: sceneTree(scene, bounds) }, describeScene(scene, bounds));
@@ -556,7 +587,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const pathArg = command === 'op' ? undefined : command === 'import' ? rest[1] : rest[0];
         const projectArg = values.project ?? (command === 'op' ? (values.workspace === undefined && isProjectDir(io.cwd) ? '.' : undefined) : (pathArg ?? '.'));
         const context = await projectContext({ project: projectArg, workspace: values.workspace, cwd: io.cwd, env: io.env });
-        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline });
+        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline, ...renderIsolationOption() });
         const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
         try {
           const projectId = await context.link(services);
@@ -590,6 +621,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
             await mkdir(dirname(target), { recursive: true });
             await writeFile(target, await readFile(result['image']['file']));
             result['image'] = { ...result['image'], file: target };
+          }
+          // Kurzmanifest des Kontaktbogens (Story 21.5) neben das Bild schreiben.
+          if (command === 'contact-sheet' && values.manifest === true && isRecord(result) && isRecord(result['manifest']) && isRecord(result['image']) && typeof result['image']['file'] === 'string') {
+            const manifestFile = `${result['image']['file']}.manifest.json`;
+            await writeFile(manifestFile, `${JSON.stringify(result['manifest'], null, 2)}\n`);
+            result['manifestFile'] = manifestFile;
           }
           const diagnostics = isRecord(result) && Array.isArray(result['diagnostics']) ? result['diagnostics'].filter((d): d is Diagnostic => isRecord(d) && typeof d['code'] === 'string' && typeof d['problem'] === 'string') : [];
           if (!json && command !== 'op') printDiagnostics(io, diagnostics.filter((d) => d.severity !== 'info'));
@@ -690,7 +727,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'serve': {
         const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
-        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
+        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() });
         const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
         const projectId = await context.link(services);
         return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env), ...(projectId !== undefined ? { projectId } : {}), open: values.open === true && values['no-open'] !== true });
@@ -700,7 +737,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const loaded = await loadProject(target, { sources });
         const { workspaceDir, projectId } = await singleProjectWorkspace(loaded.dir);
         // Der eingebundene Projektordner bleibt nur für diesen Host erreichbar (Review M3).
-        const services: LocalServices = { ...(await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption })), hostProjectDirs: [loaded.dir] };
+        const services: LocalServices = { ...(await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() })), hostProjectDirs: [loaded.dir] };
         // dev/studio schützen die API immer mit einem Token; ohne Vorgabe ein zufälliges (B1).
         const given = values.token ?? io.env['OPENVIDEO_API_TOKEN'];
         const token = given !== undefined && given !== '' ? given : randomBytes(32).toString('base64url');
@@ -718,7 +755,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'mcp': {
         const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
-        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption(), telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
         const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
         const projectId = await context.link(services);
         const { serveStdio } = await import('@agentic-video/mcp');

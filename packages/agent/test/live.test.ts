@@ -2,7 +2,7 @@
  * Story 20.1/20.5/20.8: Live-Ereignisse mit Projektrevision, transiente Vorschau-Patches in
  * `frame.render` und die Job-Liste von `render.status`.
  */
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -208,6 +208,68 @@ describe('Story 20.1: Revisionen und Server-Sent Events', () => {
     } finally {
       await local.close();
     }
+  });
+
+  it('meldet das Ende der Beobachtung, wenn der Ordner ersetzt oder gelöscht wird (Review Q8)', async () => {
+    const watcher = new RevisionWatcher(10);
+    const dir = mkdtempSync(join(tmpdir(), 'ov-live-replace-'));
+    writeFileSync(join(dir, 'project.json'), '{}\n');
+    const seen: string[] = [];
+    let ended = 0;
+    await watcher.subscribe(dir, (r) => seen.push(r), () => ended++);
+    try {
+      // Editor/Git ersetzen den Ordner: neuer Inode am selben Pfad; der alte Watcher hört nie wieder etwas.
+      const fresh = `${dir}-new`;
+      mkdirSync(fresh);
+      writeFileSync(join(fresh, 'project.json'), '{"x":1}\n');
+      rmSync(dir, { recursive: true });
+      renameSync(fresh, dir);
+      await expect.poll(() => ended, { timeout: 5000 }).toBe(1);
+      expect(watcher.current(dir)).toBeUndefined();
+      // Neues Abonnement beobachtet den neuen Ordner.
+      const again: string[] = [];
+      let endedAgain = 0;
+      const stop = await watcher.subscribe(dir, (r) => again.push(r), () => endedAgain++);
+      writeFileSync(join(dir, 'project.json'), '{"x":2}\n');
+      await expect.poll(() => again.length, { timeout: 5000 }).toBe(1);
+      // Gelöscht: ebenfalls Ende.
+      rmSync(dir, { recursive: true });
+      await expect.poll(() => endedAgain, { timeout: 5000 }).toBe(1);
+      stop();
+      expect(ended).toBe(1);
+    } finally {
+      watcher.closeAll();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('beendet den SSE-Strom, wenn der Projektordner ersetzt wird, damit der Client neu verbindet', async () => {
+    const replaced = String((await ok(services, 'project.create', { name: 'Replaced', project: smallProject([RECT]) }))['projectId']);
+    const dir = services.workspace.projectDir(replaced);
+    const response = await fetch(`${server.url}/v1/events?projectId=${replaced}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(response.status).toBe(200);
+    const reader = response.body?.getReader();
+    if (reader === undefined) throw new Error('no body');
+    // Erste Nachricht (Anfangsstand) lesen, damit der Strom sicher läuft.
+    await reader.read();
+    const fresh = `${dir}-new`;
+    cpSync(dir, fresh, { recursive: true });
+    writeFileSync(join(fresh, 'project.json'), `${JSON.stringify(smallProject([{ ...RECT, x: 3 }]))}\n`);
+    rmSync(dir, { recursive: true });
+    renameSync(fresh, dir);
+    const deadline = Date.now() + 5000;
+    for (;;) {
+      const chunk = await Promise.race([reader.read(), new Promise<undefined>((r) => setTimeout(r, Math.max(0, deadline - Date.now())))]);
+      if (chunk === undefined) throw new Error('stream still open after the project folder was replaced');
+      if (chunk.done) break;
+    }
+    // Neu verbinden: der Anfangsstand ist die Revision des neuen Ordners.
+    const again = await fetch(`${server.url}/v1/events?projectId=${replaced}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    const againReader = again.body?.getReader();
+    if (againReader === undefined) throw new Error('no body');
+    const text = new TextDecoder().decode((await againReader.read()).value);
+    expect(text).toContain(revisionOf(readFileSync(join(dir, 'project.json'))));
+    await againReader.cancel();
   });
 
   it('close() beendet offene Streams', async () => {

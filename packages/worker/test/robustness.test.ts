@@ -171,10 +171,16 @@ describe('stdio-Worker: kaputte Rahmen', () => {
     expect(codeFrom(await w.done)).toBe('OV_WORKER_PROTOCOL');
   });
 
-  it('ungültiges JSON im Kopf beendet den Worker, ohne zu hängen', async () => {
+  it('ungültiges JSON im Kopf beendet den Worker mit OV_WORKER_PROTOCOL statt rohem SyntaxError', async () => {
     const w = stdioWorker();
     w.input.write(frame('{ not json'));
-    expect(await w.done).toBeInstanceOf(Error);
+    const done = await w.done;
+    expect(codeFrom(done)).toBe('OV_WORKER_PROTOCOL');
+    expect(isOpenVideoError(done) ? done.diagnostic.problem : '').toMatch(/cannot decode/u);
+    // Der Koordinator erfährt den Grund auch über den Ausgabestrom.
+    await expect.poll(() => w.messages.find((m) => m.type === 'error')).toBeDefined();
+    const reported = w.messages.find((m) => m.type === 'error');
+    expect(reported?.type === 'error' ? reported.diagnostic.code : '').toBe('OV_WORKER_PROTOCOL');
   });
 
   it('ein abgeschnittener Rahmen am Eingabeende beendet den Worker ohne Antwort', async () => {

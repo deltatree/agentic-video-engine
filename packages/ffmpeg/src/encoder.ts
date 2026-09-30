@@ -55,6 +55,7 @@ export interface EncoderOptions extends FfmpegLocateOptions {
   readonly alpha?: boolean;
   /** Farbraum für die Metadaten (Standard `srgb`). */
   readonly colorSpace?: ColorSpace;
+  /** Hardware-Encoder: `none` (Standard, CPU, bitgleich), `auto` (nach Probe) oder eine Familie. */
   readonly hardware?: HardwareMode;
   /** WAV-Datei, die als Tonspur gemuxt wird. */
   readonly audioPath?: string;
@@ -68,7 +69,7 @@ export interface EncoderOptions extends FfmpegLocateOptions {
   readonly timeoutMs?: number;
   /**
    * Codec aus einem Plugin (Story 21.1): ersetzt `codec` und die eingebauten Video-Argumente.
-   * `formats` begrenzt die Container; `args` wird geprüft (keine zusätzlichen Eingaben, kein Netz).
+   * `formats` begrenzt die Container; `args` wird gegen eine Allowlist geprüft ({@link checkCustomCodecArgs}).
    */
   readonly customCodec?: CustomCodec;
 }
@@ -81,11 +82,138 @@ export interface CustomCodec {
   readonly args: readonly string[];
 }
 
-/** Optionen, die Video-Argumente eines Plugins nicht setzen dürfen: weitere Eingaben, Ausgaben, Muxer, Mappings. */
-const FORBIDDEN_CUSTOM_ARGS: ReadonlySet<string> = new Set(['-i', '-f', '-y', '-n', '-map', '-filter_complex', '-lavfi', '-protocol_whitelist', '-attach', '-dump_attachment', '-stats_enc_pre', '-stats_enc_post', '-vstats_file', '-passlogfile', '-report']);
+/** Zahl, z. B. `18`, `-1`, `0.5`. */
+const NUMBER = /^-?\d{1,9}(?:\.\d{1,6})?$/u;
+/** Ganzzahl, z. B. `4`, `-1`. */
+const INTEGER = /^-?\d{1,9}$/u;
+/** Bitrate, z. B. `2500k`, `4M`, `0`. */
+const BITRATE = /^\d{1,9}(?:\.\d{1,6})?[kKMG]?$/u;
+/** Einfacher Bezeichner ohne Pfad- und Trennzeichen, z. B. `slow`, `yuv420p`, `high`, `4.1`. */
+const TOKEN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/u;
+/** Encoder-Name, z. B. `libx264`, `h264_nvenc`, `libsvtav1`. */
+const ENCODER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
+/** Wert in `-x264-params` & Co.: keine Pfade (`/`, `\`), keine Trenner (`:`, `=`). */
+const PARAM_VALUE = /^[A-Za-z0-9_.,+-]{1,64}$/u;
+
+/** Erlaubte Schlüssel in den Encoder-Parameterlisten (keine Schlüssel mit Dateien, keine Threads). */
+const X264_PARAMS: ReadonlySet<string> = new Set([
+  'keyint', 'min-keyint', 'scenecut', 'bframes', 'b-adapt', 'b-bias', 'b-pyramid', 'ref', 'no-deblock', 'deblock', 'crf', 'qp', 'qpmin', 'qpmax', 'qpstep',
+  'vbv-maxrate', 'vbv-bufsize', 'vbv-init', 'aq-mode', 'aq-strength', 'rc-lookahead', 'mbtree', 'no-mbtree', 'weightp', 'weightb', 'no-weightb', 'me', 'merange',
+  'subme', 'psy-rd', 'psy', 'no-psy', 'mixed-refs', 'no-mixed-refs', '8x8dct', 'no-8x8dct', 'trellis', 'fast-pskip', 'no-fast-pskip', 'dct-decimate', 'no-dct-decimate',
+  'cabac', 'no-cabac', 'direct', 'partitions', 'open-gop', 'bluray-compat', 'colorprim', 'transfer', 'colormatrix', 'range', 'fullrange', 'nal-hrd', 'filler',
+  'chroma-qp-offset', 'deadzone-inter', 'deadzone-intra', 'ipratio', 'pbratio', 'qcomp', 'cplxblur', 'qblur', 'intra-refresh', 'stitchable', 'slices', 'aud',
+]);
+const X265_PARAMS: ReadonlySet<string> = new Set([
+  'keyint', 'min-keyint', 'scenecut', 'bframes', 'b-adapt', 'ref', 'crf', 'qp', 'vbv-maxrate', 'vbv-bufsize', 'vbv-init', 'aq-mode', 'aq-strength', 'rc-lookahead',
+  'psy-rd', 'psy-rdoq', 'rdoq-level', 'rd', 'me', 'merange', 'subme', 'deblock', 'no-deblock', 'sao', 'no-sao', 'strong-intra-smoothing', 'no-strong-intra-smoothing',
+  'open-gop', 'no-open-gop', 'colorprim', 'transfer', 'colormatrix', 'range', 'master-display', 'max-cll', 'hdr10', 'hdr10-opt', 'repeat-headers', 'aud', 'hrd',
+  'profile', 'level-idc', 'high-tier', 'no-high-tier', 'tu-intra-depth', 'tu-inter-depth', 'limit-tu', 'ctu', 'min-cu-size', 'weightp', 'weightb', 'cutree', 'no-cutree',
+  'log-level', 'info', 'no-info', 'lossless', 'cbqpoffs', 'crqpoffs', 'selective-sao', 'tskip', 'no-tskip', 'rect', 'no-rect', 'amp', 'no-amp',
+]);
+const SVTAV1_PARAMS: ReadonlySet<string> = new Set([
+  'preset', 'crf', 'qp', 'tune', 'keyint', 'irefresh-type', 'lookahead', 'scd', 'enable-overlays', 'enable-tf', 'enable-qm', 'qm-min', 'qm-max', 'film-grain',
+  'film-grain-denoise', 'fast-decode', 'tile-rows', 'tile-columns', 'aq-mode', 'enable-cdef', 'enable-restoration', 'sharpness', 'variance-boost-strength',
+  'enable-variance-boost', 'color-primaries', 'transfer-characteristics', 'matrix-coefficients', 'color-range', 'mastering-display', 'content-light', 'hierarchical-levels',
+]);
+const AOM_PARAMS: ReadonlySet<string> = new Set([
+  'tune', 'enable-cdef', 'enable-restoration', 'enable-qm', 'deltaq-mode', 'aq-mode', 'sharpness', 'enable-chroma-deltaq', 'enable-tpl-model', 'arnr-strength',
+  'arnr-maxframes', 'lag-in-frames', 'kf-max-dist', 'kf-min-dist', 'enable-fwd-kf', 'cq-level', 'tile-columns', 'tile-rows', 'row-mt', 'denoise-noise-level',
+]);
+
+/** Bekannte Flags für `-movflags` (keine, die Dateien lesen oder schreiben). */
+const MOVFLAGS: ReadonlySet<string> = new Set([
+  'faststart', 'frag_keyframe', 'empty_moov', 'default_base_moof', 'separate_moof', 'omit_tfhd_offset', 'negative_cts_offsets', 'cmaf', 'delay_moov', 'write_colr',
+  'write_gama', 'disable_chpl', 'skip_sidx', 'global_sidx', 'frag_discont', 'use_metadata_tags', 'skip_trailer',
+]);
+
+/** Prüft `schlüssel=wert:schlüssel=wert` gegen eine Schlüsselliste. */
+function paramList(keys: ReadonlySet<string>): (value: string) => boolean {
+  return (value) => value.split(':').every((pair) => {
+    const eq = pair.indexOf('=');
+    const key = eq < 0 ? pair : pair.slice(0, eq);
+    return keys.has(key) && (eq < 0 || PARAM_VALUE.test(pair.slice(eq + 1)));
+  });
+}
+
+/** `-movflags +faststart+frag_keyframe` */
+function movflags(value: string): boolean {
+  const parts = value.split(/[+-]/u);
+  return /^[+-]?[a-z_]+(?:[+-][a-z_]+)*$/u.test(value) && parts.every((p) => p === '' || MOVFLAGS.has(p));
+}
 
 /**
- * Prüft die FFmpeg-Argumente eines Plugin-Codecs (Story 21.1).
+ * Allowlist der Optionen in Video-Argumenten eines Plugins (Review Q2): Name → Prüfung des Werts.
+ * Jede Option hat genau einen Wert. Nicht enthalten (und damit verboten) sind u. a. Eingaben,
+ * Ausgaben, Muxer, Mappings, alle Filter (`-vf`, `-filter*`, `-lavfi`), Fortschritt/Berichte,
+ * `-threads` (setzt OpenVideo) und `-r`/`-s` (Maße und Bildrate setzt OpenVideo).
+ */
+const ALLOWED_CUSTOM_OPTIONS: ReadonlyMap<string, (value: string) => boolean> = (() => {
+  const base: [string, (value: string) => boolean][] = [
+    ['-c:v', (v) => ENCODER.test(v)],
+    ['-codec:v', (v) => ENCODER.test(v)],
+    ['-vcodec', (v) => ENCODER.test(v)],
+    ['-crf', (v) => NUMBER.test(v)],
+    ['-qp', (v) => NUMBER.test(v)],
+    ['-q:v', (v) => NUMBER.test(v)],
+    ['-cq', (v) => NUMBER.test(v)],
+    ['-global_quality', (v) => NUMBER.test(v)],
+    ['-qmin', (v) => INTEGER.test(v)],
+    ['-qmax', (v) => INTEGER.test(v)],
+    ['-b:v', (v) => BITRATE.test(v)],
+    ['-minrate', (v) => BITRATE.test(v)],
+    ['-maxrate', (v) => BITRATE.test(v)],
+    ['-bufsize', (v) => BITRATE.test(v)],
+    ['-preset', (v) => TOKEN.test(v)],
+    ['-tune', (v) => TOKEN.test(v)],
+    ['-profile:v', (v) => TOKEN.test(v)],
+    ['-level', (v) => TOKEN.test(v)],
+    ['-pix_fmt', (v) => TOKEN.test(v)],
+    ['-tag:v', (v) => TOKEN.test(v)],
+    ['-colorspace', (v) => TOKEN.test(v)],
+    ['-color_primaries', (v) => TOKEN.test(v)],
+    ['-color_trc', (v) => TOKEN.test(v)],
+    ['-color_range', (v) => TOKEN.test(v)],
+    ['-g', (v) => INTEGER.test(v)],
+    ['-keyint_min', (v) => INTEGER.test(v)],
+    ['-bf', (v) => INTEGER.test(v)],
+    ['-refs', (v) => INTEGER.test(v)],
+    ['-sc_threshold', (v) => INTEGER.test(v)],
+    ['-x264-params', paramList(X264_PARAMS)],
+    ['-x265-params', paramList(X265_PARAMS)],
+    ['-svtav1-params', paramList(SVTAV1_PARAMS)],
+    ['-aom-params', paramList(AOM_PARAMS)],
+    ['-row-mt', (v) => INTEGER.test(v)],
+    ['-cpu-used', (v) => INTEGER.test(v)],
+    ['-deadline', (v) => TOKEN.test(v)],
+    ['-quality', (v) => TOKEN.test(v)],
+    ['-speed', (v) => INTEGER.test(v)],
+    ['-tiles', (v) => /^\d{1,2}x\d{1,2}$/u.test(v)],
+    ['-tile-columns', (v) => INTEGER.test(v)],
+    ['-tile-rows', (v) => INTEGER.test(v)],
+    ['-lag-in-frames', (v) => INTEGER.test(v)],
+    ['-auto-alt-ref', (v) => INTEGER.test(v)],
+    ['-aq-mode', (v) => INTEGER.test(v)],
+    ['-lossless', (v) => INTEGER.test(v)],
+    ['-movflags', movflags],
+  ];
+  const map = new Map<string, (value: string) => boolean>();
+  for (const [name, check] of base) {
+    map.set(name, check);
+    // Gleichbedeutend mit Stream-Angabe für das Video, z. B. `-crf:v`, `-preset:v`.
+    if (!name.includes(':') && name !== '-vcodec' && name !== '-movflags') map.set(`${name}:v`, check);
+  }
+  return map;
+})();
+
+const CUSTOM_ARGS_SUGGESTIONS: readonly string[] = [
+  'Only pass video encoder options as "-option value" pairs: -c:v, -crf, -qp, -b:v, -maxrate, -bufsize, -preset, -tune, -profile:v, -level, -pix_fmt, -g, -keyint_min, -bf, -x264-params, -x265-params, -row-mt, -cpu-used, -deadline, -movflags and similar.',
+  'Inputs, outputs, filters (-vf, -filter*), muxers, stream mappings, threads, frame rate, size, progress/report files and URLs are set by OpenVideo and may not appear.',
+];
+
+/**
+ * Prüft die FFmpeg-Argumente eines Plugin-Codecs (Story 21.1, Review Q2) gegen eine Allowlist:
+ * Jedes Argument ist entweder eine erlaubte Option oder der Wert direkt dahinter. Werte werden
+ * je Option geprüft (Zahlen, Bezeichner, Parameterlisten ohne Pfade, bekannte `-movflags`).
  *
  * @example
  * ```ts
@@ -93,13 +221,19 @@ const FORBIDDEN_CUSTOM_ARGS: ReadonlySet<string> = new Set(['-i', '-f', '-y', '-
  * ```
  */
 export function checkCustomCodecArgs(codec: CustomCodec): void {
-  for (const arg of codec.args) {
-    const name = arg.split(':')[0] ?? arg;
-    if (FORBIDDEN_CUSTOM_ARGS.has(name) || arg.includes('://') || /\b(?:a?movie|sendcmd|zmq)\s*=/iu.test(arg)) {
-      throw encodeError('OV_ENCODE_CODEC_ARGS', `Codec "plugin:${codec.id}" uses the FFmpeg argument "${arg}", which plugins may not set.`, ['Only pass video encoder options (e.g. -c:v, -crf, -preset, -pix_fmt, -vf).', 'Inputs, outputs, muxers, stream mappings and URLs are set by OpenVideo.'], { codec: codec.id, argument: arg });
-    }
+  const reject = (arg: string, why: string): OpenVideoError =>
+    encodeError('OV_ENCODE_CODEC_ARGS', `Codec "plugin:${codec.id}" uses the FFmpeg argument "${arg}", which plugins may not set (${why}).`, CUSTOM_ARGS_SUGGESTIONS, { codec: codec.id, argument: arg });
+  let hasEncoder = false;
+  for (let i = 0; i < codec.args.length; i += 2) {
+    const name = codec.args[i] ?? '';
+    const check = ALLOWED_CUSTOM_OPTIONS.get(name);
+    if (check === undefined) throw reject(name, name.startsWith('-') ? 'option not allowed' : 'value without an option');
+    const value = codec.args[i + 1];
+    if (value === undefined) throw reject(name, 'missing value');
+    if (!check(value)) throw reject(`${name} ${value}`, 'value not allowed');
+    if (name === '-c:v' || name === '-codec:v' || name === '-vcodec') hasEncoder = true;
   }
-  if (!codec.args.includes('-c:v') && !codec.args.includes('-codec:v') && !codec.args.includes('-vcodec')) {
+  if (!hasEncoder) {
     throw encodeError('OV_ENCODE_CODEC_ARGS', `Codec "plugin:${codec.id}" does not choose an encoder with -c:v.`, ['Return e.g. ["-c:v", "libx264", ...] from encoderArgs.'], { codec: codec.id });
   }
 }
@@ -253,7 +387,8 @@ function resolvePlan(o: EncoderOptions): Plan {
     quality,
     threads: Math.max(1, Math.floor(o.threads ?? 4)),
     colorSpace: o.colorSpace ?? 'srgb',
-    hardware: o.hardware ?? 'auto',
+    // Standard `none` (Story 21.5): gleiche Bytes auf jeder Maschine; Hardware-Encoding nur als Opt-in.
+    hardware: o.hardware ?? 'none',
     audioCodec,
     audioBitrate: o.audioBitrate ?? 192,
     sequenceExt: SEQUENCE_EXT[o.format],
@@ -412,7 +547,8 @@ function buildArgs(o: EncoderOptions, plan: Plan, caps: FfmpegCapabilities): { a
 
 /**
  * Erzeugt einen Encoder. Prüft Format, Codec, Alpha und Audio sofort; FFmpeg startet mit dem ersten Frame.
- * `hardware: 'auto'` (Standard) nutzt Hardware nur nach erfolgreicher Probe, sonst CPU.
+ * `hardware` ist standardmäßig `none` (CPU, bitgleich auf jeder Maschine). `auto` nutzt Hardware
+ * nur nach erfolgreicher Probe, sonst CPU; `nvenc`/`vaapi`/`qsv`/`videotoolbox` verlangen die Familie.
  *
  * @example
  * ```ts

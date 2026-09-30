@@ -15,7 +15,7 @@ import { layerPatches, orderedChildren, siblingsOf, sortByZ, ungroupPatches } fr
 import { MIXED, commonFields, multiSetPatches, sharedValue } from '../src/multi.js';
 import { matchesQuery } from '../src/panels/Library.js';
 import { LatestOnly, SerialQueue } from '../src/queue.js';
-import { RevisionTracker, parseSse } from '../src/sync.js';
+import { RevisionTracker, parseSse, subscribeRevisions } from '../src/sync.js';
 import { addMarker, advanceFrame, keyframeJump, moveKeyframe, removeMarker, renameMarker, shuttle, snapFrame, snapSpan, timelineSnapTargets } from '../src/timeline-logic.js';
 import { angleOf, marqueeHits, normalizeBox, resizeBlocker, resizeBox, resizePatches, rotateBy } from '../src/transform.js';
 
@@ -171,6 +171,60 @@ describe('Story 20.1: Live-Sync', () => {
     expect(t.remote('d', true)).toBe(false);
     t.loaded('c');
     expect(t.pending()).toBe(true);
+  });
+
+  it('acknowledge: eine geprüfte Meldung steht nicht mehr aus, eine neuere schon', () => {
+    const t = new RevisionTracker();
+    t.loaded('b');
+    // Verspätetes Echo einer früheren eigenen Speicherung (oder älterer Anfangsstand des Stroms).
+    expect(t.remote('a', true)).toBe(false);
+    expect(t.pending()).toBe(true);
+    expect(t.reported).toBe('a');
+    t.acknowledge('a');
+    expect(t.pending()).toBe(false);
+    // Während der Prüfung kommt eine neuere Meldung: sie bleibt vorgemerkt.
+    t.remote('x', true);
+    t.remote('y', true);
+    t.acknowledge('x');
+    expect(t.pending()).toBe(true);
+    expect(t.reported).toBe('y');
+  });
+
+  it('subscribeRevisions: wachsende Wartezeit bei sofort endenden Strömen, Rücksetzen erst nach einem Ereignis, Ende mit stop()', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', { location: { hash: '', search: '', pathname: '/' }, history: { replaceState: () => undefined } });
+    vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: () => undefined });
+    const starts: number[] = [];
+    let withEvent = false;
+    vi.stubGlobal('fetch', () => {
+      starts.push(Date.now());
+      const text = withEvent ? 'event: revision\ndata: {"revision":"r1"}\n\n' : 'retry: 2000\n\n';
+      withEvent = false;
+      return Promise.resolve(new Response(text, { headers: { 'content-type': 'text/event-stream' } }));
+    });
+    const revisions: string[] = [];
+    const states: string[] = [];
+    try {
+      const t0 = Date.now();
+      const stop = subscribeRevisions('demo', (r) => revisions.push(r), (st) => states.push(st), { minDelayMs: 100, maxDelayMs: 400 });
+      await vi.advanceTimersByTimeAsync(100 + 200 + 400 + 400 - 1);
+      // Verbindet sofort, dann nach 100, 200, 400, 400 ms (gedeckelt) – kein Sekundentakt-Rücksetzen.
+      expect(starts.map((x) => x - t0)).toEqual([0, 100, 300, 700]);
+      withEvent = true;
+      await vi.advanceTimersByTimeAsync(1);
+      expect(revisions).toEqual(['r1']);
+      // Diese Verbindung trug ein Ereignis: die nächste Wartezeit beginnt wieder bei 100 ms.
+      await vi.advanceTimersByTimeAsync(100);
+      expect(starts.map((x) => x - t0)).toEqual([0, 100, 300, 700, 1100, 1200]);
+      stop();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(starts).toHaveLength(6);
+      expect(states).toContain('live');
+      expect(states.at(-1)).toBe('offline');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 });
 

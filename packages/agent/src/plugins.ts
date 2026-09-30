@@ -5,7 +5,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
+import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import Type from 'typebox';
 import { OpenVideoError, isRecord, validateValue, type Registry } from '@agentic-video/core';
 import type { OperationContext, OperationDefinition } from './operation.js';
@@ -177,16 +177,48 @@ function isInside(root: string, full: string): boolean {
   return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 }
 
+/** Dateiendungen, die ein Panel-Modul haben darf (Review Q5). */
+const PANEL_MODULE_EXTENSIONS: ReadonlySet<string> = new Set(['.js', '.mjs']);
+
+/** Optionen für {@link servePluginPanel}. */
+export interface ServePanelOptions {
+  /**
+   * Origin der Anfrage, z. B. `http://localhost:4000` (aus dem geprüften `Host`-Header). Damit
+   * erlaubt die CSP genau die absolute Modul-URL; ohne sie nur Skripte derselben Origin (`'self'`).
+   */
+  readonly origin?: string;
+}
+
+/**
+ * CSP-Quelle für das Panel-Modul: die absolute URL (`<origin><pfad>module.js`), sonst `'self'`.
+ * Kein `'strict-dynamic'`: Das Modul darf keine weiteren Skripte nachladen (Review Q5).
+ */
+function moduleSource(pathname: string, origin: string | undefined): string {
+  if (origin === undefined) return "'self'";
+  let parsed: URL;
+  try {
+    parsed = new URL(origin);
+  } catch (error: unknown) {
+    if (error instanceof TypeError) return "'self'";
+    throw error;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return "'self'";
+  // Pfad ist schon geprüft ([A-Za-z0-9._-] und Signatur); ";" oder "," können nicht vorkommen.
+  return `${parsed.origin}${pathname}module.js`;
+}
+
 /**
  * Liefert die Seite (`…/`) oder das Modul (`…/module.js`) eines Studio-Panels. Ohne gültige
- * Signatur oder ohne Panel kommt 404. Die Seite trägt eine strikte CSP mit `sandbox allow-scripts`.
+ * Signatur oder ohne Panel kommt 404. Die Seite trägt eine strikte CSP mit `sandbox allow-scripts`:
+ * Skripte nur mit Nonce und das eine Panel-Modul, kein `'strict-dynamic'`, kein Netz. Das Modul
+ * (`panel.module`) muss eine `.js`- oder `.mjs`-Datei im Ordner des Plugins sein, sonst 404.
  *
  * @example
  * ```ts
- * const r = await servePluginPanel(services, '/plugin-panels/demo/hello-panel/3f…/');
+ * const r = await servePluginPanel(services, '/plugin-panels/demo/hello-panel/3f…/', { origin: 'http://localhost:4000' });
  * ```
  */
-export async function servePluginPanel(services: AgentServices, pathname: string): Promise<PanelResponse | undefined> {
+export async function servePluginPanel(services: AgentServices, pathname: string, options: ServePanelOptions = {}): Promise<PanelResponse | undefined> {
   if (!pathname.startsWith(PLUGIN_PANEL_PATH)) return undefined;
   const notFound: PanelResponse = { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' }, body: 'Not found' };
   const parts = pathname.slice(PLUGIN_PANEL_PATH.length).split('/');
@@ -204,6 +236,7 @@ export async function servePluginPanel(services: AgentServices, pathname: string
     if (panel === undefined || origin === undefined) return notFound;
     const base = dirname(origin);
     const moduleFile = resolve(base, panel.module);
+    if (!PANEL_MODULE_EXTENSIONS.has(extname(moduleFile).toLowerCase())) return notFound;
     let real: string;
     try {
       real = await realpath(moduleFile);
@@ -211,7 +244,7 @@ export async function servePluginPanel(services: AgentServices, pathname: string
       if (error instanceof Error && 'code' in error) return notFound;
       throw error;
     }
-    if (!isInside(await realpath(base), real)) return notFound;
+    if (!isInside(await realpath(base), real) || !PANEL_MODULE_EXTENSIONS.has(extname(real).toLowerCase())) return notFound;
     const common = { 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' };
     // Die Panel-Seite hat eine undurchsichtige Origin; Modul-Skripte laden mit CORS.
     if (file === 'module.js') return { status: 200, headers: { ...common, 'content-type': 'text/javascript; charset=utf-8', 'access-control-allow-origin': '*' }, body: new Uint8Array(await readFile(real)) };
@@ -221,7 +254,7 @@ export async function servePluginPanel(services: AgentServices, pathname: string
       headers: {
         ...common,
         'content-type': 'text/html; charset=utf-8',
-        'content-security-policy': `sandbox allow-scripts; default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`,
+        'content-security-policy': `sandbox allow-scripts; default-src 'none'; script-src 'nonce-${nonce}' ${moduleSource(pathname.slice(0, pathname.length - file.length), options.origin)}; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'`,
       },
       body: panelPage(panel.title, nonce),
     };

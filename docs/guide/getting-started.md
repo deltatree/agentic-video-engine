@@ -10,6 +10,22 @@
 | Docker | Sandbox für TSX und HTML-Skripte | nur für Agent-Code |
 | Blender 4.2 LTS | `blender`-Nodes | nein |
 
+## Installation
+
+> **Noch nicht auf npm:** Die Pakete `@agentic-video/*` sind bis zur ersten Veröffentlichung
+> (Release-Workflow bei einem Tag `v*`) nicht in der npm-Registry. `npx @agentic-video/cli` und
+> `npm install -g @agentic-video/cli` finden sie bis dahin nicht. Installiere die CLI so lange aus dem Repository:
+
+```bash
+git clone https://github.com/deltatree/agentic-video-engine.git
+cd agentic-video-engine
+npm ci && npm run build          # baut alle Pakete und kopiert das Studio ins CLI-Paket
+alias openvideo="node $PWD/packages/cli/dist/bin.js"
+```
+
+Nach der ersten Veröffentlichung ersetzt `npx @agentic-video/cli <befehl>` den Alias. Alle Befehle unten
+schreiben `openvideo`.
+
 Prüfe alles mit `openvideo doctor`. Jede Zeile nennt bei Bedarf eine Lösung.
 
 ## Projekt anlegen und ansehen

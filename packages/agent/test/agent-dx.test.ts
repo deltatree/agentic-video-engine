@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OpenVideoError, PATCH_OPS, Registry, applyPatches, isRecord, type AsrProvider } from '@agentic-video/core';
+import { OpenVideoError, PATCH_OPS, Registry, applyPatches, isRecord, type AsrProvider, type Patch } from '@agentic-video/core';
 import { JobManager, OPERATIONS, PATCH_EXAMPLES, PATCH_SCHEMAS, PatchSchema, checkPatchList, invokeOperation, type AgentServices, type InvocationResult } from '@agentic-video/agent';
 import { smallProject, testEnvironment, testServices } from './helpers.js';
 
@@ -28,6 +28,34 @@ async function ok(services: AgentServices, op: string, input: unknown): Promise<
 /** Länge einer Liste aus einem Ergebnis (−1, wenn es keine Liste ist). */
 function lengthOf(value: unknown): number {
   return Array.isArray(value) ? value.length : -1;
+}
+
+/** Objekte einer Liste (andere Einträge fallen weg); keine Liste → leer. */
+function records(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+/** Ein Objekt oder ein leeres Objekt. */
+function rec(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {};
+}
+
+/** Liste von Texten (andere Einträge fallen weg). */
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/** Codes der Diagnosen eines Ergebnisses. */
+function codes(value: unknown): string[] {
+  return records(value).map((d) => String(d['code']));
+}
+
+/**
+ * Patch-förmig: ein Objekt mit bekannter `op`. Die Felder prüft erst der Kern – genau das testen die
+ * Aufrufer, die ihm absichtlich falsche Felder geben.
+ */
+function isPatchShaped(value: unknown): value is Patch {
+  return isRecord(value) && PATCH_OPS.some((op) => op === value['op']);
 }
 
 function failure(r: InvocationResult) {
@@ -55,7 +83,7 @@ describe('Story 19.1: typisiertes Patch-Schema', () => {
     for (const op of PATCH_OPS) {
       const branch = PATCH_SCHEMAS[op];
       expect(branch.properties.op.const).toBe(op);
-      expect((branch as { additionalProperties?: unknown }).additionalProperties).toBe(false);
+      expect(rec(branch)['additionalProperties']).toBe(false);
       expect(PATCH_EXAMPLES[op].at(-1)?.op).toBe(op);
     }
   });
@@ -104,7 +132,9 @@ describe('Story 19.6: Diagnose-Härtung', () => {
     expect(e.code).toBe('OV_PATCH_INVALID');
     expect(e.path).toBe('patches[0].parentId');
     // Auch der Kern prüft streng, wenn JavaScript-Aufrufer ihn direkt nutzen.
-    const core = applyPatches(smallProject([RECT]), [{ op: 'moveNode', nodeId: 'box', parentId: 7 } as never]);
+    const wrong: unknown = { op: 'moveNode', nodeId: 'box', parentId: 7 };
+    if (!isPatchShaped(wrong)) throw new Error('not patch-shaped');
+    const core = applyPatches(smallProject([RECT]), [wrong]);
     expect(core.ok).toBe(false);
     expect(core.diagnostics[0]?.path).toBe('patches[0].parentId');
   });
@@ -114,10 +144,10 @@ describe('Story 19.6: Diagnose-Härtung', () => {
     const id = await create(services, [RECT, { id: 'headline', type: 'text', text: 'Hi', fontSize: 4 }]);
     const r = await ok(services, 'composition.patch', { projectId: id, patches: [{ op: 'setProperty', nodeId: 'box', property: 'x', value: 1 }, { op: 'setProperty', nodeId: 'headlin', property: 'x', value: 1 }] });
     expect(r['ok']).toBe(false);
-    const d = (r['diagnostics'] as { path: string; suggestions: string[]; received: string }[])[0];
-    expect(d?.path).toBe('patches[1]');
-    expect(d?.received).toBe('"headlin"');
-    expect(d?.suggestions[0]).toBe('Did you mean "headline"?');
+    const d = records(r['diagnostics'])[0];
+    expect(d?.['path']).toBe('patches[1]');
+    expect(d?.['received']).toBe('"headlin"');
+    expect(strings(d?.['suggestions'])[0]).toBe('Did you mean "headline"?');
   });
 
   it('kein Fehler einer Agent-Operation hat leere suggestions', async () => {
@@ -144,9 +174,9 @@ describe('Story 19.6: Diagnose-Härtung', () => {
     ];
     for (const [op, input] of calls) {
       const r = await run(services, op, input);
-      const diagnostics = r.ok ? ((r.result as { diagnostics?: { severity: string; suggestions: string[] }[] }).diagnostics ?? []).filter((d) => d.severity === 'error') : [r.error];
+      const diagnostics = r.ok ? records(rec(r.result)['diagnostics']).filter((d) => d['severity'] === 'error') : [{ ...r.error }];
       expect(diagnostics.length, `${op} should fail`).toBeGreaterThan(0);
-      for (const d of diagnostics) expect(d.suggestions.length, `${op}: ${JSON.stringify(d)}`).toBeGreaterThan(0);
+      for (const d of diagnostics) expect(strings(d['suggestions']).length, `${op}: ${JSON.stringify(d)}`).toBeGreaterThan(0);
     }
   });
 
@@ -187,12 +217,12 @@ describe('Story 19.3: Selbstbeschreibung', () => {
   it('schema.get liefert IR, Node-Typ, Patch-Format und Operationsschema', async () => {
     const services = newServices();
     const full = await ok(services, 'schema.get', {});
-    expect((full['schema'] as { $defs: Record<string, unknown> }).$defs).toHaveProperty('Node_rect');
+    expect(rec(rec(full['schema'])['$defs'])).toHaveProperty('Node_rect');
     const rect = await ok(services, 'schema.get', { nodeType: 'rect' });
     expect(JSON.stringify(rect['schema'])).not.toContain('"$ref":"#/$defs/width');
-    expect((rect['schema'] as { properties: Record<string, unknown> }).properties).toHaveProperty('cornerRadius');
+    expect(rec(rec(rect['schema'])['properties'])).toHaveProperty('cornerRadius');
     const patch = await ok(services, 'schema.get', { name: 'patch' });
-    expect(Object.keys(patch['kinds'] as object)).toEqual([...PATCH_OPS]);
+    expect(Object.keys(rec(patch['kinds']))).toEqual([...PATCH_OPS]);
     const op = await ok(services, 'schema.get', { operation: 'frame.renderMany' });
     expect(op['operation']).toBe('frame.renderMany');
   });
@@ -218,7 +248,7 @@ describe('Story 19.4: project.open', () => {
     const v = await ok(services, 'composition.validate', { projectId: 'launch-video' });
     expect(v['ok']).toBe(true);
     const listed = await ok(services, 'project.inspect', {});
-    expect((listed['projects'] as { id: string }[]).map((p) => p.id)).toContain('launch-video');
+    expect(records(listed['projects']).map((p) => p['id'])).toContain('launch-video');
   });
 
   it('lehnt Ordner außerhalb der Wurzeln ab, auch über Symlinks', async () => {
@@ -252,9 +282,9 @@ describe('Story 19.5: project.import', () => {
     const r = await ok(services, 'project.import', { projectId: id, format: 'svg', content: svg, idPrefix: 'logo' });
     expect(r['ok']).toBe(true);
     expect(r['nodes']).toEqual(['logo']);
-    expect((r['diagnostics'] as { code: string }[]).some((d) => d.code === 'OV_IMPORT_LOSSY')).toBe(true);
+    expect(codes(r['diagnostics'])).toContain('OV_IMPORT_LOSSY');
     const comp = await ok(services, 'composition.get', { projectId: id });
-    expect((comp['nodes'] as { id: string }[]).map((n) => n.id)).toEqual(['box', 'logo']);
+    expect(records(comp['nodes']).map((n) => n['id'])).toEqual(['box', 'logo']);
   });
 
   it('dryRun speichert nichts', async () => {
@@ -271,9 +301,9 @@ describe('Story 19.5: project.import', () => {
     const id = await create(services);
     const r = await ok(services, 'project.import', { projectId: id, format: 'anime', content: { entries: [{ targets: 'box', params: { opacity: [0, 1], duration: 500, onComplete: 'x' } }] } });
     expect(r['ok']).toBe(true);
-    expect((r['diagnostics'] as { code: string }[]).some((d) => d.code === 'OV_IMPORT_LOSSY')).toBe(true);
+    expect(codes(r['diagnostics'])).toContain('OV_IMPORT_LOSSY');
     const comp = await ok(services, 'composition.get', { projectId: id });
-    expect(JSON.stringify((comp['nodes'] as { opacity: unknown }[])[0]?.opacity)).toContain('$keyframes');
+    expect(JSON.stringify(records(comp['nodes'])[0]?.['opacity'])).toContain('$keyframes');
   });
 
   it('führt Motion-Canvas-Szenen aus JSON aus', async () => {
@@ -291,7 +321,7 @@ describe('Story 19.5: project.import', () => {
     const r = await ok(services, 'project.import', { projectId: id, format: 'motion-canvas', content });
     expect(r['ok']).toBe(true);
     expect(r['nodes']).toEqual(['intro']);
-    expect((r['diagnostics'] as { code: string; path: string }[]).some((d) => d.code === 'OV_IMPORT_LOSSY' && d.path.includes('timeline[1]'))).toBe(true);
+    expect(records(r['diagnostics']).some((d) => d['code'] === 'OV_IMPORT_LOSSY' && String(d['path']).includes('timeline[1]'))).toBe(true);
     const comp = await ok(services, 'composition.get', { projectId: id });
     expect(JSON.stringify(comp['nodes'])).toContain('$keyframes');
   });
@@ -349,8 +379,8 @@ describe('Story 19.5: subtitles.transcribe', () => {
     const r = await ok(services, 'subtitles.transcribe', { projectId: id, trackId: 'subs' });
     expect(r).toMatchObject({ ok: true, provider: 'fake-asr', saved: true });
     const comp = await ok(services, 'composition.get', { projectId: id });
-    const track = (comp['tracks'] as { cues: { text: string; words: unknown[] }[] }[])[0];
-    expect(track?.cues[0]?.text).toBe('Hello world');
-    expect(track?.cues[0]?.words.length).toBe(2);
+    const cue = records(records(comp['tracks'])[0]?.['cues'])[0];
+    expect(cue?.['text']).toBe('Hello world');
+    expect(records(cue?.['words'])).toHaveLength(2);
   });
 });

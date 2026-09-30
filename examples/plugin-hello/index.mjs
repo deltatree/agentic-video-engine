@@ -45,7 +45,7 @@ const plugin = {
       id: 'x264-fast',
       formats: ['mp4', 'mov'],
       license: 'GPL-2.0-or-later (libx264)',
-      encoderArgs: ({ quality }) => ['-vf', 'format=yuv420p', '-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(Math.round(40 - 0.25 * quality))],
+      encoderArgs: ({ quality }) => ['-pix_fmt', 'yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', String(Math.round(40 - 0.25 * quality))],
     });
 
     // Exporter → Render-Profil `format: "plugin:hello-frames"` (eigene Bildfolge in einer Datei).

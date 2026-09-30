@@ -6,7 +6,9 @@
  * Start bekannt), `browser-gpu: 'native'` steht nur im GPU-Modus darin (T5; SwiftShader-Schlüssel
  * bleiben unverändert). Das `three`-Backend trägt nach
  * {@link LazyBrowserBackends.prepareGraphics} zusätzlich `three-webgpu` (`available`/`unavailable`):
- * davon hängt ab, ob `backend: 'auto'` WebGPU oder WebGL2 nutzt (Story 21.5). Die tatsächliche
+ * davon hängt ab, ob `backend: 'auto'` WebGPU oder WebGL2 nutzt (Story 21.5) – und
+ * `three-max-texture` (`MAX_TEXTURE_SIZE` von WebGL2): ab dieser Kante verkleinert `three` Texturen
+ * mit `textureDownscale` (Review Q10). Die tatsächliche
  * Chromium-Version steht nach dem Start in {@link LazyBrowserBackends.runtimeVersions}.
  */
 import { createRequire } from 'node:module';
@@ -93,7 +95,7 @@ export function createLazyBrowserBackends(options: BrowserHostOptions): LazyBrow
     capabilities,
     fusable,
     // `browser-gpu` nur im GPU-Modus: Schlüssel im Standardmodus (SwiftShader) bleiben wie bisher.
-    versions: () => ({ chromium, ...(gpuMode === 'native' ? { 'browser-gpu': 'native' } : {}), ...versions, ...(id === 'three' && graphics !== undefined ? { 'three-webgpu': graphics.webgpuAvailable ? 'available' : 'unavailable' } : {}) }),
+    versions: () => ({ chromium, ...(gpuMode === 'native' ? { 'browser-gpu': 'native' } : {}), ...versions, ...(id === 'three' && graphics !== undefined ? { 'three-webgpu': graphics.webgpuAvailable ? 'available' : 'unavailable', 'three-max-texture': String(graphics.webgl2MaxTextureSize) } : {}) }),
     check,
     async renderLayer(request: LayerRequest): Promise<RgbaImage> {
       const backends = await ensure();

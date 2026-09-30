@@ -161,6 +161,32 @@ describe('Studio-Store', () => {
     expect((await serverNode(projectId, 'disc'))?.['x']).toBe(160);
   });
 
+  it('Nudge-Zusammenfassung mit fester Uhr: Schritte im 1-s-Fenster ergeben einen Undo-Schritt, danach beginnt ein neuer', async () => {
+    let clock = 10_000;
+    const timed = new Studio(projectId, { now: () => clock });
+    try {
+      await timed.load();
+      timed.select(['box']);
+      // Unabhängig davon, wie lange der Server braucht: gemessen wird die Eingabe.
+      const first = timed.nudge(1, 0);
+      clock += 400;
+      const second = timed.nudge(1, 0);
+      clock += 600;
+      const third = timed.nudge(1, 0);
+      await Promise.all([first, second, third]);
+      clock += 1001;
+      await timed.nudge(1, 0);
+      expect((await serverNode(projectId, 'box'))?.['x']).toBe(24);
+      await timed.undo();
+      expect((await serverNode(projectId, 'box'))?.['x']).toBe(23);
+      await timed.undo();
+      expect((await serverNode(projectId, 'box'))?.['x']).toBe(20);
+      expect(timed.getState().canUndo).toBe(false);
+    } finally {
+      timed.dispose();
+    }
+  });
+
   it('Duplizieren und Löschen der Auswahl', async () => {
     s().select(['box']);
     await s().duplicate();

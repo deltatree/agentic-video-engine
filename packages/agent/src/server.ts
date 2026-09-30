@@ -372,7 +372,7 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     // getrennter Client seinen Watcher.
     streams.add(res);
     // Veränderlicher Zustand in einem Objekt: der close-Listener setzt ihn zwischen den awaits.
-    const life: { closed: boolean; unsubscribe?: () => void; heartbeat?: ReturnType<typeof setInterval> } = { closed: false };
+    const life: { closed: boolean; ended: boolean; unsubscribe?: () => void; heartbeat?: ReturnType<typeof setInterval> } = { closed: false, ended: false };
     res.on('close', () => {
       life.closed = true;
       if (life.heartbeat !== undefined) clearInterval(life.heartbeat);
@@ -384,7 +384,12 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     };
     let unsubscribe: () => void;
     try {
-      unsubscribe = await revisions.subscribe(dir, push);
+      // Endet die Beobachtung von selbst (Ordner gelöscht/ersetzt, Watcher-Fehler), schließt der Strom:
+      // Der Client verbindet neu und beobachtet dann den aktuellen Ordner, statt stumm „live“ zu bleiben.
+      unsubscribe = await revisions.subscribe(dir, push, () => {
+        life.ended = true;
+        if (res.headersSent) res.end();
+      });
     } catch (error) {
       streams.delete(res);
       services.telemetry.logger.error('event stream failed', { project: projectId, error: error instanceof Error ? error.message : String(error) });
@@ -401,6 +406,10 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     const current = revisions.current(dir);
     // Erste Nachricht: der Stand beim Verbinden (der Client vergleicht mit dem, was er geladen hat).
     res.write(`retry: 2000\n\n${current !== undefined ? sseMessage('revision', { projectId, revision: current }) : ''}`);
+    if (life.ended) {
+      res.end();
+      return;
+    }
     // Kommentarzeilen halten Proxys und den Browser-Timeout offen.
     const heartbeat = setInterval(() => {
       res.write(': keep-alive\n\n');

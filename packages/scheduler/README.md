@@ -24,7 +24,8 @@ Ein freier Worker holt den nächsten Chunk. Ein fehlgeschlagener Chunk läuft er
 Abbruch und Timeout (Story 18.8):
 
 - `renderVideo(…, { signal })` reicht das Signal an den Runner (`runChunks(chunks, onDone, { signal })`). Prozess- und
-  Docker-Runner schicken laufenden Workern `cancel`; die Worker hören nach dem laufenden Frame auf. Der Remote-Runner
+  Docker-Runner schicken laufenden Workern `cancel`; die Worker hören nach dem laufenden Frame auf. Reagiert ein Worker
+  nicht binnen `cancelGraceMs` (Standard 10 s, `DEFAULT_CANCEL_GRACE_MS`), beendet ihn der Pool (SIGKILL). Der Remote-Runner
   bricht den Job mit `DELETE /v1/jobs/<id>` ab. Alle enden mit `OV_RENDER_CANCELLED`.
 - `chunkTimeoutMs` (Prozess- und Docker-Runner; in der CLI `OPENVIDEO_CHUNK_TIMEOUT_MS`): Ein Versuch, der länger dauert,
   beendet den Worker; der Chunk läuft auf einem neuen Worker erneut und zählt als Versuch.

@@ -59,7 +59,9 @@ async function waitFor(condition: () => boolean, timeoutMs = 10_000): Promise<vo
 async function settle(ms = 400): Promise<void> {
   await waitFor(() => !s().getState().busy);
   let before = -1;
-  while (before !== reloads) {
+  for (let round = 0; before !== reloads; round++) {
+    // Eine Neulade-Schleife (Audit: veraltete Revision) wäre sonst ein hängender Test.
+    if (round > 10) throw new Error(`the store keeps reloading (${String(reloads)} reloads)`);
     before = reloads;
     await new Promise((r) => setTimeout(r, ms));
     await waitFor(() => !s().getState().busy);

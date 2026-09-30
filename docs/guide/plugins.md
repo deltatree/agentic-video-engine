@@ -39,10 +39,10 @@ before its `setup` runs.
 
 | Permission | Service in `ctx` | Limits |
 |---|---|---|
-| `fs:read` | `readFile(path)` | inside the project directory |
-| `fs:write` | `writeFile(path, bytes)` | inside the project directory |
+| `fs:read` | `readFile(path)` | inside the project directory (symbolic links are resolved and must stay inside) |
+| `fs:write` | `writeFile(path, bytes)` | inside the project directory (symbolic links are resolved and must stay inside) |
 | `net` | `fetch(url)` | same rules as asset downloads (no private addresses, size limit) |
-| `process:spawn` | `spawn(cmd, args, { input, timeoutMs })` | no shell, timeout (default 120 s) |
+| `process:spawn` | `spawn(cmd, args, { input, timeoutMs })` | no shell, timeout (default 120 s); the child gets only a minimal environment (`PATH`, `HOME`, temp, locale …), the full host environment only with `env` |
 | `env` | `env(name)` | read only |
 
 ## Writing a plugin
@@ -83,9 +83,15 @@ ctx.registerCodec({ id: 'x264-fast', formats: ['mp4', 'mov'], license: 'GPL-2.0-
 ```
 
 Use it in a render profile (`{ "format": "mp4", "codec": "plugin:x264-fast" }`). The arguments replace
-the built-in video encoder arguments. They must choose an encoder with `-c:v` and may not add inputs,
-outputs, muxers, stream mappings, URLs or file-reading filters (`OV_ENCODE_CODEC_ARGS`). The license
-goes into `codecLicenses` of the render manifest.
+the built-in video encoder arguments. They are checked against an allowlist (`OV_ENCODE_CODEC_ARGS`
+otherwise): the list is made of `-option value` pairs only, every value directly follows an allowed
+option and is checked for that option. Allowed are video encoder options such as `-c:v`/`-codec:v`/`-vcodec`
+(required), `-crf`, `-qp`, `-q:v`, `-b:v`, `-maxrate`, `-bufsize`, `-preset`, `-tune`, `-profile:v`,
+`-level`, `-pix_fmt`, color tags, `-g`, `-keyint_min`, `-bf`, `-x264-params`/`-x265-params`/`-svtav1-params`/`-aom-params`
+(known `key=value` keys, no paths), `-row-mt`, `-cpu-used`, `-deadline`, `-quality`, `-speed`, `-tiles`
+and `-movflags` (known flags). Filters (`-vf`, `-filter*`), inputs, outputs, muxers, mappings, `-threads`,
+frame rate, size, progress and report files are set by OpenVideo and rejected. The license goes into
+`codecLicenses` of the render manifest.
 
 ### Exporters → `format: "plugin:<id>"`
 
@@ -109,7 +115,8 @@ the metadata (for example the header and row count of a CSV file).
 ### Studio panels
 
 `registerStudioPanel({ id, title, module })` adds a tab **Plugins** to the right panel of the Studio.
-`module` is an ES module relative to the plugin's entry file:
+`module` is an ES module (`.js` or `.mjs`) relative to the plugin's entry file and must stay inside the
+plugin's folder (also through symbolic links); otherwise the panel answers 404:
 
 ```js
 export default function mount(root, ctx) {
@@ -119,7 +126,8 @@ export default function mount(root, ctx) {
 ```
 
 The panel runs in an `<iframe sandbox="allow-scripts">` with its own opaque origin and a strict CSP
-(no network, no access to the API token). The Studio sends the current project (read only) with
+(no network, no access to the API token). The CSP allows only the page's own nonce script and the one
+panel module; the module cannot load further scripts (no `'strict-dynamic'`), so bundle the panel into one file. The Studio sends the current project (read only) with
 `postMessage` after every change. The page URL comes from `plugins.list` and is signed per project,
 panel and server process.
 

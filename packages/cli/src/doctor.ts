@@ -1,19 +1,15 @@
 /**
  * `openvideo doctor` (FR-79): prüft die Umgebung und nennt konkrete Lösungen.
  */
-import { execFile } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { access, constants, mkdtemp, rm, statfs, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { OpenVideoError } from '@agentic-video/core';
 import { probeCapabilities } from '@agentic-video/ffmpeg';
 import { loadFontSet } from '@agentic-video/fonts';
 import { detectBlender } from '@agentic-video/renderer-blender';
 import { sandboxAvailable } from '@agentic-video/sandbox';
-
-const run = promisify(execFile);
 
 /** Ergebnis einer Prüfung. */
 export interface DoctorCheck {
@@ -33,44 +29,15 @@ async function check(name: string, fn: () => Promise<Omit<DoctorCheck, 'name'>>)
 }
 
 /**
- * Prüft Chromium, WebGL2 und WebGPU auf einer eigenen, statischen Probe-Seite. Die unsicheren
- * Grafik-Schalter (`CHROMIUM_GRAPHICS_ARGS`: SwiftShader, WebGPU) gelten nur hier, wo WebGL/WebGPU
- * geprüft wird; sonst dieselben Schalter und dieselbe minimale Umgebung wie der Render-Host.
+ * Prüft Chromium, WebGL2 und WebGPU auf einer eigenen, statischen Probe-Seite (gemeinsame Probe
+ * `probeBrowserGraphics` aus `@agentic-video/renderer-browser`, Story 21.5). Die unsicheren
+ * Grafik-Schalter gelten nur hier, wo WebGL/WebGPU geprüft wird; sonst dieselben Schalter, derselbe
+ * Grafik-Modus (`OPENVIDEO_BROWSER_GPU`) und dieselbe minimale Umgebung wie der Render-Host.
  */
-async function browserProbe(): Promise<{ version: string; webgl2: string; webgpu: string }> {
-  const { chromium } = await import('playwright-core');
-  const { CHROMIUM_ARGS, CHROMIUM_GRAPHICS_ARGS, chromiumEnv } = await import('@agentic-video/renderer-browser');
-  const http = await import('node:http');
-  const server = http.createServer((_req, res) => {
-    res.setHeader('content-type', 'text/html');
-    res.end('<!doctype html><title>probe</title>');
-  });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : 0;
-  const browser = await chromium.launch({ executablePath: process.env['OPENVIDEO_CHROMIUM'] ?? chromium.executablePath(), args: [...CHROMIUM_ARGS, ...CHROMIUM_GRAPHICS_ARGS], env: chromiumEnv(process.env) });
-  try {
-    const page = await browser.newPage();
-    await page.goto(`http://127.0.0.1:${String(port)}/`);
-    const r = await page.evaluate(async () => {
-      const gl = document.createElement('canvas').getContext('webgl2');
-      const info = gl?.getExtension('WEBGL_debug_renderer_info');
-      const renderer = gl !== null && info !== null && info !== undefined ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unavailable';
-      let gpu = 'unavailable';
-      const g: unknown = Reflect.get(navigator, 'gpu');
-      if (typeof g === 'object' && g !== null && 'requestAdapter' in g && typeof g.requestAdapter === 'function') {
-        const adapter: unknown = await Reflect.apply(g.requestAdapter, g, []);
-        const info: unknown = typeof adapter === 'object' && adapter !== null ? Reflect.get(adapter, 'info') : undefined;
-        const field = (k: string): string => (typeof info === 'object' && info !== null ? String(Reflect.get(info, k) ?? '') : '');
-        gpu = adapter === null ? 'no adapter' : `${field('vendor')} ${field('architecture')}`.trim() || 'adapter';
-      }
-      return { renderer, gpu };
-    });
-    return { version: browser.version(), webgl2: r.renderer, webgpu: r.gpu };
-  } finally {
-    await browser.close();
-    server.close();
-  }
+async function browserProbe(): Promise<{ version: string; webgl2: string; webgpu: string; mode: string }> {
+  const { CHROMIUM_ARGS, probeBrowserGraphics } = await import('@agentic-video/renderer-browser');
+  const r = await probeBrowserGraphics({ baseArgs: CHROMIUM_ARGS });
+  return { version: r.chromium, webgl2: r.webgl2, webgpu: r.webgpuAvailable ? r.webgpu : 'unavailable', mode: r.mode };
 }
 
 /**
@@ -91,11 +58,11 @@ export async function runDoctor(options: { readonly projectDir: string }): Promi
       return Promise.resolve({ status: ok ? ('ok' as const) : ('fail' as const), detail: `Node ${process.versions.node}`, ...(ok ? {} : { fix: 'Install Node.js 22.13 or newer (https://nodejs.org).' }) });
     }),
   );
-  let probe: { version: string; webgl2: string; webgpu: string } | undefined;
+  let probe: { version: string; webgl2: string; webgpu: string; mode: string } | undefined;
   out.push(
     await check('browser', async () => {
       probe = await browserProbe();
-      return { status: 'ok', detail: `Chromium ${probe.version}` };
+      return { status: 'ok', detail: `Chromium ${probe.version} (${probe.mode === 'native' ? 'GPU mode: native ANGLE, OPENVIDEO_BROWSER_GPU=1' : 'SwiftShader'})` };
     }),
   );
   if (out[out.length - 1]?.status === 'fail') out[out.length - 1] = { ...(out[out.length - 1] ?? { name: 'browser', status: 'fail', detail: '' }), fix: 'Run `npx playwright install chromium`, or set OPENVIDEO_CHROMIUM to a Chromium binary.' };
@@ -115,12 +82,11 @@ export async function runDoctor(options: { readonly projectDir: string }): Promi
   out.push({ name: 'webgpu', status: probe === undefined || probe.webgpu === 'unavailable' ? 'warn' : 'ok', detail: probe?.webgpu ?? 'browser unavailable', ...(probe?.webgpu === 'unavailable' ? { fix: 'WebGPU falls back to WebGL2; set scene3d.backend to "webgl2" to silence this.' } : {}) });
   out.push(
     await check('gpu', async () => {
-      if (existsSync('/dev/nvidia0')) {
-        const r = await run('nvidia-smi', ['--query-gpu=name,memory.total', '--format=csv,noheader']).catch(() => ({ stdout: 'NVIDIA device present' }));
-        return { status: 'ok', detail: r.stdout.trim() };
-      }
-      const dri = existsSync('/dev/dri') ? readdirSync('/dev/dri').filter((f) => f.startsWith('renderD')) : [];
-      if (dri.length > 0) return { status: 'ok', detail: `DRM render nodes: ${dri.join(', ')}` };
+      // Dieselbe Probe wie Render-Manifest und Metrik gpu_memory (Story 21.5).
+      const { describeHostGpu, probeHostGpu } = await import('@agentic-video/renderer-browser');
+      const gpu = await probeHostGpu();
+      if (gpu !== undefined) return { status: 'ok', detail: describeHostGpu(gpu), ...(probe?.mode !== 'native' ? { fix: 'Optional: OPENVIDEO_BROWSER_GPU=1 renders WebGL/WebGPU on this GPU (not bit-identical to SwiftShader).' } : {}) };
+      if (existsSync('/dev/nvidia0')) return { status: 'warn', detail: 'NVIDIA device present, but nvidia-smi does not answer.', fix: 'Install the NVIDIA driver utilities or the NVIDIA Container Toolkit.' };
       return { status: 'warn', detail: 'No GPU found; rendering uses the CPU (SwiftShader, Skia CPU).', fix: 'Optional: use the openvideo/render-gpu image on a GPU host.' };
     }),
   );

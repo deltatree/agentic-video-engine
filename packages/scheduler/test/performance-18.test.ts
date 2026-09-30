@@ -12,6 +12,7 @@ import { OpenVideoError, sha256Hex } from '@agentic-video/core';
 import type { ChunkRequest } from '@agentic-video/render';
 import {
   MessageDecoder,
+  DEFAULT_CANCEL_GRACE_MS,
   createRemoteChunkRunner,
   defaultWorkerCount,
   digestHex,
@@ -90,6 +91,30 @@ describe('Pool: Chunk-Timeout und Abbruch (Story 18.8)', () => {
     expect(Date.now() - started).toBeLessThan(15_000);
     expect(readFileSync(log, 'utf8')).toMatch(/^cancel$/mu);
   }, 30_000);
+
+  it('beendet einen Worker, der cancel ignoriert, nach cancelGraceMs (Review Q6)', async () => {
+    const log = join(tmp('ov-pool-ignore-cancel-'), 'log');
+    const signal = { aborted: false };
+    const exits: (string | null)[] = [];
+    const started = performance.now();
+    const run = runPool([chunk(0, 2)], () => undefined, poolOptions('ignore-cancel', log, {
+      signal,
+      cancelGraceMs: 500,
+      onEvent: (e) => {
+        if (e.type === 'chunk-started') signal.aborted = true;
+        if (e.type === 'worker-exited') exits.push(e.signal);
+      },
+    }));
+    const error = await failure(run);
+    expect(error.diagnostic.code).toBe('OV_RENDER_CANCELLED');
+    expect(performance.now() - started).toBeLessThan(8_000);
+    expect(readFileSync(log, 'utf8')).toMatch(/^cancel$/mu);
+    expect(exits).toEqual(['SIGKILL']);
+  }, 20_000);
+
+  it('hat eine Standardfrist von 10 s nach cancel', () => {
+    expect(DEFAULT_CANCEL_GRACE_MS).toBe(10_000);
+  });
 });
 
 describe('Standard-Parallelität (Story 18.7)', () => {

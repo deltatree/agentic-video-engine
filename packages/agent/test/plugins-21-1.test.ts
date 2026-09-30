@@ -82,7 +82,8 @@ describe('Studio-Panels', () => {
     const url = await panelUrl();
     const page = await fetch(`${server.url}${url}`);
     expect(page.status).toBe(200);
-    expect(page.headers.get('content-security-policy')).toMatch(/^sandbox allow-scripts; default-src 'none'; script-src 'nonce-[^']+' 'strict-dynamic'/u);
+    expect(page.headers.get('content-security-policy')).toMatch(/^sandbox allow-scripts; default-src 'none'; script-src 'nonce-[^']+' ('self'|http:\/\/[^ ]+module\.js);/u);
+    expect(page.headers.get('content-security-policy')).not.toContain('strict-dynamic');
     expect(await page.text()).toContain("import('./module.js')");
     const mod = await fetch(`${server.url}${url}module.js`);
     expect(mod.status).toBe(200);

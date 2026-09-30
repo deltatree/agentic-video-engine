@@ -119,6 +119,25 @@ async function renderOne(session: Session, telemetry: Telemetry, m: ChunkMessage
 }
 
 /**
+ * Zerlegt Eingabe in Nachrichten. Jeder Fehler des Decoders ist ein Protokollfehler: Auch ungültiges
+ * JSON im Rahmen-Kopf (roher `SyntaxError` aus `JSON.parse`) wird zu `OV_WORKER_PROTOCOL`.
+ */
+function decodeFrames(decoder: MessageDecoder, chunk: Uint8Array): ProtocolMessage[] {
+  try {
+    return decoder.push(chunk);
+  } catch (error) {
+    if (error instanceof OpenVideoError) throw error;
+    throw new OpenVideoError({
+      code: 'OV_WORKER_PROTOCOL',
+      errorClass: 'WorkerError',
+      problem: `The worker received a frame it cannot decode: ${error instanceof Error ? error.message : String(error)}.`,
+      suggestions: ['Use the same OpenVideo version for coordinator and worker.', 'Make sure nothing else writes to the worker stdin.'],
+      cause: error,
+    });
+  }
+}
+
+/**
  * Führt den Worker über stdio aus, bis `shutdown` kommt oder die Eingabe endet.
  * Scheitert `init`, meldet der Worker den Fehler als `error`-Nachricht und wirft ihn danach.
  *
@@ -156,7 +175,15 @@ export async function runWorkerStdio(options: StdioWorkerOptions = {}): Promise<
   try {
     read: for await (const chunk of input) {
       if (!(chunk instanceof Uint8Array)) continue;
-      for (const m of decoder.push(chunk)) {
+      let messages: ProtocolMessage[];
+      try {
+        messages = decodeFrames(decoder, chunk);
+      } catch (error) {
+        // Kaputter Datenstrom: dem Koordinator den Grund sagen, dann beenden (keine Resynchronisation möglich).
+        send({ type: 'error', diagnostic: toDiagnostic(error) });
+        throw error;
+      }
+      for (const m of messages) {
         if (m.type === 'shutdown') {
           await queue;
           return;

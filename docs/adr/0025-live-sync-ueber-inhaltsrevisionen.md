@@ -25,6 +25,17 @@ keine Dateien und ignorierte `--open`.
    laufen über eine serielle Warteschlange; Ereignisse währenddessen werden nur vorgemerkt und danach
    verglichen. Eine Fremdänderung verwirft Undo und Redo. Ein offener Code-Entwurf wird nie überschrieben;
    das Studio warnt stattdessen.
+   **Ereignisse sind nur Hinweise (Nachtrag 2026-09-30):** Das Echo einer eigenen Speicherung kann vor oder
+   nach deren Antwort eintreffen, der Anfangsstand eines neuen Stroms kann älter sein als eine gerade laufende
+   Speicherung. Weicht eine gemeldete Revision von der geladenen ab, liest das Studio darum in der
+   Warteschlange die Revision der Datei (`ETag`) nach und behandelt nur eine echte Abweichung als Fremdänderung;
+   die Meldung gilt danach als geprüft. Vorher führte ein veralteter Anfangsstand dazu, dass Undo verloren ging
+   und das Studio endlos neu lud.
+   **Wiederverbinden:** mit wachsender Wartezeit (1 s … 15 s); sie fällt erst zurück, wenn eine Verbindung
+   ein Ereignis geliefert hat. `dispose` beendet Strom und Wiederverbindung endgültig.
+   **Ende der Beobachtung:** Wird der Projektordner gelöscht oder ersetzt (neuer Inode) oder meldet der
+   Watcher einen Fehler, schließt der Server die betroffenen Ströme; der Client verbindet neu und beobachtet
+   den neuen Ordner, statt stumm „live“ zu bleiben.
 4. **Vorschau ohne Speichern:** `frame.render` nimmt optional `patches`, wendet sie nur für diesen Render an
    und speichert nie. Das Studio zeigt so Zwischenstände beim Ziehen (gedrosselt, höchstens ein Render
    gleichzeitig, der neueste gewinnt).

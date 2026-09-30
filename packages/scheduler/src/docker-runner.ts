@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { availableParallelism } from 'node:os';
 import type { Cache } from '@agentic-video/cache';
+import { OpenVideoError } from '@agentic-video/core';
 import type { ChunkRunner } from '@agentic-video/render';
 import type { Telemetry } from '@agentic-video/telemetry';
 import { collectProjectFiles } from './files.js';
@@ -18,6 +19,57 @@ export interface ContainerLimits {
   readonly memory?: string;
   /** CPU-Anteil (Standard 1). */
   readonly cpus?: number;
+  /**
+   * GPU-Quota (Story 21.3): `all`, eine Anzahl (`2`, wie bei Docker) oder Geräte (`device=0`,
+   * `device=0,1`, `0,1`, `GPU-<uuid>`). Wird zu `docker run --gpus …` (NVIDIA Container Toolkit). Ohne Angabe
+   * bekommt der Container keine GPU.
+   */
+  readonly gpus?: string;
+}
+
+/** Zusätzliche Einstellungen eines Worker-Containers. */
+export interface DockerWorkerSettings {
+  /**
+   * Browser-Renderer im Container auf der GPU (`OPENVIDEO_BROWSER_GPU=1`, T5). Nur mit `gpus`
+   * sinnvoll; ohne GPU fällt Chromium sonst auf Software zurück.
+   */
+  readonly browserGpu?: boolean;
+  /**
+   * Argumente nach dem Image (Standard `['--stdio']` für das Image `openvideo-worker`, dessen
+   * Einstieg `openvideo-worker` ist). Für Images mit Einstieg `openvideo` (z. B. `openvideo-render-gpu`):
+   * `['worker', '--stdio']`.
+   */
+  readonly command?: readonly string[];
+}
+
+/**
+ * Prüft und normalisiert eine GPU-Angabe für `docker run --gpus`.
+ * Gerätelisten mit Komma braucht Docker in Anführungszeichen (`"device=0,1"`, CSV-Syntax);
+ * da ohne Shell gestartet wird, stehen sie wörtlich im Argument.
+ *
+ * @example
+ * ```ts
+ * dockerGpusArg('all'); // 'all'
+ * dockerGpusArg('0,1'); // '"device=0,1"'
+ * dockerGpusArg('device=2'); // 'device=2'
+ * ```
+ */
+export function dockerGpusArg(gpus: string): string {
+  const value = gpus.trim();
+  if (value === 'all' || /^[1-9][0-9]{0,2}$/u.test(value)) return value;
+  const devices = value.startsWith('device=') ? value.slice('device='.length) : value;
+  const list = devices.replace(/^"|"$/gu, '').split(',').map((d) => d.trim());
+  // Eine einzelne Zahl ohne `device=` ist bei Docker eine Anzahl; `0` wäre „keine GPU“.
+  if (!value.startsWith('device=') && list.length === 1) list.length = 0;
+  if (list.length === 0 || list.some((d) => !/^(?:[0-9]{1,3}|GPU-[0-9a-fA-F-]{8,64}|MIG-[0-9a-zA-Z/-]{4,80})$/u.test(d))) {
+    throw new OpenVideoError({
+      code: 'OV_SCHEDULER_GPUS',
+      errorClass: 'SchedulerError',
+      problem: `"${gpus}" is not a valid GPU quota for docker run --gpus.`,
+      suggestions: ['Use "all", a count such as "1", or device indices such as "device=0" or "0,1".', 'GPU UUIDs from `nvidia-smi -L` work too: "GPU-…".'],
+    });
+  }
+  return list.length === 1 ? `device=${list[0] ?? ''}` : `"device=${list.join(',')}"`;
 }
 
 /** Optionen für {@link createDockerChunkRunner}. */
@@ -26,6 +78,8 @@ export interface DockerChunkRunnerOptions {
   readonly image: string;
   readonly concurrency?: number;
   readonly limits?: ContainerLimits;
+  /** GPU-Modus des Browser-Renderers und Befehl im Container. */
+  readonly worker?: DockerWorkerSettings;
   readonly projectDir: string;
   readonly project: Readonly<Record<string, unknown>>;
   /** Cache des Aufrufers; empfangene Frames landen hier. */
@@ -41,13 +95,17 @@ export interface DockerChunkRunnerOptions {
 
 /**
  * Baut die Argumente für `docker run` eines Workers (ohne Netz, read-only, ohne Capabilities).
+ * Mit `limits.gpus` kommen `--gpus …` und `NVIDIA_DRIVER_CAPABILITIES` (inklusive `graphics` für
+ * Chromium/Vulkan) dazu; `worker.browserGpu` setzt `OPENVIDEO_BROWSER_GPU=1` im Container.
  *
  * @example
  * ```ts
  * const args = dockerRunArgs('openvideo/worker:1', 'ov-worker-1', { memory: '2g', cpus: 1 });
+ * const gpu = dockerRunArgs('ghcr.io/deltatree/openvideo-render-gpu:0.1.0', 'ov-gpu-1', { gpus: 'device=0' }, { browserGpu: true, command: ['worker', '--stdio'] });
  * ```
  */
-export function dockerRunArgs(image: string, name: string, limits: ContainerLimits = {}): string[] {
+export function dockerRunArgs(image: string, name: string, limits: ContainerLimits = {}, worker: DockerWorkerSettings = {}): string[] {
+  const gpus = limits.gpus !== undefined && limits.gpus.trim() !== '' ? dockerGpusArg(limits.gpus) : undefined;
   return [
     'run',
     '-i',
@@ -71,10 +129,12 @@ export function dockerRunArgs(image: string, name: string, limits: ContainerLimi
     String(limits.cpus ?? 1),
     '--user',
     '65534:65534',
+    ...(gpus !== undefined ? ['--gpus', gpus, '-e', 'NVIDIA_DRIVER_CAPABILITIES=compute,utility,video,graphics'] : []),
     '-e',
     `OPENVIDEO_CONTAINER_IMAGE=${image}`,
+    ...(worker.browserGpu === true ? ['-e', 'OPENVIDEO_BROWSER_GPU=1'] : []),
     image,
-    '--stdio',
+    ...(worker.command ?? ['--stdio']),
   ];
 }
 
@@ -103,7 +163,7 @@ export function createDockerChunkRunner(options: DockerChunkRunnerOptions): Chun
         return {
           id: `docker-${String(slot + 1)}.${String(generation)}`,
           command: docker,
-          args: dockerRunArgs(options.image, container, options.limits),
+          args: dockerRunArgs(options.image, container, options.limits, options.worker),
           container,
           // Stirbt der docker-Client, könnte der Container weiterlaufen: immer entfernen.
           cleanup: () => {

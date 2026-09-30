@@ -73,7 +73,24 @@ export interface AssetLoaderDefinition {
 /**
  * Ergänzt einen Video-Codec (`codec: 'plugin:<id>'` im Render-Profil). Der Encoder nutzt die
  * Argumente von `encoderArgs` an Stelle der eingebauten Video-Argumente (nach der Eingabe,
- * vor dem Muxer); zusätzliche Eingaben (`-i`) und Netzprotokolle sind nicht erlaubt.
+ * vor dem Muxer).
+ *
+ * Vertrag für `encoderArgs` (Allowlist, geprüft von `checkCustomCodecArgs` in
+ * `@agentic-video/ffmpeg`, sonst `OV_ENCODE_CODEC_ARGS`):
+ * - Die Liste besteht nur aus Paaren `-option wert`; jedes Nicht-Optionsargument folgt direkt
+ *   auf eine erlaubte wertbehaftete Option. Positionale Argumente (z. B. eine zweite Ausgabe)
+ *   sind damit ausgeschlossen.
+ * - Erlaubt sind Video-Encoder-Optionen: `-c:v`/`-codec:v`/`-vcodec` (Pflicht, Encoder-Name),
+ *   `-crf`, `-qp`, `-q:v`, `-cq`, `-global_quality`, `-qmin`, `-qmax`, `-b:v`, `-minrate`,
+ *   `-maxrate`, `-bufsize`, `-preset`, `-tune`, `-profile:v`, `-level`, `-pix_fmt`, `-tag:v`,
+ *   `-colorspace`, `-color_primaries`, `-color_trc`, `-color_range`, `-g`, `-keyint_min`, `-bf`,
+ *   `-refs`, `-sc_threshold`, `-row-mt`, `-cpu-used`, `-deadline`, `-quality`, `-speed`,
+ *   `-tiles`, `-tile-columns`, `-tile-rows`, `-lag-in-frames`, `-auto-alt-ref`, `-aq-mode`,
+ *   `-lossless` (jeweils auch mit `:v`), `-x264-params`/`-x265-params`/`-svtav1-params`/`-aom-params`
+ *   (nur bekannte Schlüssel, Werte ohne Pfade) und `-movflags` (nur bekannte Flags).
+ * - Verboten sind u. a. Eingaben (`-i`), Ausgaben, Muxer (`-f`), Mappings, alle Filter
+ *   (`-vf`, `-filter*`, `-lavfi`), `-threads` (setzt OpenVideo), `-r`, `-s`, `-progress`,
+ *   `-report`, Statistik-/Log-Dateien und URLs.
  */
 export interface CodecDefinition {
   readonly id: string;

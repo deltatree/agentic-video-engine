@@ -49,7 +49,22 @@ export interface PoolOptions {
   readonly chunkTimeoutMs?: number;
   /** Abbruch (Story 18.8): Worker bekommen `cancel`, der Pool endet mit `OV_RENDER_CANCELLED`. */
   readonly signal?: CancelSignal;
+  /**
+   * Frist in Millisekunden, die ein Worker nach `cancel` für den Abbruch hat (Review Q6). Reagiert er
+   * nicht, wird er beendet (SIGKILL). Standard: {@link DEFAULT_CANCEL_GRACE_MS}.
+   */
+  readonly cancelGraceMs?: number;
 }
+
+/**
+ * Standardfrist nach `cancel`, bevor ein Worker beendet wird (10 s).
+ *
+ * @example
+ * ```ts
+ * runPool(chunks, onDone, { ...options, cancelGraceMs: DEFAULT_CANCEL_GRACE_MS });
+ * ```
+ */
+export const DEFAULT_CANCEL_GRACE_MS = 10_000;
 
 /** Wie oft der Pool das Abbruch-Signal prüft (Millisekunden). */
 const CANCEL_POLL_MS = 100;
@@ -217,10 +232,22 @@ class WorkerConnection {
     });
   }
 
-  /** Bittet den Worker, den laufenden Chunk abzubrechen (Story 18.8). */
-  cancel(): void {
+  /**
+   * Bittet den Worker, den laufenden Chunk abzubrechen (Story 18.8). Endet der Chunk nicht binnen
+   * `graceMs`, wird der Worker beendet (Review Q6), damit der Abbruch nie unbegrenzt wartet.
+   */
+  cancel(graceMs: number): void {
     const current = this.current;
-    if (current !== undefined && this.alive) this.send({ type: 'cancel', id: current.id });
+    if (current === undefined || !this.alive) return;
+    this.send({ type: 'cancel', id: current.id });
+    const timer = setTimeout(() => {
+      if (this.current !== current || !this.alive) return;
+      this.timeoutReason = `Worker ${this.launch.id} did not stop within ${String(graceMs)} ms after cancel; it was stopped.`;
+      this.child.kill('SIGKILL');
+    }, Math.max(0, graceMs));
+    void this.exited.then(() => {
+      clearTimeout(timer);
+    });
   }
 
   async shutdown(): Promise<void> {
@@ -275,11 +302,12 @@ export function runPool(chunks: readonly ChunkRequest[], onDone: (result: ChunkR
     notify();
   };
   // Abbruch: laufende Chunks bekommen `cancel`; die Worker enden danach regulär über `shutdown`.
+  // Wer nicht binnen `cancelGraceMs` reagiert, wird beendet (Review Q6).
   const cancel = (): void => {
     if (state.finished) return;
     fatal = new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
     state.finished = true;
-    for (const w of live) w.cancel();
+    for (const w of live) w.cancel(options.cancelGraceMs ?? DEFAULT_CANCEL_GRACE_MS);
     notify();
   };
   const signal = options.signal;

@@ -2,7 +2,7 @@
  * Story 21.1: Plugins aus `settings.plugins` wirken – Laden mit Rechteprüfung, Asset Loader in der
  * Asset-Pipeline, Codec im Encoder, Exporter als eigenes Ausgabeformat. Nutzt examples/plugin-hello.
  */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { MemoryStore, createCache } from '@agentic-video/cache';
 import { OpenVideoError, Registry, SCHEMA_VERSION } from '@agentic-video/core';
 import { checkCustomCodecArgs, locateFfmpeg } from '@agentic-video/ffmpeg';
-import { createNodeEnvironment, pluginPolicyFromEnv, renderVideo, resolvePluginModule, type NodeEnvironment } from '@agentic-video/render';
+import { createNodeEnvironment, pluginHostServices, pluginPolicyFromEnv, renderVideo, resolvePluginModule, type NodeEnvironment } from '@agentic-video/render';
 import { skipUnless } from '@agentic-video/testing';
 
 const EXAMPLE = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'examples', 'plugin-hello');
@@ -51,6 +51,16 @@ async function withEnv<T>(dir: string, p: Record<string, unknown>, options: { lo
   } finally {
     await env.dispose();
   }
+}
+
+function errorSync(fn: () => unknown): OpenVideoError {
+  try {
+    fn();
+  } catch (error: unknown) {
+    if (error instanceof OpenVideoError) return error;
+    throw error;
+  }
+  throw new Error('expected OpenVideoError, nothing was thrown');
 }
 
 async function errorOf(p: Promise<unknown>): Promise<OpenVideoError> {
@@ -99,8 +109,26 @@ describe('Plugins laden (Rechte, ADR 0012)', () => {
     expect(resolvePluginModule(dir, './plugins/hello/index.mjs')).toMatch(/plugins[/\\]hello[/\\]index\.mjs$/u);
     cpSync(EXAMPLE, join(dir, 'node_modules', 'openvideo-plugin-hello'), { recursive: true });
     expect(resolvePluginModule(dir, 'openvideo-plugin-hello')).toMatch(/openvideo-plugin-hello[/\\]index\.mjs$/u);
-    expect(() => resolvePluginModule(dir, `../${dir.split(/[/\\]/u).pop() ?? ''}-other/x.mjs`)).toThrow();
     expect(() => resolvePluginModule(dir, 'missing-plugin')).toThrow(/not found/u);
+  });
+
+  it('lehnt eine existierende Moduldatei außerhalb des Projekts mit OV_PATH_OUTSIDE ab (Review Q9)', () => {
+    const dir = projectDir();
+    const other = `${dir}-other`;
+    mkdirSync(other);
+    writeFileSync(join(other, 'x.mjs'), 'export default {};\n');
+    const e = errorSync(() => resolvePluginModule(dir, `../${dir.split(/[/\\]/u).pop() ?? ''}-other/x.mjs`));
+    expect(e.diagnostic.code).toBe('OV_PATH_OUTSIDE');
+    // Mit allowOutsidePaths erlaubt: die Datei existiert also wirklich.
+    expect(resolvePluginModule(dir, `../${dir.split(/[/\\]/u).pop() ?? ''}-other/x.mjs`, true)).toMatch(/-other[/\\]x\.mjs$/u);
+  });
+
+  it('lehnt einen Symlink im Projekt auf ein Modul außerhalb ab (Review Q9)', () => {
+    const dir = projectDir();
+    const outside = mkdtempSync(join(tmpdir(), 'ov-plugins-outside-'));
+    writeFileSync(join(outside, 'evil.mjs'), 'export default {};\n');
+    symlinkSync(join(outside, 'evil.mjs'), join(dir, 'plugins', 'evil.mjs'));
+    expect(errorSync(() => resolvePluginModule(dir, './plugins/evil.mjs')).diagnostic.code).toBe('OV_PATH_OUTSIDE');
   });
 
   it('ein Plugin-Name darf nur einmal geladen werden; Namen von Werkzeugen sind geprüft', async () => {
@@ -166,5 +194,69 @@ describe('Codec-Argumente aus Plugins', () => {
         checkCustomCodecArgs({ id: 'bad', formats: ['mp4'], args });
       }).toThrow(OpenVideoError);
     }
+  });
+});
+
+describe('Hostdienste für Plugins (Review Q4)', () => {
+  /** Projekt mit einem Symlink `link` auf einen Ordner außerhalb (mit secret.txt). */
+  function linkedProject(): { dir: string; outside: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'ov-plugin-host-'));
+    const outside = mkdtempSync(join(tmpdir(), 'ov-plugin-host-outside-'));
+    writeFileSync(join(outside, 'secret.txt'), 'secret');
+    writeFileSync(join(dir, 'inside.txt'), 'inside');
+    symlinkSync(outside, join(dir, 'link'));
+    symlinkSync(join(outside, 'secret.txt'), join(dir, 'secret-link.txt'));
+    symlinkSync(join(outside, 'missing.txt'), join(dir, 'dangling.txt'));
+    return { dir, outside };
+  }
+
+  it('liest und schreibt im Projekt, auch in neue Unterordner', async () => {
+    const { dir } = linkedProject();
+    const host = pluginHostServices(dir, ['fs:read', 'fs:write'], {});
+    expect(new TextDecoder().decode(await host.readFile?.('inside.txt'))).toBe('inside');
+    await host.writeFile?.('new/deep/file.txt', new TextEncoder().encode('ok'));
+    expect(readFileSync(join(dir, 'new', 'deep', 'file.txt'), 'utf8')).toBe('ok');
+  });
+
+  it('lehnt ../ und Symlinks nach außen ab (lesen und schreiben)', async () => {
+    const { dir, outside } = linkedProject();
+    const host = pluginHostServices(dir, ['fs:read', 'fs:write'], {});
+    const code = async (p: Promise<unknown> | undefined): Promise<string> => (await errorOf(p ?? Promise.reject(new Error('service missing')))).diagnostic.code;
+    expect(await code(host.readFile?.('../x.txt'))).toBe('OV_PATH_OUTSIDE');
+    expect(await code(host.readFile?.('link/secret.txt'))).toBe('OV_PATH_OUTSIDE');
+    expect(await code(host.readFile?.('secret-link.txt'))).toBe('OV_PATH_OUTSIDE');
+    expect(await code(host.writeFile?.('link/new.txt', new Uint8Array([1])))).toBe('OV_PATH_OUTSIDE');
+    expect(await code(host.writeFile?.('link/sub/new.txt', new Uint8Array([1])))).toBe('OV_PATH_OUTSIDE');
+    expect(await code(host.writeFile?.('dangling.txt', new Uint8Array([1])))).toBe('OV_PATH_OUTSIDE');
+    expect(existsSync(join(outside, 'new.txt'))).toBe(false);
+    expect(existsSync(join(outside, 'sub'))).toBe(false);
+    expect(existsSync(join(outside, 'missing.txt'))).toBe(false);
+  });
+
+  it('bietet nur Dienste für gewährte Rechte an', () => {
+    const none = pluginHostServices('/tmp', [], { A: '1' });
+    expect(Object.keys(none)).toEqual([]);
+    const some = pluginHostServices('/tmp', ['fs:read', 'env'], { A: '1' });
+    expect(Object.keys(some).sort()).toEqual(['env', 'readFile']);
+    expect(some.env?.('A')).toBe('1');
+  });
+
+  it('spawn erbt ohne Recht env nur die minimale Umgebung, mit env die volle', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ov-plugin-spawn-'));
+    const env = { PATH: process.env['PATH'] ?? '/usr/bin', OPENVIDEO_WORKER_TOKEN: 'secret-token', AWS_SECRET_ACCESS_KEY: 'aws', MY_SETTING: 'x' };
+    const script = ['-e', 'process.stdout.write(JSON.stringify(process.env))'];
+    const childEnv = async (granted: ('process:spawn' | 'env')[]): Promise<Record<string, unknown>> => {
+      const r = await pluginHostServices(dir, granted, env).spawn?.(process.execPath, script);
+      const parsed: unknown = JSON.parse(new TextDecoder().decode(r?.stdout ?? new Uint8Array()));
+      return typeof parsed === 'object' && parsed !== null ? { ...parsed } : {};
+    };
+    const minimal = await childEnv(['process:spawn']);
+    expect(minimal['PATH']).toBe(env.PATH);
+    expect(minimal['OPENVIDEO_WORKER_TOKEN']).toBeUndefined();
+    expect(minimal['AWS_SECRET_ACCESS_KEY']).toBeUndefined();
+    expect(minimal['MY_SETTING']).toBeUndefined();
+    const full = await childEnv(['process:spawn', 'env']);
+    expect(full['MY_SETTING']).toBe('x');
+    expect(full['OPENVIDEO_WORKER_TOKEN']).toBe('secret-token');
   });
 });

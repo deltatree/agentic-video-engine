@@ -41,7 +41,11 @@ export interface ImportedAsset {
 
 /** Asset-Dienste (Paket `assets`). */
 export interface AssetService {
-  import(projectDir: string, input: { readonly path?: string; readonly url?: string; readonly base64?: string; readonly fileName?: string; readonly id?: string; readonly type?: string }): Promise<ImportedAsset>;
+  /**
+   * Importiert eine Datei ins Projekt. Mit `project` nutzt der Dienst die Asset Loader der Plugins
+   * aus `settings.plugins` (Story 21.1), wie beim Rendern.
+   */
+  import(projectDir: string, input: { readonly path?: string; readonly url?: string; readonly base64?: string; readonly fileName?: string; readonly id?: string; readonly type?: string }, project?: Readonly<Record<string, unknown>>): Promise<ImportedAsset>;
   inspect(projectDir: string, project: Readonly<Record<string, unknown>>, assetId: string): Promise<Readonly<Record<string, unknown>>>;
 }
 

@@ -12,11 +12,11 @@ import { resolveProjectAssets, type ProjectAssets } from '@agentic-video/assets'
 import { createCache, storeFromEnv, type Cache, type CacheTierName } from '@agentic-video/cache';
 import { registerComponents } from '@agentic-video/components';
 import { accumulateFrames, compositeFrame, parseCubeLut, type Lut } from '@agentic-video/compositor';
-import { OUTPUT_FORMATS, OpenVideoError, Registry, VIDEO_CODECS, isRecord, type RgbaImage } from '@agentic-video/core';
+import { OUTPUT_FORMATS, OpenVideoError, Registry, VIDEO_CODECS, contentHash, isRecord, type RgbaImage } from '@agentic-video/core';
 import { HARDWARE_FAMILIES, codecLicenses, createEncoder, probeCapabilities, type CustomCodec, type FfmpegCapabilities } from '@agentic-video/ffmpeg';
 import { loadFontSet } from '@agentic-video/fonts';
 import { createSkiaBackend, createSkiaTextMeasurer, loadCanvasKitNode, renderContactSheet, renderDebugOverlay } from '@agentic-video/renderer-skia';
-import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, resolveFromAudioTracks, synthesizeVoices } from '@agentic-video/speech';
+import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, resolveFromAudioTracks, synthesizeVoices, type FromAudioTranscript } from '@agentic-video/speech';
 import { registerSubtitles } from '@agentic-video/subtitles';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 import { browserGpuMode, createLazyBrowserBackends, describeHostGpu, probeHostGpu, type HostGpu } from '@agentic-video/renderer-browser';
@@ -260,6 +260,28 @@ export function defaultProviders(projectDir: string, project: Readonly<Record<st
   ];
 }
 
+/**
+ * Die `fromAudio`-Deklarationen eines Projekts (Composition, Track, Quelle, Provider, Sprache) –
+ * ändern sie sich, werden die Transkripte neu aufgelöst (Review Q3).
+ *
+ * @example
+ * ```ts
+ * fromAudioDeclarations(project); // [{ composition: 'main', track: 'subs', fromAudio: { source: 'vo' }, language: 'en' }]
+ * ```
+ */
+export function fromAudioDeclarations(project: Readonly<Record<string, unknown>>): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const comps = Array.isArray(project['compositions']) ? project['compositions'].filter(isRecord) : [];
+  for (const c of comps) {
+    const tracks = Array.isArray(c['tracks']) ? c['tracks'].filter(isRecord) : [];
+    for (const t of tracks) {
+      if (t['kind'] !== 'subtitle' || !isRecord(t['fromAudio']) || t['cues'] !== undefined || t['asset'] !== undefined) continue;
+      out.push({ composition: c['id'], track: t['id'], fromAudio: t['fromAudio'], language: t['language'] ?? null });
+    }
+  }
+  return out;
+}
+
 /** Beobachtete Paare aus Cache und Telemetrie: jeder Zugriff wird nur einmal gezählt. */
 const observedCaches = new WeakMap<Cache, WeakSet<Telemetry>>();
 
@@ -337,20 +359,40 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   if (registry.components.size === 0) registerComponents(registry);
   if (registry.voiceProviders.size === 0) await registerLocalSpeech(registry);
   const measurer = createSkiaTextMeasurer(canvasKit, fonts, defaultFont);
+  // Transkripte der fromAudio-Tracks: erst bei `prepare`, je Stand der Deklarationen (Review Q3).
+  const transcripts: { current: ReadonlyMap<string, FromAudioTranscript>; key: string | undefined; readonly pending: Map<string, Promise<void>> } = { current: new Map(), key: undefined, pending: new Map() };
   if (!registry.expanders.has('subtitles')) {
     const texts = new Map<string, string>();
     for (const a of assets.all()) if (a.type === 'subtitle') texts.set(a.id, await readFile(a.path, 'utf8'));
-    // fromAudio-Tracks werden vor dem Render transkribiert (Cache je Audio-Hash, Story 17.8).
-    const transcripts = await resolveFromAudioTracks(project, { registry, assets, cache });
     registerSubtitles(registry, {
       loadTrackText: (id) => texts.get(id),
-      transcript: (compositionId, trackId) => transcripts.get(`${compositionId}/${trackId}`),
+      // fromAudio-Tracks transkribiert `prepare` vor dem Render (Cache je Audio-Hash, Story 17.8, Review Q3).
+      transcript: (compositionId, trackId) => transcripts.current.get(`${compositionId}/${trackId}`),
       // Umbruch mit echter Textmessung statt geschätzter Zeichenbreite.
       measureText: (text, style) =>
         measurer.measure({ id: '__subtitle-measure', type: 'text', props: { text, ...style }, children: [], time: { localFrame: 0, relFrame: 0, durationFrames: 1, progress: 0, compositionFrame: 0 }, pointer: '' }).width,
     });
   }
   const gpuMode = browserGpuMode(options.browserGpu, env);
+  const prepare = async (p: Readonly<Record<string, unknown>>): Promise<void> => {
+    const declarations = fromAudioDeclarations(p);
+    if (declarations.length === 0) return;
+    const key = contentHash(declarations);
+    if (transcripts.key === key) return;
+    let job = transcripts.pending.get(key);
+    if (job === undefined) {
+      job = resolveFromAudioTracks(p, { registry, assets, cache }).then((map) => {
+        transcripts.current = map;
+        transcripts.key = key;
+      });
+      transcripts.pending.set(key, job);
+    }
+    try {
+      await job;
+    } finally {
+      transcripts.pending.delete(key);
+    }
+  };
   const providers: BackendProvider[] = [...(options.providers ?? [])];
   if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project, { allowHtmlScripts: options.allowHtmlScripts === true, browserGpu: gpuMode === 'native' }));
   for (const provider of providers) Object.assign(versions, await provider.register(registry, { assets, fonts, telemetry }));
@@ -433,6 +475,7 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
       browserGpu: gpuMode,
     },
     runtime,
+    prepare,
     async dispose() {
       measurer.dispose();
       await assets.close();

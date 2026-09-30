@@ -23,6 +23,9 @@ Beim Laden (und beim Asset-Import) wird jede Datei zu einer einzelnen SFNT-Schri
 - WOFF 2.0: Brotli entpackt, dazu die Rücktransformation von `glyf`/`loca` und `hmtx` nach der W3C-Spezifikation.
   WOFF2-Sammlungen werden ebenfalls gelesen.
 - Sammlungen: `faceIndex` (Standard 0) wählt die Schrift; ein ungültiger Index meldet `OV_FONT_FACE_INDEX`.
+- Schutz vor Dekompressionsbomben: Entpackt wird höchstens die im Verzeichnis angegebene Länge. Schriften
+  über `MAX_SFNT_BYTES` (64 MiB, entpackt), doppelte Tabellen-Tags und eine kurze `loca` (indexFormat 0) mit
+  mehr als 131070 Byte `glyf` werden mit `OV_FONT_INVALID` abgelehnt.
 
 ```json
 { "family": "Noto Sans CJK JP", "src": "fonts/NotoSansCJK.ttc", "faceIndex": 0 }

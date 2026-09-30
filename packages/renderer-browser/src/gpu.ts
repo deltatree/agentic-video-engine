@@ -87,6 +87,12 @@ export function chromiumGpuEnv(source: Readonly<Record<string, string | undefine
 export interface PageGraphics {
   /** `UNMASKED_RENDERER_WEBGL` oder `unavailable`. */
   readonly webgl2: string;
+  /**
+   * `MAX_TEXTURE_SIZE` von WebGL2 (0 ohne WebGL2). Hängt von der GPU ab (SwiftShader 8192, viele
+   * GPUs 16384–32768) und bestimmt, ab wann `three` Texturen verkleinert (Review Q10). WebGPU nutzt
+   * die Standardgrenzen des Geräts (`maxTextureDimension2D` 8192) und ist davon unabhängig.
+   */
+  readonly webgl2MaxTextureSize: number;
   /** Beschreibung des WebGPU-Adapters, `no adapter` oder `unavailable`. */
   readonly webgpu: string;
   /** Liefert `navigator.gpu.requestAdapter()` einen Adapter? Genau diese Prüfung nutzt `three` bei `backend: 'auto'`. */
@@ -100,7 +106,9 @@ export interface PageGraphics {
 export async function pageGraphics(): Promise<PageGraphics> {
   const gl = document.createElement('canvas').getContext('webgl2');
   const info = gl?.getExtension('WEBGL_debug_renderer_info');
-  const webgl2 = gl !== null && info !== null && info !== undefined ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unavailable';
+  const webgl2 = gl !== null && info !== null && info !== undefined ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : gl !== null ? 'WebGL2' : 'unavailable';
+  const maxTexture: unknown = gl?.getParameter(gl.MAX_TEXTURE_SIZE);
+  const webgl2MaxTextureSize = typeof maxTexture === 'number' ? maxTexture : 0;
   let webgpu = 'unavailable';
   let webgpuAvailable = false;
   const g: unknown = Reflect.get(navigator, 'gpu');
@@ -117,7 +125,7 @@ export async function pageGraphics(): Promise<PageGraphics> {
     const field = (k: string): string => (typeof details === 'object' && details !== null ? String(Reflect.get(details, k) ?? '') : '');
     webgpu = webgpuAvailable ? `${field('vendor')} ${field('architecture')}`.trim() || 'adapter' : 'no adapter';
   }
-  return { webgl2, webgpu, webgpuAvailable };
+  return { webgl2, webgl2MaxTextureSize, webgpu, webgpuAvailable };
 }
 
 /** Ergebnis von {@link probeBrowserGraphics}. */

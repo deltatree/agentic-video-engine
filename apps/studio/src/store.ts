@@ -225,6 +225,12 @@ function writeStorage(storage: 'local' | 'session', key: string, value: string):
   }
 }
 
+/** Optionen des Studio-Stores. */
+export interface StudioOptions {
+  /** Monotone Uhr in Millisekunden für das Zusammenfassen von Undo-Schritten (Standard `performance.now`). */
+  readonly now?: () => number;
+}
+
 /**
  * Der Store des Studios (für `useSyncExternalStore`).
  *
@@ -250,10 +256,21 @@ export class Studio {
   private clipboard: Rec[] = [];
   private stopLive: (() => void) | undefined;
   private previewing = false;
+  /** Nach `dispose`: keine Live-Updates und keine Prüfungen mehr (auch nicht aus laufendem `load`). */
+  private disposed = false;
   /** Ungespeicherter Text des Code-Editors (überlebt Tab-Wechsel). */
   private draft: string | undefined;
 
-  constructor(projectId: string) {
+  /** Uhr für das Zusammenfassen von Undo-Schritten (Millisekunden, monoton). */
+  private readonly now: () => number;
+
+  /**
+   * @param projectId Projekt, das das Studio bearbeitet.
+   * @param options `now`: Uhr für das 1-s-Fenster, in dem Nudges derselben Auswahl einen Undo-Schritt
+   *   ergeben (Standard `performance.now`; Tests setzen eine feste Uhr).
+   */
+  constructor(projectId: string, options: StudioOptions = {}) {
+    this.now = options.now ?? (() => performance.now());
     this.state = {
       projectId,
       status: 'loading',
@@ -360,7 +377,7 @@ export class Studio {
       this.set({ kind: info['kind'] === 'tsx' ? 'tsx' : 'json', entry: str(info['entry'], 'project.json') });
       await this.reload();
       this.set({ status: 'ready' });
-      this.stopLive ??= subscribeRevisions(
+      if (!this.disposed) this.stopLive ??= subscribeRevisions(
         this.state.projectId,
         (revision) => {
           this.onRemoteRevision(revision);
@@ -377,6 +394,7 @@ export class Studio {
 
   /** Beendet Live-Updates, Wiedergabe und Abfragen (beim Verlassen der Seite). */
   dispose(): void {
+    this.disposed = true;
     this.stopLive?.();
     this.stopLive = undefined;
     this.audio.stop();
@@ -416,22 +434,41 @@ export class Studio {
 
   /** Der Server meldet eine neue Revision von `project.json`. */
   onRemoteRevision(revision: string): void {
-    if (this.revisions.remote(revision, this.queue.pending > 0 || this.state.status !== 'ready')) void this.applyForeignChange();
+    if (this.disposed) return;
+    if (this.revisions.remote(revision, this.queue.pending > 0 || this.state.status !== 'ready')) void this.checkForeignChange();
+  }
+
+  /**
+   * Prüft eine gemeldete Revision gegen die Datei (in der Schreib-Warteschlange, also nie mitten in
+   * einer eigenen Speicherung). Ereignisse sind nur Hinweise: Das verspätete Echo einer eigenen
+   * Speicherung oder der ältere Anfangsstand eines neuen Stroms weichen von der geladenen Revision ab,
+   * die Datei aber nicht. Nur wenn die Datei selbst abweicht, ist es eine Fremdänderung.
+   */
+  private checkForeignChange(): Promise<void> {
+    return this.write(async () => {
+      const reported = this.revisions.reported;
+      if (reported === undefined || reported === this.revisions.current) {
+        this.revisions.acknowledge(reported);
+        return;
+      }
+      const file = await fetchTextWithRevision(this.state.projectId, 'project.json');
+      // Alles bis zu `reported` ist mit diesem Lesen geprüft; neuere Meldungen bleiben vorgemerkt.
+      this.revisions.acknowledge(reported);
+      if (file.revision !== undefined && file.revision === this.revisions.current) return;
+      await this.applyForeignChange();
+    }, undefined);
   }
 
   /**
    * Fremdänderung: neu laden, Undo/Redo verwerfen (die Umkehrungen beziehen sich auf den alten Stand)
-   * und bei offenem Code-Entwurf warnen, statt ihn zu überschreiben.
+   * und bei offenem Code-Entwurf warnen, statt ihn zu überschreiben. Nur aus der Warteschlange aufrufen.
    */
   private async applyForeignChange(): Promise<void> {
     const hadHistory = this.history.canUndo || this.history.canRedo;
     this.history.clear();
     forgetDecodedAudio();
     const conflict = this.draft !== undefined;
-    await this.write(async () => {
-      await this.reload();
-      return true;
-    }, false);
+    await this.reload();
     this.set({
       canUndo: false,
       canRedo: false,
@@ -745,7 +782,7 @@ export class Studio {
     void this.queue.idle().then(() => {
       if (this.queue.pending > 0) return;
       this.set({ busy: false });
-      if (this.revisions.pending()) void this.applyForeignChange();
+      if (!this.disposed && this.revisions.pending()) void this.checkForeignChange();
     });
     return result;
   }
@@ -778,7 +815,8 @@ export class Studio {
 
   /**
    * Schickt Patches an `composition.patch`. Erfolgreiche Änderungen landen mit ihren
-   * `inverse`-Patches auf dem Undo-Stapel. Gleiche `mergeKey` innerhalb einer Sekunde ergeben einen Schritt.
+   * `inverse`-Patches auf dem Undo-Stapel. Gleiche `mergeKey` innerhalb einer Sekunde (gemessen an der
+   * Eingabe, Uhr aus `StudioOptions.now`) ergeben einen Schritt.
    */
   patch(patches: readonly PatchJson[] | (() => readonly PatchJson[]), options: { readonly mergeKey?: string } = {}): Promise<boolean> {
     this.endPreview();
@@ -786,6 +824,9 @@ export class Studio {
       if (this.state.image?.preview === true) void this.refreshFrame();
       return Promise.resolve(false);
     }
+    // Zeitpunkt der Eingabe, nicht der Server-Antwort: Drei schnelle Pfeiltasten bleiben ein Undo-Schritt,
+    // auch wenn die Warteschlange unter Last Sekunden braucht.
+    const requestedAt = this.now();
     return this.write(async () => {
       // Relative Änderungen (Nudges, Verschieben) rechnen erst hier, auf dem Stand nach allen früheren Schritten.
       const list = typeof patches === 'function' ? patches() : patches;
@@ -799,7 +840,7 @@ export class Studio {
         if (this.state.image?.preview === true) await this.refreshFrame();
         return false;
       }
-      this.history.record({ kind: 'patches', patches: inverse }, options.mergeKey, performance.now());
+      this.history.record({ kind: 'patches', patches: inverse }, options.mergeKey, requestedAt);
       this.set({ message: undefined });
       this.syncHistory();
       await this.reload();
