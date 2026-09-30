@@ -34,33 +34,28 @@ Frame 471 ist bitgleich, egal ob Frame 470 vorher gerendert wurde.
 
 ## Schnellstart
 
-Voraussetzung: Node.js 22.13 oder neuer und FFmpeg.
+OpenVideo wird nicht auf npm veröffentlicht; du baust es in wenigen Minuten aus diesem Repository.
 
-> **Noch nicht auf npm:** Die Pakete `@agentic-video/*` sind bis zur ersten Veröffentlichung
-> (Release-Workflow bei einem Tag `v*`) nicht in der npm-Registry; `npx @agentic-video/cli` findet
-> sie bis dahin nicht. Installiere die CLI so lange aus dem Repository:
+**Am einfachsten – dein Coding Assistant macht es.** Sag Claude Code, Cursor, Codex oder einem anderen Assistant:
+
+```text
+Read https://raw.githubusercontent.com/deltatree/agentic-video-engine/main/SETUP.md and follow it to set up OpenVideo for me.
+```
+
+[SETUP.md](SETUP.md) ([deutsch](SETUP.de.md)) führt den Assistant durch Voraussetzungen, Build, Prüfung und MCP-Anmeldung.
+
+**Von Hand** (Voraussetzungen: git, Node.js 22.13 oder neuer, FFmpeg):
 
 ```bash
-git clone https://github.com/deltatree/agentic-video-engine.git
-cd agentic-video-engine
-npm ci && npm run build          # baut alle Pakete und kopiert das Studio ins CLI-Paket
-alias openvideo="node $PWD/packages/cli/dist/bin.js"
-cd .. && openvideo create hello
-cd hello
+git clone https://github.com/deltatree/agentic-video-engine.git ~/openvideo
+cd ~/openvideo
+npm run setup          # npm ci, build, Chromium, links the `openvideo` command, runs `openvideo doctor`
+cd /tmp && openvideo create hello && cd hello
 openvideo render-frame --frame 2s --out out/frame.png
 openvideo render --format mp4
 ```
 
-Nach der ersten Veröffentlichung geht es ohne Checkout:
-
-```bash
-npx @agentic-video/cli create hello
-cd hello
-npx @agentic-video/cli render-frame --frame 2s --out out/frame.png
-npx @agentic-video/cli render --format mp4
-```
-
-`openvideo doctor` (bzw. `npx @agentic-video/cli doctor`) prüft die Umgebung und nennt für jede Lücke eine Lösung.
+`openvideo doctor` prüft die Umgebung und nennt für jede Lücke eine Lösung.
 Mehr steht in [Erste Schritte](docs/guide/getting-started.de.md).
 
 ## Für Coding Agents

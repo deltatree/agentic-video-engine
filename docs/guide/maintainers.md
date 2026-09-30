@@ -54,8 +54,8 @@ JSON
 | Required checks `check` and `smoke-npx` (strict, branch up to date) | The jobs of `.github/workflows/ci.yml`: build, lint (including the examples), docs drift (`npm run check:docs`), licenses, all tests with coverage, npm package smoke test. |
 
 Workflows that are **not** required checks: `benchmarks.yml` (nightly; the run fails on a
-regression), `images.yml` (tags `v*`), `release.yml` (tags `v*`, publishing is started by a
-maintainer, T3) and `docs.yml` (pushes to `main`; publishes the TypeDoc API reference to GitHub Pages).
+regression), `images.yml` (tags `v*`), `release.yml` (tags `v*`; dormant – OpenVideo is not published on npm for now, users build from source with
+[SETUP.md](../../SETUP.md)) and `docs.yml` (pushes to `main`; publishes the TypeDoc API reference to GitHub Pages).
 
 ### Check that the settings are active
 
@@ -75,7 +75,7 @@ pull request; otherwise pull requests wait for a check that never reports.
 | Default branch | `main` |
 | Merge methods | squash and rebase; no merge commits (linear history) |
 | Actions permissions | workflows declare their own `permissions`; default token permission read-only |
-| Secrets | `NPM_TOKEN` (release, T3) only; no long-lived cloud credentials |
+| Secrets | none required; `NPM_TOKEN` only if npm publishing is ever turned on (`release.yml`); no long-lived cloud credentials |
 | Dependabot | `.github/dependabot.yml` (npm, GitHub Actions, Docker) |
 | Private vulnerability reporting | on; the reporting process is described in `SECURITY.md` |
-| Pages | Source "GitHub Actions" (`docs.yml` deploys to the environment `github-pages`); the API reference lives at `https://deltatree.github.io/agentic-video-engine/` |
+| Pages | Active. Source "GitHub Actions" (`docs.yml` deploys to the environment `github-pages`); the API reference lives at `https://deltatree.github.io/agentic-video-engine/` |

@@ -24,7 +24,8 @@
     "check": "npm run check:deps && npm run build && npm run lint && npm run check:docs && node scripts/licenses.mjs --check && npm test",
     "licenses": "node scripts/licenses.mjs",
     "docs": "node scripts/generate-docs.mjs && typedoc",
-    "smoke:npx": "node scripts/smoke-npx.mjs"
+    "smoke:npx": "node scripts/smoke-npx.mjs",
+    "setup": "node scripts/setup.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

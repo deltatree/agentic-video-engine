@@ -36,6 +36,8 @@ lists all of them.
 [`mcp.json`](mcp.json) is a client configuration that starts the OpenVideo MCP server on stdio with
 the `product-launch` project. Copy it into your client's configuration (for example `.mcp.json`) and
 change `--project` to your own project folder, or use `--workspace <dir>` to start with an empty workspace.
+It expects the `openvideo` command on your `PATH` (`npm run setup` links it, see [SETUP.md](../SETUP.md));
+otherwise use `"command": "node"` with the absolute path to `packages/cli/dist/bin.js` as the first argument.
 
 ## More
 

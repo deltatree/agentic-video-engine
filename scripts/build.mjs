@@ -24,7 +24,7 @@ for (const base of ['packages', 'apps']) {
 }
 
 // Story 22.7 (T3): Das gebaute Studio gehört ins veröffentlichte CLI-Paket (`files`: "studio"),
-// damit `npx @agentic-video/cli studio` ohne Repo-Checkout funktioniert. Die CLI sucht es unter
+// damit `openvideo studio` aus dem verlinkten oder gepackten CLI-Paket funktioniert. Die CLI sucht es unter
 // packages/cli/studio (neben dist/).
 const studioDist = join(root, 'apps', 'studio', 'dist');
 const cliStudio = join(root, 'packages', 'cli', 'studio');

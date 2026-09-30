@@ -13,6 +13,7 @@ export * from './cli.js';
 export * from './project.js';
 export * from './doctor.js';
 export * from './sources.js';
+export * from './stdin.js';
 export * from './cache-clear.js';
 export * from './ops.js';
 export * from './watch.js';

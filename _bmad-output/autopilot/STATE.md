@@ -21,7 +21,7 @@ Coding Agents. Veröffentlichung als öffentliches Projekt unter github.com/delt
 Epics 1–22 umgesetzt. Nach dem Deep-Dive-Audit vom 2026-09-30 (sieben BMAD-Rollen, `planning-artifacts/audit-2026-09-30/`)
 wurden die Epics 16–22 (`planning-artifacts/epics-2026-09-30.md`) geplant, umgesetzt und in drei adversarialen Reviews
 (`implementation-artifacts/reviews/`) geprüft; alle Befunde sind behoben. Offen ist nur, was der Maintainer auslösen muss:
-npm-Veröffentlichung per Tag `v*` (Secret `NPM_TOKEN`), GitHub Pages aktivieren, Branch-Schutz setzen (docs/guide/maintainers.md).
+Branch-Schutz setzen (docs/guide/maintainers.md). GitHub Pages ist aktiv. npm-Veröffentlichung vorerst nicht (T3a): Installation aus dem Quellcode über SETUP.md und `npm run setup`.
 
 ## Entscheidungen
 
@@ -52,4 +52,4 @@ npm-Veröffentlichung per Tag `v*` (Secret `NPM_TOKEN`), GitHub Pages aktivieren
 
 ## Nächster Schritt
 
-Maintainer: PR prüfen und mergen, Tag `v0.1.0` für den ersten npm-Release, Pages und Branch-Schutz aktivieren.
+Maintainer: PR prüfen und mergen, Branch-Schutz aktivieren. Nach dem Merge baut `docs.yml` die API-Referenz auf GitHub Pages.

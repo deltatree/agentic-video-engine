@@ -45,3 +45,11 @@ nur als Smoke-Test, Zeitgrenzen und feste Pausen machten Tests auf geteilten Run
 - Benchmarks vergleichen nur gleiche Runner-Typen. Wechselt GitHub die CPU eines Runners, misst der nächste
   Lauf eine neue Basis, statt falsch zu vergleichen.
 - Bis zur ersten Veröffentlichung nennt das README die Installation aus dem Repository.
+
+## Nachtrag 2026-09-30: keine npm-Veröffentlichung vorerst
+
+Der Maintainer hat entschieden, die Pakete vorerst nicht auf npm zu veröffentlichen. Jeder baut OpenVideo aus dem
+Repository. Dafür gibt es `SETUP.md`: eine Anleitung, die ein Coding Assistant liest und ausführt, und
+`npm run setup` (`scripts/setup.mjs`: Voraussetzungen prüfen, `npm ci`, Build, Chromium, `openvideo` global
+verlinken, `doctor`). `release.yml` und `publishConfig` bleiben unverändert und ruhen, bis ein Tag `v*` gesetzt wird;
+der Smoke-Test `smoke-npx` prüft weiter, dass die gepackten Pakete funktionieren.

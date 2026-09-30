@@ -34,33 +34,28 @@ Frame 471 is bit-identical whether or not frame 470 was rendered before.
 
 ## Quick start
 
-Requirements: Node.js 22.13 or newer and FFmpeg.
+OpenVideo is not published on npm; you build it from this repository in a few minutes.
 
-> **Not on npm yet:** the `@agentic-video/*` packages are not in the npm registry until the first
-> release (release workflow on a `v*` tag); `npx @agentic-video/cli` cannot find them until then.
-> Until then, install the CLI from the repository:
+**The easy way – let your coding assistant do it.** Tell Claude Code, Cursor, Codex or any other assistant:
+
+```text
+Read https://raw.githubusercontent.com/deltatree/agentic-video-engine/main/SETUP.md and follow it to set up OpenVideo for me.
+```
+
+[SETUP.md](SETUP.md) walks the assistant through prerequisites, build, verification and MCP registration.
+
+**By hand** (requirements: git, Node.js 22.13 or newer, FFmpeg):
 
 ```bash
-git clone https://github.com/deltatree/agentic-video-engine.git
-cd agentic-video-engine
-npm ci && npm run build          # builds all packages and copies the Studio into the CLI package
-alias openvideo="node $PWD/packages/cli/dist/bin.js"
-cd .. && openvideo create hello
-cd hello
+git clone https://github.com/deltatree/agentic-video-engine.git ~/openvideo
+cd ~/openvideo
+npm run setup          # npm ci, build, Chromium, links the `openvideo` command, runs `openvideo doctor`
+cd /tmp && openvideo create hello && cd hello
 openvideo render-frame --frame 2s --out out/frame.png
 openvideo render --format mp4
 ```
 
-After the first release it works without a checkout:
-
-```bash
-npx @agentic-video/cli create hello
-cd hello
-npx @agentic-video/cli render-frame --frame 2s --out out/frame.png
-npx @agentic-video/cli render --format mp4
-```
-
-`openvideo doctor` (or `npx @agentic-video/cli doctor`) checks the environment and names a fix for every gap.
+`openvideo doctor` checks the environment and names a fix for every gap.
 More in [Getting started](docs/guide/getting-started.md).
 
 ## For coding agents

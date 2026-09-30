@@ -10,6 +10,7 @@ Node.js 22.13+, FFmpeg in `PATH` or `OPENVIDEO_FFMPEG`/`OPENVIDEO_FFPROBE`, Chro
 
 | Task | Command |
 |---|---|
+| Set up from scratch | `npm run setup` (npm ci, build, Chromium, links `openvideo`; see [SETUP.md](SETUP.md)) |
 | Install | `npm ci` (never add dependencies without a reason in the PR) |
 | Build everything | `npm run build` |
 | Build one package | `npx tsc -b packages/<name>` |

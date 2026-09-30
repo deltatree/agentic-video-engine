@@ -40,6 +40,7 @@ import { createSourceService } from './sources.js';
 import { LEGACY_CACHE_TIERS, cacheTierByName, clearCache } from './cache-clear.js';
 import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
 import { watchProject, type WatchEvent } from './watch.js';
+import { stdinClosed } from './stdin.js';
 
 /** Ein- und Ausgabe der CLI (für Tests austauschbar). */
 export interface CliIo {
@@ -794,7 +795,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const projectId = await context.link(services);
         const { serveStdio } = await import('@agentic-video/mcp');
         await serveStdio(services, projectId !== undefined ? { projectId } : {});
-        await new Promise<void>((r) => process.stdin.once('close', r));
+        await stdinClosed(process.stdin);
         await services.dispose();
         return 0;
       }

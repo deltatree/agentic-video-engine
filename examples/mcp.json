@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "openvideo": {
-      "command": "npx",
-      "args": ["-y", "--package", "@agentic-video/cli", "openvideo", "mcp", "--project", "./examples/product-launch"]
+      "command": "openvideo",
+      "args": ["mcp", "--project", "./examples/product-launch"]
     }
   }
 }

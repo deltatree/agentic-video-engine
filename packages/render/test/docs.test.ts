@@ -43,6 +43,7 @@ const SOURCES: readonly [string, string | undefined][] = [
 /** Sprachfassungen (Englisch, Deutsch), deren Code-Blöcke gleich sein müssen. */
 const TRANSLATIONS: readonly [string, string][] = [
   ['README.md', 'README.de.md'],
+  ['SETUP.md', 'SETUP.de.md'],
   ['docs/ai/AGENTS.md', 'docs/ai/AGENTS.de.md'],
   ['docs/guide/recipes.md', 'docs/guide/recipes.de.md'],
   ['docs/guide/getting-started.md', 'docs/guide/getting-started.de.md'],

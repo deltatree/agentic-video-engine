@@ -15,19 +15,20 @@
 
 ## Installation
 
-> **Not on npm yet:** the `@agentic-video/*` packages are not in the npm registry until the first
-> release (release workflow on a `v*` tag). `npx @agentic-video/cli` and
-> `npm install -g @agentic-video/cli` cannot find them until then. Until then, install the CLI from the repository:
+OpenVideo is not published on npm; everyone builds it from the repository. The simplest way is to let
+your coding assistant do it: tell it to read [SETUP.md](../../SETUP.md) and follow it. By hand:
 
 ```bash
-git clone https://github.com/deltatree/agentic-video-engine.git
-cd agentic-video-engine
-npm ci && npm run build          # builds all packages and copies the Studio into the CLI package
-alias openvideo="node $PWD/packages/cli/dist/bin.js"
+git clone https://github.com/deltatree/agentic-video-engine.git ~/openvideo
+cd ~/openvideo
+npm run setup
 ```
 
-After the first release `npx @agentic-video/cli <command>` replaces the alias. All commands below
-write `openvideo`.
+`npm run setup` checks Node.js and FFmpeg, runs `npm ci` and `npm run build`, downloads Chromium, links the
+command `openvideo` globally (`npm install -g ./packages/cli`, a link to the checkout) and runs `openvideo doctor`.
+Options such as `--with-deps` (Linux system libraries for Chromium) and `--no-link` are described in SETUP.md.
+Without the global link use `alias openvideo="node ~/openvideo/packages/cli/dist/bin.js"`.
+Update later with `git pull && npm run setup -- --skip-browser`.
 
 Check everything with `openvideo doctor`. Every line names a fix when needed.
 
