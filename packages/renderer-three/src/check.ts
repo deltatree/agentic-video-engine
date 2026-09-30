@@ -60,6 +60,27 @@ export function requiresWebGL2(scene: Readonly<Record<string, unknown>>): boolea
 }
 
 /**
+ * Welches Backend rendert eine `scene3d`-Node (Story 21.5)? Dieselbe Regel wie im
+ * `ThreeLayerRenderer`: Node-Property `backend`, sonst `preferred`; `auto` nutzt WebGPU, außer die
+ * Szene braucht WebGL2 (GLSL) oder WebGPU fehlt. `backend: 'webgpu'` bleibt `webgpu` (der Renderer
+ * meldet GLSL dann als Fehler). Die Funktion ist rein; Render-Manifest und Cache-Schlüssel nutzen sie
+ * mit dem geprüften WebGPU-Adapter der Render-Seite.
+ *
+ * @example
+ * ```ts
+ * threeBackendFor({ type: 'scene3d', children: [] }, true); // 'webgpu'
+ * threeBackendFor({ type: 'scene3d', backend: 'webgl2', children: [] }, true); // 'webgl2'
+ * ```
+ */
+export function threeBackendFor(scene: Readonly<Record<string, unknown>>, webgpuAvailable: boolean, preferred: 'auto' | 'webgpu' | 'webgl2' = 'auto'): 'webgpu' | 'webgl2' {
+  const prop = scene['backend'];
+  const wanted = prop === 'webgpu' || prop === 'webgl2' || prop === 'auto' ? prop : preferred;
+  if (wanted !== 'auto') return wanted;
+  if (requiresWebGL2(scene)) return 'webgl2';
+  return webgpuAvailable ? 'webgpu' : 'webgl2';
+}
+
+/**
  * Prüft eine `scene3d`-Node vor dem Rendern.
  *
  * Gemeldete Einschränkungen:

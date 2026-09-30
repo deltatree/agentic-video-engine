@@ -4,7 +4,7 @@
  */
 import { OpenVideoError } from '@agentic-video/core';
 import { ThreeAssets } from './assets.js';
-import { requiresWebGL2 } from './check.js';
+import { requiresWebGL2, threeBackendFor } from './check.js';
 import { buildScene, outputSize, wantsAntialias, type ThreeLayerInput } from './scene.js';
 import { WebGLBackend } from './webgl.js';
 import { WebGPUBackend, webgpuAvailable } from './webgpu.js';
@@ -112,9 +112,10 @@ export class ThreeLayerRenderer {
       }
       return 'webgpu';
     }
+    // `auto`: dieselbe reine Regel wie Manifest und Cache-Schlüssel (threeBackendFor, Story 21.5).
     if (requiresWebGL2({ children: input.node.children.map(toRaw) })) return 'webgl2';
     this.webgpuOk ??= webgpuAvailable();
-    return (await this.webgpuOk) ? 'webgpu' : 'webgl2';
+    return threeBackendFor({ backend: 'auto', children: [] }, await this.webgpuOk);
   }
 
   private backend(kind: 'webgpu' | 'webgl2', antialias: boolean): Promise<Backend> {

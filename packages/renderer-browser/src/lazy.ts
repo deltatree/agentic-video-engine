@@ -1,6 +1,13 @@
 /**
  * Träge Browser-Backends: Prüfung und Versionen stehen sofort bereit, Chromium startet erst
  * beim ersten Layer, der den Browser braucht. So kostet ein reines 2D-Projekt keinen Browserstart.
+ *
+ * Versionen (Cache-Schlüssel): `chromium` ist die zu playwright-core gehörende Version (vor dem
+ * Start bekannt), `browser-gpu: 'native'` steht nur im GPU-Modus darin (T5; SwiftShader-Schlüssel
+ * bleiben unverändert). Das `three`-Backend trägt nach
+ * {@link LazyBrowserBackends.prepareGraphics} zusätzlich `three-webgpu` (`available`/`unavailable`):
+ * davon hängt ab, ob `backend: 'auto'` WebGPU oder WebGL2 nutzt (Story 21.5). Die tatsächliche
+ * Chromium-Version steht nach dem Start in {@link LazyBrowserBackends.runtimeVersions}.
  */
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
@@ -9,6 +16,7 @@ import { OpenVideoError, isRecord, type BackendCheck, type LayerRequest, type Re
 import { checkPixiNode, PIXI_CAPABILITIES, PIXI_VERSION } from '@agentic-video/renderer-pixi';
 import { checkThreeNode, THREE_CAPABILITIES, THREE_VERSION } from '@agentic-video/renderer-three';
 import { createBrowserBackends, PIXI_NODE_TYPES, type BrowserBackends } from './backends.js';
+import { browserGpuMode, type BrowserGpuMode, type PageGraphics } from './gpu.js';
 import { checkHtmlNode, HTML_CAPABILITIES } from './html-check.js';
 import type { BrowserHostOptions } from './host.js';
 
@@ -33,6 +41,18 @@ export interface LazyBrowserBackends {
   readonly pixi: RenderBackend;
   /** Wurde Chromium gestartet? */
   started(): boolean;
+  /** Grafik-Modus der Backends (`swiftshader` oder `native`). */
+  readonly gpuMode: BrowserGpuMode;
+  /**
+   * Startet Chromium mit den Grafik-Schaltern und prüft WebGL2/WebGPU auf der Render-Seite. Danach
+   * trägt `three.versions()` den Eintrag `three-webgpu`. Für Projekte mit `scene3d` vor dem ersten
+   * Cache-Schlüssel aufrufen, damit die WebGPU/WebGL2-Wahl im Schlüssel steht.
+   */
+  prepareGraphics(): Promise<PageGraphics>;
+  /** Ergebnis von {@link prepareGraphics}, sonst `undefined`. */
+  graphicsInfo(): PageGraphics | undefined;
+  /** Tatsächliche Versionen nach dem Start (`chromium` aus `browser.version()`), vorher `undefined`. */
+  runtimeVersions(): Readonly<Record<string, string>> | undefined;
   dispose(): Promise<void>;
 }
 
@@ -47,9 +67,24 @@ export interface LazyBrowserBackends {
  */
 export function createLazyBrowserBackends(options: BrowserHostOptions): LazyBrowserBackends {
   let real: Promise<BrowserBackends> | undefined;
+  let started: BrowserBackends | undefined;
+  let graphics: PageGraphics | undefined;
   const chromium = expectedChromiumVersion();
+  const gpuMode = browserGpuMode(options.gpu);
   const ensure = (): Promise<BrowserBackends> => {
-    real ??= createBrowserBackends(options);
+    if (real === undefined) {
+      const created = createBrowserBackends({ ...options, gpu: gpuMode === 'native' });
+      real = created;
+      created.then(
+        (b) => {
+          started = b;
+        },
+        () => {
+          // Ein gescheiterter Start wird beim nächsten Layer erneut versucht.
+          if (real === created) real = undefined;
+        },
+      );
+    }
     return real;
   };
   const make = (id: 'browser' | 'three' | 'pixi', nodeTypes: readonly string[], capabilities: readonly string[], fusable: boolean, check: (node: Readonly<Record<string, unknown>>) => BackendCheck, versions: Readonly<Record<string, string>>): RenderBackend => ({
@@ -57,7 +92,8 @@ export function createLazyBrowserBackends(options: BrowserHostOptions): LazyBrow
     nodeTypes,
     capabilities,
     fusable,
-    versions: () => ({ chromium, ...versions }),
+    // `browser-gpu` nur im GPU-Modus: Schlüssel im Standardmodus (SwiftShader) bleiben wie bisher.
+    versions: () => ({ chromium, ...(gpuMode === 'native' ? { 'browser-gpu': 'native' } : {}), ...versions, ...(id === 'three' && graphics !== undefined ? { 'three-webgpu': graphics.webgpuAvailable ? 'available' : 'unavailable' } : {}) }),
     check,
     async renderLayer(request: LayerRequest): Promise<RgbaImage> {
       const backends = await ensure();
@@ -76,6 +112,15 @@ export function createLazyBrowserBackends(options: BrowserHostOptions): LazyBrow
     three,
     pixi,
     started: () => real !== undefined,
+    gpuMode,
+    async prepareGraphics() {
+      if (graphics !== undefined) return graphics;
+      const info = await (await ensure()).host.graphics();
+      graphics = info;
+      return info;
+    },
+    graphicsInfo: () => graphics,
+    runtimeVersions: () => (started === undefined ? undefined : { ...started.host.versions() }),
     async dispose() {
       if (real === undefined) return;
       try {

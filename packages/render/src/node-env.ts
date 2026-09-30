@@ -9,7 +9,7 @@ import { existsSync } from 'node:fs';
 import { release, homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolveProjectAssets, type ProjectAssets } from '@agentic-video/assets';
-import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
+import { createCache, storeFromEnv, type Cache, type CacheTierName } from '@agentic-video/cache';
 import { registerComponents } from '@agentic-video/components';
 import { accumulateFrames, compositeFrame, parseCubeLut, type Lut } from '@agentic-video/compositor';
 import { OUTPUT_FORMATS, OpenVideoError, Registry, VIDEO_CODECS, isRecord, type RgbaImage } from '@agentic-video/core';
@@ -19,10 +19,10 @@ import { createSkiaBackend, createSkiaTextMeasurer, loadCanvasKitNode, renderCon
 import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, resolveFromAudioTracks, synthesizeVoices } from '@agentic-video/speech';
 import { registerSubtitles } from '@agentic-video/subtitles';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
-import { createLazyBrowserBackends } from '@agentic-video/renderer-browser';
+import { browserGpuMode, createLazyBrowserBackends, describeHostGpu, probeHostGpu, type HostGpu } from '@agentic-video/renderer-browser';
 import { createBlenderBackend } from '@agentic-video/renderer-blender';
 import { createAudioEngine, type SynthesizedVoice } from './audio-engine.js';
-import type { EncodeOptions, FrameEncoder, MediaTools, RenderEnvironment } from './environment.js';
+import type { EncodeOptions, FrameEncoder, GraphicsInfoLike, MediaTools, RenderEnvironment, RuntimeInfo } from './environment.js';
 import { OPENVIDEO_VERSION } from './version.js';
 import { PLUGIN_PREFIX, exporterEncoder, loadProjectPlugins, pluginExporter, pluginPolicyFromEnv, type PluginPolicy } from './plugins.js';
 
@@ -30,6 +30,8 @@ import { PLUGIN_PREFIX, exporterEncoder, loadProjectPlugins, pluginExporter, plu
 export interface BackendProvider {
   readonly ids: readonly string[];
   register(registry: Registry, ctx: { readonly assets: ProjectAssets; readonly fonts: Awaited<ReturnType<typeof loadFontSet>>; readonly telemetry: Telemetry }): Promise<Readonly<Record<string, string>>>;
+  /** Tatsächliche Versionen gestarteter Prozesse und Grafik-Probe (Story 21.5); optional. */
+  runtime?(): { readonly versions: Readonly<Record<string, string>>; readonly graphics?: GraphicsInfoLike };
   dispose(): Promise<void>;
 }
 
@@ -63,6 +65,14 @@ export interface NodeEnvironmentOptions {
   readonly plugins?: PluginPolicy;
   /** Umgebungsvariablen (Standard `process.env`), z. B. für Plugin-Rechte. */
   readonly env?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Chromium mit nativem ANGLE auf der GPU starten statt SwiftShader (T5, ADR 0019). Standard:
+   * `OPENVIDEO_BROWSER_GPU=1` aus `env`. Der Modus steht in den Versionen (Cache-Schlüssel) und im
+   * Manifest. Worker-Prozesse lesen nur die Umgebungsvariable.
+   */
+  readonly browserGpu?: boolean;
+  /** GPU-Probe ersetzen (Tests); Standard `probeHostGpu` (`nvidia-smi`, `/dev/dri`). */
+  readonly probeGpu?: () => Promise<HostGpu | undefined>;
 }
 
 /** Umgebung mit Aufräumfunktion. */
@@ -178,21 +188,59 @@ function largestComposition(project: Readonly<Record<string, unknown>>): { width
   return comps.reduce<{ width: number; height: number }>((acc, c) => ({ width: Math.max(acc.width, Number(c['width']) || 0), height: Math.max(acc.height, Number(c['height']) || 0) }), { width: 1, height: 1 });
 }
 
+/** Enthält das Projekt eine `scene3d`-Node (in irgendeiner Composition)? */
+export function projectUsesScene3d(project: Readonly<Record<string, unknown>>): boolean {
+  const walk = (value: unknown): boolean => {
+    if (Array.isArray(value)) return value.some(walk);
+    if (!isRecord(value)) return false;
+    if (value['type'] === 'scene3d') return true;
+    return walk(value['children']) || walk(value['nodes']);
+  };
+  return walk(project['compositions']);
+}
+
 /**
  * Standard-Provider: Browser-Backends (`browser`, `three`, `pixi`, Chromium startet erst bei Bedarf)
  * und Blender (startet pro Chunk einen Prozess, nur wenn eine `blender`-Node gerendert wird).
+ *
+ * Enthält das Projekt `scene3d`-Nodes, startet Chromium schon beim Registrieren mit den
+ * Grafik-Schaltern und prüft WebGPU (Story 21.5): Ob `backend: 'auto'` WebGPU oder WebGL2 nutzt,
+ * steht dann als `three-webgpu` in den Versionen und damit in jedem Frame- und Layer-Schlüssel.
  */
-export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>, options: { readonly allowHtmlScripts?: boolean } = {}): BackendProvider[] {
+export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>, options: { readonly allowHtmlScripts?: boolean; readonly browserGpu?: boolean } = {}): BackendProvider[] {
   let lazy: ReturnType<typeof createLazyBrowserBackends> | undefined;
   let blender: ReturnType<typeof createBlenderBackend> | undefined;
   return [
     {
       ids: ['browser', 'three', 'pixi'],
-      register(registry, ctx) {
+      async register(registry, ctx) {
         const size = largestComposition(project);
-        lazy = createLazyBrowserBackends({ assets: ctx.assets, fonts: ctx.fonts, width: size.width, height: size.height, allowHtmlScripts: options.allowHtmlScripts === true, ...(process.env['OPENVIDEO_CHROMIUM'] !== undefined ? { executablePath: process.env['OPENVIDEO_CHROMIUM'] } : {}) });
-        for (const b of [lazy.browser, lazy.three, lazy.pixi]) if (!registry.backends.has(b.id)) registry.registerBackend(b);
-        return Promise.resolve({ chromium: lazy.browser.versions()['chromium'] ?? 'unknown' });
+        const created = createLazyBrowserBackends({
+          assets: ctx.assets,
+          fonts: ctx.fonts,
+          width: size.width,
+          height: size.height,
+          allowHtmlScripts: options.allowHtmlScripts === true,
+          ...(options.browserGpu !== undefined ? { gpu: options.browserGpu } : {}),
+          ...(process.env['OPENVIDEO_CHROMIUM'] !== undefined ? { executablePath: process.env['OPENVIDEO_CHROMIUM'] } : {}),
+        });
+        lazy = created;
+        for (const b of [created.browser, created.three, created.pixi]) if (!registry.backends.has(b.id)) registry.registerBackend(b);
+        if (projectUsesScene3d(project)) {
+          try {
+            await created.prepareGraphics();
+          } catch (error) {
+            // Ohne Chromium scheitert erst der Render des 3D-Layers mit seiner eigenen Diagnose.
+            if (!(error instanceof OpenVideoError)) throw error;
+            ctx.telemetry.logger.warn('browser graphics probe failed', { code: error.diagnostic.code, problem: error.diagnostic.problem });
+          }
+        }
+        return { chromium: created.browser.versions()['chromium'] ?? 'unknown' };
+      },
+      runtime() {
+        const versions = lazy?.runtimeVersions();
+        const graphics = lazy?.graphicsInfo();
+        return { versions: versions !== undefined && versions['chromium'] !== undefined ? { chromium: versions['chromium'] } : {}, ...(graphics !== undefined ? { graphics } : {}) };
       },
       async dispose() {
         await lazy?.dispose();
@@ -212,6 +260,42 @@ export function defaultProviders(projectDir: string, project: Readonly<Record<st
   ];
 }
 
+/** Beobachtete Paare aus Cache und Telemetrie: jeder Zugriff wird nur einmal gezählt. */
+const observedCaches = new WeakMap<Cache, WeakSet<Telemetry>>();
+
+/**
+ * Ebenen, deren Treffer `frame.ts` selbst meldet (inklusive Treffern im Arbeitsspeicher); der
+ * Beobachter zählt sie nicht doppelt.
+ */
+const SELF_REPORTED_TIERS: ReadonlySet<CacheTierName> = new Set(['frame', 'layer']);
+
+/**
+ * Meldet Treffer und Fehlgriffe aller Cache-Ebenen an die Telemetrie (Story 21.2, Metriken
+ * `cache_hits`/`cache_misses` mit Attribut `tier`). Pro Cache und Telemetrie nur einmal.
+ *
+ * @example
+ * ```ts
+ * observeCacheTelemetry(cache, telemetry);
+ * ```
+ */
+export function observeCacheTelemetry(cache: Cache, telemetry: Telemetry): void {
+  let seen = observedCaches.get(cache);
+  if (seen === undefined) {
+    seen = new WeakSet();
+    observedCaches.set(cache, seen);
+  }
+  if (seen.has(telemetry)) return;
+  seen.add(telemetry);
+  cache.observe((tier, outcome) => {
+    if (SELF_REPORTED_TIERS.has(tier)) return;
+    if (outcome === 'hit') telemetry.metrics.cacheHit(tier);
+    else telemetry.metrics.cacheMiss(tier);
+  });
+}
+
+/** Einmalige GPU-Probe je Prozess (Name und Gesamtspeicher ändern sich nicht). */
+let hostGpu: Promise<HostGpu | undefined> | undefined;
+
 /**
  * Baut die Render-Umgebung eines Projekts.
  *
@@ -225,6 +309,7 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   const { projectDir, project } = options;
   const telemetry = options.telemetry ?? createTelemetry({ serviceName: 'openvideo', exporter: 'none' });
   const cache = options.cache ?? createCache(storeFromEnv(process.env, projectDir));
+  observeCacheTelemetry(cache, telemetry);
   const registry = options.registry ?? new Registry();
   // Plugins vor den Assets: Asset Loader aus Plugins gelten schon beim Auflösen (Story 21.1).
   const env = options.env ?? process.env;
@@ -265,8 +350,9 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
         measurer.measure({ id: '__subtitle-measure', type: 'text', props: { text, ...style }, children: [], time: { localFrame: 0, relFrame: 0, durationFrames: 1, progress: 0, compositionFrame: 0 }, pointer: '' }).width,
     });
   }
+  const gpuMode = browserGpuMode(options.browserGpu, env);
   const providers: BackendProvider[] = [...(options.providers ?? [])];
-  if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project, { allowHtmlScripts: options.allowHtmlScripts === true }));
+  if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project, { allowHtmlScripts: options.allowHtmlScripts === true, browserGpu: gpuMode === 'native' }));
   for (const provider of providers) Object.assign(versions, await provider.register(registry, { assets, fonts, telemetry }));
   for (const b of registry.backends.values()) {
     versions[`backend:${b.id}`] = Object.values(b.versions()).join('+') || '1';
@@ -282,9 +368,32 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   const luts = new Map<string, Lut>();
   for (const a of assets.all()) if (a.type === 'lut') luts.set(a.id, parseCubeLut(await readFile(a.path, 'utf8')));
   const voicesDir = options.voicesDir ?? join(projectDir, '.openvideo', 'voices');
+  // Stimmen je Projekt-Objekt: das Manifest nennt ihre Hashes (Story 21.5).
+  const voicesOf = new WeakMap<Readonly<Record<string, unknown>>, ReadonlyMap<string, SynthesizedVoice>>();
   const synthesize = async (p: Readonly<Record<string, unknown>>): Promise<ReadonlyMap<string, SynthesizedVoice>> => {
     const result = await synthesizeVoices(p, { registry, cache, outDir: voicesDir });
-    return new Map(result.map((v) => [v.id, { path: v.path, duration: v.duration, hash: v.cacheKey }]));
+    const voices = new Map(result.map((v) => [v.id, { path: v.path, duration: v.duration, hash: v.cacheKey }]));
+    voicesOf.set(p, voices);
+    return voices;
+  };
+  const audioEngine = createAudioEngine({ assets, cache, synthesizeVoices: synthesize, registry });
+  const probeGpu = options.probeGpu ?? (() => (hostGpu ??= probeHostGpu()));
+  const gpu = await probeGpu();
+  if (gpu?.memoryUsedBytes !== undefined) telemetry.metrics.setGpuMemory(gpu.memoryUsedBytes);
+  const runtime = async (): Promise<RuntimeInfo> => {
+    const out: Record<string, string> = {};
+    let graphics: GraphicsInfoLike | undefined;
+    for (const p of providers) {
+      const r = p.runtime?.();
+      if (r === undefined) continue;
+      Object.assign(out, r.versions);
+      graphics ??= r.graphics;
+    }
+    // Belegter Speicher ändert sich: bei jedem Aufruf neu lesen (nur mit erkannter NVIDIA-GPU).
+    const now = gpu?.source === 'nvidia-smi' ? await (options.probeGpu ?? probeHostGpu)() : undefined;
+    const used = now?.memoryUsedBytes ?? gpu?.memoryUsedBytes;
+    if (used !== undefined) telemetry.metrics.setGpuMemory(used);
+    return { versions: out, ...(used !== undefined ? { gpuMemoryBytes: used } : {}), ...(graphics !== undefined ? { graphics } : {}) };
   };
   return {
     projectDir,
@@ -300,7 +409,14 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
       contactSheet: (frames, o) => renderContactSheet(canvasKit, fonts, frames, o),
     },
     media,
-    audio: createAudioEngine({ assets, cache, synthesizeVoices: synthesize, registry }),
+    audio: {
+      async renderComposition(input) {
+        const r = await audioEngine.renderComposition(input);
+        const voices = voicesOf.get(input.project);
+        if (r === undefined || voices === undefined || voices.size === 0) return r;
+        return { ...r, voices: Object.fromEntries([...voices].sort(([a], [b]) => a.localeCompare(b)).map(([id, v]) => [id, v.hash])) };
+      },
+    },
     composite: (request) => {
       // LUTs kommen immer aus den Assets dieses Projekts, nicht aus der Anfrage.
       const { resolveLut: _fromRequest, ...rest } = request;
@@ -313,7 +429,10 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
     platform: {
       os: `${process.platform} ${release()} ${process.arch}`,
       ...(process.env['OPENVIDEO_CONTAINER_IMAGE'] !== undefined ? { containerImage: process.env['OPENVIDEO_CONTAINER_IMAGE'] } : {}),
+      ...(gpu !== undefined ? { gpu: describeHostGpu(gpu) } : {}),
+      browserGpu: gpuMode,
     },
+    runtime,
     async dispose() {
       measurer.dispose();
       await assets.close();

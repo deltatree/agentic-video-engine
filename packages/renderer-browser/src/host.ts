@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from 'playwright-core';
 import { OpenVideoError, minimalChildEnv, premultiplyInPlace, type AssetResolver, type Diagnostic, type FontResolver, type RgbaImage } from '@agentic-video/core';
 import { decodePng } from '@agentic-video/png';
+import { browserGpuMode, chromiumArgsFor, chromiumGpuEnv, graphicsArgsFor, pageGraphics, type BrowserGpuMode, type PageGraphics } from './gpu.js';
 import type { BrowserLayerKind, BrowserLayerPayload } from './protocol.js';
 import { startHostServer, type HostServer } from './server.js';
 
@@ -29,6 +30,9 @@ import { startHostServer, type HostServer } from './server.js';
  * `--enable-unsafe-swiftshader` und `--enable-unsafe-webgpu` stehen nicht hier, sondern in
  * {@link CHROMIUM_GRAPHICS_ARGS}: Sie gelten nur, sobald ein WebGL-/WebGPU-Layer (`three`, `pixi`)
  * gerendert wird (Story 16.1). HTML-Layer rastern mit und ohne sie pixelgleich.
+ *
+ * Im GPU-Modus (`OPENVIDEO_BROWSER_GPU=1`, Option `gpu`, ADR 0019) ersetzt `chromiumArgsFor`
+ * `--use-angle=swiftshader` durch nativen ANGLE (`CHROMIUM_NATIVE_GPU_ARGS`).
  */
 export const CHROMIUM_ARGS: readonly string[] = [
   '--use-angle=swiftshader',
@@ -193,14 +197,26 @@ export interface BrowserHostOptions {
   readonly allowHtmlScripts?: boolean;
   /** Höchstzahl offener Seiten; die am längsten ungenutzte Größe wird geschlossen (LRU). Standard 4. */
   readonly maxPages?: number;
+  /**
+   * Chromium mit nativem ANGLE auf der GPU des Hosts statt SwiftShader starten (T5, ADR 0019).
+   * Standard: `OPENVIDEO_BROWSER_GPU=1`, sonst `false` (SwiftShader, bitgleich auf jeder Maschine).
+   */
+  readonly gpu?: boolean;
 }
 
 /** Ein laufender Render-Host. */
 export interface BrowserHost {
   /** Rendert einen Layer zu vormultipliziertem RGBA in Größe `payload.width × payload.height`. */
   render(kind: BrowserLayerKind, payload: BrowserLayerPayload): Promise<RgbaImage>;
-  /** Versionen: `chromium`, `three`, `pixi`. */
+  /** Versionen: `chromium` (tatsächlich, aus `browser.version()`), `three`, `pixi`, `browser-gpu` (Modus). */
   versions(): Readonly<Record<string, string>>;
+  /** Grafik-Modus: `swiftshader` (Standard) oder `native` (ANGLE auf der Host-GPU). */
+  readonly gpuMode: BrowserGpuMode;
+  /**
+   * WebGL2-Renderer und WebGPU-Adapter auf der Render-Seite, nach dem Neustart mit den
+   * Grafik-Schaltern. Einmal geprüft, danach gemerkt (Story 21.5).
+   */
+  graphics(): Promise<PageGraphics>;
   /** Zahl der blockierten Netzanfragen seit dem Start (Sicherheits-Nachweis). */
   readonly blockedRequests: number;
   /** Zahl der offenen Seiten (höchstens `maxPages`). */
@@ -277,12 +293,21 @@ function checkSize(payload: BrowserLayerPayload): void {
 
 /** Fehler-Codes, die die Seiten-Laufzeit als Präfix `OV_…:` in ihre Fehlermeldung schreibt. */
 const PAGE_CODES: Readonly<Record<string, readonly string[]>> = {
+  OV_BROWSER_RUNTIME: ['Rebuild the runtime with `npm run build:extra -w @agentic-video/renderer-browser`.', 'Check that no page script removes window.__ovRuntime.'],
   OV_BROWSER_TIMER_LIMIT: ['Do not reschedule timers endlessly (e.g. setTimeout(f, 0) inside f).', 'Drive animation from window.openvideo.onFrame instead of timers.'],
   OV_BROWSER_PAYLOAD: ['Pass finite frame numbers and times.'],
 };
 
-/** Übersetzt einen Fehler aus `page.evaluate` in einen {@link OpenVideoError}. */
-function pageError(kind: BrowserLayerKind, error: unknown): OpenVideoError {
+/**
+ * Übersetzt einen Fehler aus `page.evaluate` in einen {@link OpenVideoError}. Meldungen mit einem
+ * bekannten Präfix `OV_…: ` (z. B. `OV_BROWSER_RUNTIME`, `OV_BROWSER_TIMER_LIMIT`) behalten ihren Code.
+ *
+ * @example
+ * ```ts
+ * pageError('html', new Error('OV_BROWSER_RUNTIME: The page runtime is not loaded.')).diagnostic.code; // 'OV_BROWSER_RUNTIME'
+ * ```
+ */
+export function pageError(kind: BrowserLayerKind, error: unknown): OpenVideoError {
   const message = error instanceof Error ? error.message : String(error);
   for (const [code, suggestions] of Object.entries(PAGE_CODES)) {
     const at = message.indexOf(`${code}: `);
@@ -332,6 +357,8 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
   const timeoutMs = options.timeoutMs ?? 60_000;
   const allowScripts = options.allowHtmlScripts === true;
   const maxPages = Math.max(1, Math.floor(options.maxPages ?? DEFAULT_MAX_PAGES));
+  const gpuMode = browserGpuMode(options.gpu);
+  const graphicsArgs = graphicsArgsFor(gpuMode);
   const server: HostServer = await startHostServer({ runtimeJs, assets: options.assets, fonts: options.fonts });
   const diagnostics: Diagnostic[] = [];
   const closeFailures = { count: 0 };
@@ -344,10 +371,11 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
   let live: Session | undefined;
 
   const launchBrowser = async (): Promise<Browser> => {
-    const args = [...CHROMIUM_ARGS, ...(graphics ? CHROMIUM_GRAPHICS_ARGS : [])];
-    // Playwright setzt `--enable-unsafe-swiftshader` selbst; ohne Grafik-Layer wird es abgewählt.
+    const args = [...chromiumArgsFor(CHROMIUM_ARGS, gpuMode), ...(graphics ? graphicsArgs : [])];
+    // Playwright setzt `--enable-unsafe-swiftshader` selbst; ohne Grafik-Layer und im GPU-Modus wird es abgewählt.
+    const ignore = graphics ? (gpuMode === 'native' ? ['--enable-unsafe-swiftshader'] : []) : [...CHROMIUM_GRAPHICS_ARGS];
     const launch = (sandbox: boolean) =>
-      chromium.launch({ executablePath, headless: true, chromiumSandbox: sandbox, args, env: chromiumEnv(process.env), ...(graphics ? {} : { ignoreDefaultArgs: [...CHROMIUM_GRAPHICS_ARGS] }) });
+      chromium.launch({ executablePath, headless: true, chromiumSandbox: sandbox, args, env: chromiumGpuEnv(process.env, gpuMode), ...(ignore.length > 0 ? { ignoreDefaultArgs: ignore } : {}) });
     if (!osSandbox) return launch(false);
     try {
       return await launch(true);
@@ -511,6 +539,7 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
 
   let libraryVersions: Readonly<Record<string, string>>;
   let chromiumVersion: string;
+  let graphicsInfo: Promise<PageGraphics> | undefined;
   try {
     const first = await pageFor(options.width, options.height);
     const entry = await first.entry.finally(first.release);
@@ -558,7 +587,8 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       await entry.page.evaluate(
         async ([p, scripts]) => {
           const rt = window.__ovRuntime;
-          if (rt === undefined) throw new Error('Page runtime missing.');
+          // Präfix `OV_BROWSER_RUNTIME: ` → der Host macht daraus einen OpenVideoError (PAGE_CODES).
+          if (rt === undefined) throw new Error('OV_BROWSER_RUNTIME: The page runtime (window.__ovRuntime) is not loaded.');
           await rt.renderHtml(p, { allowScripts: scripts });
         },
         [payload, allowScripts] as const,
@@ -570,7 +600,7 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       await entry.page.evaluate(
         async ([k, p, url]) => {
           const rt = window.__ovRuntime;
-          if (rt === undefined) throw new Error('Page runtime missing.');
+          if (rt === undefined) throw new Error('OV_BROWSER_RUNTIME: The page runtime (window.__ovRuntime) is not loaded.');
           await (k === 'three' ? rt.renderThree(p, url) : rt.renderPixi(p, url));
         },
         [kind, payload, upload.url] as const,
@@ -596,7 +626,30 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       return osSandbox;
     },
     diagnostics,
-    versions: () => ({ chromium: chromiumVersion, ...libraryVersions }),
+    gpuMode,
+    versions: () => ({ chromium: chromiumVersion, ...libraryVersions, 'browser-gpu': gpuMode }),
+    graphics() {
+      if (closed) return Promise.reject(hostError('OV_BROWSER_CLOSED', 'The render host is closed.', ['Create a new host with `createBrowserHost`.']));
+      graphicsInfo ??= (async () => {
+        await ensureGraphics();
+        const slot = await pageFor(options.width, options.height);
+        try {
+          const entry = await slot.entry;
+          const job = entry.queue.then(() => withTimeout(entry.page.evaluate(pageGraphics), timeoutMs, 'The graphics probe'));
+          entry.queue = job.catch((error: unknown) => error);
+          const info = await job;
+          chromiumVersion = slot.session.browser.version();
+          return info;
+        } finally {
+          slot.release();
+        }
+      })();
+      const pending = graphicsInfo;
+      pending.catch(() => {
+        if (graphicsInfo === pending) graphicsInfo = undefined;
+      });
+      return pending;
+    },
     async render(kind, payload) {
       if (closed) throw hostError('OV_BROWSER_CLOSED', 'The render host is closed.', ['Create a new host with `createBrowserHost`.']);
       checkSize(payload);

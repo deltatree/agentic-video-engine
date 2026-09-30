@@ -12,7 +12,7 @@
  * ```
  */
 export { THREE_CAPABILITIES, THREE_VERSION } from './capabilities.js';
-export { THREE_CHILD_TYPES, checkThreeNode, requiresWebGL2 } from './check.js';
+export { THREE_CHILD_TYPES, checkThreeNode, requiresWebGL2, threeBackendFor } from './check.js';
 export { detectFormat, type AssetFormat } from './assets.js';
 export { instanceTransforms, type InstanceTransform } from './instances.js';
 export { particles3d, type Particle3D } from './particles.js';

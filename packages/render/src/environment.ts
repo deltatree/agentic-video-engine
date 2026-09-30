@@ -113,7 +113,7 @@ export interface AudioEngine {
     readonly startFrame: number;
     readonly endFrame: number;
     readonly outPath: string;
-  }): Promise<{ readonly path: string; readonly durationSeconds: number; readonly loudness?: number } | undefined>;
+  }): Promise<{ readonly path: string; readonly durationSeconds: number; readonly loudness?: number; readonly voices?: Readonly<Record<string, string>> } | undefined>;
 }
 
 /** Medien-Werkzeuge (FFmpeg). */
@@ -127,6 +127,23 @@ export interface MediaTools {
 export interface OverlayTools {
   debugOverlay(scene: EvaluatedScene, bounds: readonly NodeBounds[], options: DebugOptions, size: { readonly width: number; readonly height: number; readonly scale: number }): RgbaImage;
   contactSheet(frames: readonly { readonly image: RgbaImage; readonly label: string }[], options: { readonly columns: number; readonly cellWidth: number; readonly background: string }): RgbaImage;
+}
+
+/** Ergebnis der WebGL2/WebGPU-Probe auf der Render-Seite (Story 21.5). */
+export interface GraphicsInfoLike {
+  readonly webgl2: string;
+  readonly webgpu: string;
+  readonly webgpuAvailable: boolean;
+}
+
+/** Laufzeitangaben für Manifest und Telemetrie (Story 21.5). */
+export interface RuntimeInfo {
+  /** Tatsächliche Versionen gestarteter Prozesse, z. B. `chromium` aus `browser.version()`. */
+  readonly versions: Readonly<Record<string, string>>;
+  /** Belegter GPU-Speicher in Bytes, wenn eine GPU erkannt ist (Metrik `gpu_memory`). */
+  readonly gpuMemoryBytes?: number;
+  /** WebGL2/WebGPU der Render-Seite, wenn Chromium mit Grafik-Schaltern lief. */
+  readonly graphics?: GraphicsInfoLike;
 }
 
 /** Alles, was die Pipeline zum Rendern braucht. */
@@ -147,6 +164,11 @@ export interface RenderEnvironment {
   readonly versions: Readonly<Record<string, string>>;
   /** `true`, wenn nicht vertrauenswürdiger Code auf dem Host laufen darf (`--trusted`). */
   readonly trusted: boolean;
-  /** Umgebungsbeschreibung für das Manifest (Betriebssystem, Container-Image, GPU). */
-  readonly platform: { readonly os: string; readonly containerImage?: string; readonly gpu?: string };
+  /**
+   * Umgebungsbeschreibung für das Manifest: Betriebssystem, Container-Image, erkannte GPU
+   * (`nvidia-smi` oder `/dev/dri`) und Grafik-Modus des Browser-Renderers (T5).
+   */
+  readonly platform: { readonly os: string; readonly containerImage?: string; readonly gpu?: string; readonly browserGpu?: 'swiftshader' | 'native' };
+  /** Tatsächliche Versionen und GPU-Speicher zum Zeitpunkt des Aufrufs (für Manifest und `gpu_memory`). */
+  runtime?(): Promise<RuntimeInfo>;
 }
