@@ -12,7 +12,7 @@ Der Auftrag (§9) nennt PixiJS als GPU-2D-Renderer. PixiJS zeichnet in Chromium 
 - **Skia bleibt Standard** (`renderer2d` fehlt oder ist `skia`). Determinismus geht vor: Goldens, Frame-Hashes und Cache-Schlüssel beziehen sich auf Skia.
 - **Rückfall pro Node:** Mit `renderer2d: 'pixi'` prüft `Registry.resolveBackend` für jede 2D-Node ohne explizites `renderer` die *eigenen* Eigenschaften (ohne Kinder und Maske) mit der Pixi-Prüfung. Meldet sie eine Warnung oder einen Fehler, rendert **Skia** diese Node. Info-Meldungen (z. B. `smoothing: 'cubic'` → linear) lösen keinen Rückfall aus.
 - Der Planner (`planFrame`) nutzt dieselbe Entscheidung. Benachbarte Nodes desselben Backends werden weiter zu einem Layer verschmolzen; eine Gruppe mit Pixi- und Skia-Kindern wird zur Compositor-Gruppe (ADR 0024). Kann Pixi die Eigenschaften einer Gruppe selbst nicht zeichnen, rendert Skia die ganze Gruppe.
-- Die Vorab-Prüfung (`checkProject`, `openvideo check`) meldet jeden Rückfall als Info-Diagnose **`OV_PIXI_FALLBACK`** mit den auslösenden Merkmalen (`details.features`).
+- Die Vorab-Prüfung (`checkProject`, `openvideo validate`) meldet jeden Rückfall als Info-Diagnose **`OV_PIXI_FALLBACK`** mit den auslösenden Merkmalen (`details.features`).
 - Ein explizites `renderer: 'pixi'` an der Node erzwingt PixiJS ohne Rückfall; die Pixi-Meldungen gelten dann wie bisher.
 - PixiJS bekommt `rich-text` (Spans über PixiJS-`tagStyles`, Span-Text bleibt wörtlich) und den Blend Mode `hue` (eigener `BlendModeFilter` nach W3C Compositing Level 1, `HueBlend`).
 

@@ -19,4 +19,4 @@
 
 ## Folgen
 
-Autoren und Agents schreiben einen Shader bei Bedarf zweimal, dafür ist das Verhalten explizit und prüfbar: `openvideo check` zeigt, welches Backend welche Quelle nutzt. Ein Projekt mit beiden Quellen rendert mit Skia und mit Pixi ohne Rückfall.
+Autoren und Agents schreiben einen Shader bei Bedarf zweimal, dafür ist das Verhalten explizit und prüfbar: `openvideo validate` zeigt, welches Backend welche Quelle nutzt. Ein Projekt mit beiden Quellen rendert mit Skia und mit Pixi ohne Rückfall.
