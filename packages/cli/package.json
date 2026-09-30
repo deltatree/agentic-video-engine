@@ -1,7 +1,7 @@
 {
   "name": "@agentic-video/cli",
   "version": "0.1.0",
-  "description": "Kommandozeile openvideo: create, dev, studio, validate, render, render-frame, inspect, doctor, benchmark, cache, fonts, assets, serve, mcp, worker.",
+  "description": "Kommandozeile openvideo: create, dev, studio, validate, render, render-frame, inspect, op, patch, contact-sheet, import, doctor, benchmark, cache, fonts, assets, serve, mcp, worker.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
@@ -11,6 +11,10 @@
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "exports": {
     ".": {
@@ -22,6 +26,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "studio",
     "LICENSE",
     "README.md"
   ],
@@ -37,6 +42,7 @@
     "@agentic-video/fonts": "0.1.0",
     "@agentic-video/ffmpeg": "0.1.0",
     "@agentic-video/renderer-blender": "0.1.0",
+    "@agentic-video/renderer-browser": "0.1.0",
     "@agentic-video/sandbox": "0.1.0",
     "@agentic-video/mcp": "0.1.0",
     "playwright-core": "1.63.0",

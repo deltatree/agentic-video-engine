@@ -25,6 +25,18 @@
     },
     {
       "path": "../png"
+    },
+    {
+      "path": "../anime"
+    },
+    {
+      "path": "../importers"
+    },
+    {
+      "path": "../motion-canvas-adapter"
+    },
+    {
+      "path": "../speech"
     }
   ]
 }

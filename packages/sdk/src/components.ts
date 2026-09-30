@@ -130,6 +130,19 @@ export const SubtitleTrack: ElementFactory<SubtitleTrackProps> = builtin('Subtit
 
 /** Verschachtelte Composition. @example <CompositionRef composition="intro" /> */
 export const CompositionRef: ElementFactory<NodeProps<'composition-ref'>> = builtin('CompositionRef');
+/**
+ * Spielt Kinder nacheinander ab (→ `sequence`). Jedes Kind braucht `timing.duration` (oder ist eine
+ * `CompositionRef`); `between` bzw. `transitions` legen Überblendungen zwischen den Kindern fest.
+ *
+ * @example
+ * ```tsx
+ * <Sequence between={{ type: 'fade', duration: '0.5s' }}>
+ *   <Rect width={1920} height={1080} fill="#FF5A1F" timing={{ duration: '2s' }} />
+ *   <Rect width={1920} height={1080} fill="#2CB67D" timing={{ duration: '2s' }} />
+ * </Sequence>
+ * ```
+ */
+export const Sequence: ElementFactory<NodeProps<'sequence'>> = builtin('Sequence');
 /** Generische Komponente der Bibliothek. @example <Component component="LowerThird" props={{ title: 'Ada' }} /> */
 export const Component: ElementFactory<NodeProps<'component'>> = builtin('Component');
 

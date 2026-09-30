@@ -117,7 +117,9 @@ async function readBody(req: IncomingMessage, limit: number): Promise<Uint8Array
     if (size > limit) return undefined;
     chunks.push(chunk);
   }
-  return new Uint8Array(Buffer.concat(chunks));
+  // `Buffer.concat` legt schon einen eigenen Puffer an; eine Sicht darauf spart eine zweite Kopie (Story 18.4).
+  const body = Buffer.concat(chunks, size);
+  return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
 }
 
 function send(res: ServerResponse, status: number, type: string, body: string | Uint8Array): void {
@@ -167,7 +169,15 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       if (body?.length !== wait.byteLength) {
         send(res, 413, 'text/plain', 'Wrong frame size');
         pending.delete(a);
-        wait.reject(new Error(`Frame upload had the wrong size (expected ${String(wait.byteLength)} bytes).`));
+        wait.reject(
+          new OpenVideoError({
+            code: 'OV_BROWSER_FRAME_SIZE',
+            errorClass: 'BrowserRendererError',
+            problem: `The frame upload had the wrong size (expected ${String(wait.byteLength)} bytes, received ${String(body?.length ?? 0)}).`,
+            details: { expected: wait.byteLength, received: body?.length ?? 0 },
+            suggestions: ['Check that no device scale factor is forced on the render host.', 'Render again; report the error with the layer size if it persists.'],
+          }),
+        );
         return;
       }
       pending.delete(a);
@@ -251,7 +261,9 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       };
     },
     close() {
-      for (const wait of pending.values()) wait.reject(new Error('Render host closed.'));
+      for (const wait of pending.values()) {
+        wait.reject(new OpenVideoError({ code: 'OV_BROWSER_CLOSED', errorClass: 'BrowserRendererError', problem: 'The render host closed while a frame was pending.', suggestions: ['Keep the renderer open until all layers are rendered, then dispose it.'] }));
+      }
       pending.clear();
       return new Promise<void>((resolve) => {
         server.closeAllConnections();

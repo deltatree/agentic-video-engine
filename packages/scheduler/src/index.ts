@@ -18,3 +18,4 @@ export * from './process-runner.js';
 export * from './docker-runner.js';
 export * from './coordinator.js';
 export * from './remote-runner.js';
+export * from './keys.js';

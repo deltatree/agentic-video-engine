@@ -10,6 +10,12 @@ import { interpolate } from './interpolate.js';
 import { springProgress } from './spring.js';
 import { toFrames } from './time.js';
 
+/** Ein benanntes Event der Timeline: Composition-Frame und Daten des Markers. */
+export interface TimelineEvent {
+  readonly frame: number;
+  readonly data: Readonly<Record<string, string | number | boolean>>;
+}
+
 /** Kontext für die Auswertung einer Property. */
 export interface AnimationContext {
   /** Lokaler Frame der Node (darf gebrochen sein, z. B. für Motion Blur). */
@@ -20,6 +26,8 @@ export interface AnimationContext {
   readonly durationFrames: number;
   /** Marker in Frames (Composition-Zeit). */
   readonly markers?: ReadonlyMap<string, number>;
+  /** Benannte Events (Marker mit `kind: 'event'`) in Frames (Composition-Zeit) mit ihren Daten. */
+  readonly events?: ReadonlyMap<string, TimelineEvent>;
   /** Versatz zwischen Composition-Zeit und lokaler Zeit (Composition-Frame = lokal + offset). */
   readonly markerOffset?: number;
   /** Löst `theme.<gruppe>.<name>` auf. */
@@ -43,6 +51,11 @@ function localMarkers(ctx: AnimationContext): ReadonlyMap<string, number> | unde
   const offset = ctx.markerOffset ?? 0;
   if (offset === 0) return ctx.markers;
   return new Map([...ctx.markers].map(([k, v]) => [k, v - offset]));
+}
+
+function localEvents(events: ReadonlyMap<string, TimelineEvent>, ctx: AnimationContext): Map<string, { time: number; data: TimelineEvent['data'] }> {
+  const offset = ctx.markerOffset ?? 0;
+  return new Map([...events].map(([k, e]) => [k, { time: (e.frame - offset) / ctx.fps, data: e.data }]));
 }
 
 function frameOf(t: TimeValue, ctx: AnimationContext): number {
@@ -172,6 +185,7 @@ export function evaluateAnimated(value: unknown, ctx: AnimationContext): unknown
         duration: ctx.durationFrames / ctx.fps,
         progress: ctx.durationFrames > 0 ? Math.min(Math.max(ctx.frame / ctx.durationFrames, 0), 1) : 0,
         ...(markers !== undefined ? { markers: new Map([...markers].map(([k, f]) => [k, f / ctx.fps])) } : {}),
+        ...(ctx.events !== undefined ? { events: localEvents(ctx.events, ctx) } : {}),
         ...(ctx.vars !== undefined ? { vars: ctx.vars } : {}),
       }),
     );

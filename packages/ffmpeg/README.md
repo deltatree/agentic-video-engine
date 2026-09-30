@@ -21,3 +21,7 @@ Fehlt ein Programm, meldet `locateFfmpeg()` den Code `OV_FFMPEG_MISSING` mit Ins
 | `concatSegments(paths, out)` | Segmente ohne Neukodierung zusammenfügen |
 
 Die Abbildung von `quality` (0–100) auf CRF und qscale steht in `src/encoder.ts`.
+
+Hardware-Encoding ist Opt-in (Story 21.5): Ohne `hardware` kodiert der Encoder auf der CPU (`none`), damit jede
+Maschine dieselben Bytes schreibt. `hardware: 'auto'` nutzt einen Hardware-Encoder nach erfolgreicher Probe,
+`nvenc`/`vaapi`/`qsv`/`videotoolbox` verlangen die Familie (Render-Profil: `hardwareAcceleration`).

@@ -56,6 +56,15 @@ export interface ChunkMessage {
   readonly traceparent?: string;
 }
 
+/**
+ * Bricht den Chunk `id` ab (Story 18.8): Der Worker hört nach dem laufenden Frame auf und meldet
+ * `error` mit `OV_RENDER_CANCELLED`. Unbekannte oder fertige IDs ignoriert er.
+ */
+export interface CancelMessage {
+  readonly type: 'cancel';
+  readonly id: string;
+}
+
 /** Ein neu gerenderter Frame (Stream-Modus): Frame-Schlüssel und OVRF-Bytes. */
 export interface FrameMessage {
   readonly type: 'frame';
@@ -88,7 +97,7 @@ export interface ShutdownMessage {
   readonly type: 'shutdown';
 }
 
-export type ProtocolMessage = InitMessage | ChunkMessage | FrameMessage | ResultMessage | ErrorMessage | LogMessage | ShutdownMessage;
+export type ProtocolMessage = InitMessage | ChunkMessage | CancelMessage | FrameMessage | ResultMessage | ErrorMessage | LogMessage | ShutdownMessage;
 
 /** Größte erlaubte JSON-Länge eines Rahmens (64 MiB). */
 export const MAX_HEADER_BYTES = 64 * 1024 * 1024;
@@ -236,6 +245,11 @@ export function parseMessage(header: unknown, binary: Uint8Array): ProtocolMessa
       const tp = h['traceparent'];
       if (typeof id !== 'string' || !isChunkRequest(request)) throw protocolError('chunk needs "id" and a valid "request".');
       return { type: 'chunk', id, request, ...(typeof tp === 'string' ? { traceparent: tp } : {}) };
+    }
+    case 'cancel': {
+      const id = h['id'];
+      if (typeof id !== 'string') throw protocolError('cancel needs "id".');
+      return { type: 'cancel', id };
     }
     case 'frame': {
       const key = h['key'];

@@ -1,13 +1,15 @@
 /**
  * Inspector, Properties und Effects: Felder aus dem JSON Schema des Node-Typs.
  * Animierte Werte zeigen ein Keyframe-Symbol; „Set keyframe“ legt am aktuellen Frame einen Keyframe an.
+ * Bei mehreren gewählten Nodes zeigt der Inspector die gemeinsamen Felder und ändert alle auf einmal (Story 20.8).
  */
 import { isAnimated, isRecord } from '@agentic-video/core';
 import type { ReactNode } from 'react';
 import { useStudio } from '../context.js';
 import { describeSchema, fieldsFor, objectFields, propertySchema, unionBranches, type FieldSpec } from '../fields.js';
 import { findNode, frames, hasKeyframes, timeInfo, valueAt } from '../ir.js';
-import { num, rec, records, str, type Rec } from '../json.js';
+import { num, rec, records, str, type PatchJson, type Rec } from '../json.js';
+import { MIXED, commonFields, multiSetPatches, sharedValue } from '../multi.js';
 import type { Studio, StudioState } from '../store.js';
 import { Field } from './Field.js';
 
@@ -57,12 +59,12 @@ function PropertyRow(props: { spec: FieldSpec; ctx: NodeContext; studio: Studio;
   // Nicht gesetzte Sichtbarkeit bedeutet sichtbar.
   const current = valueAt(raw, ctx.local, ctx.fps, ctx.duration) ?? (spec.name === 'visible' ? true : undefined);
   const editable = !animated || keyed;
+  const patchesFor = (value: unknown): PatchJson[] => {
+    if (keyed) return value !== null ? [{ op: 'addKeyframe', nodeId: ctx.id, property: spec.name, keyframe: { t: ctx.local, v: value } }] : [];
+    return [{ op: 'setProperty', nodeId: ctx.id, property: spec.name, value }];
+  };
   const commit = (value: unknown): void => {
-    if (keyed) {
-      if (value !== null) void studio.patch([{ op: 'addKeyframe', nodeId: ctx.id, property: spec.name, keyframe: { t: ctx.local, v: value } }]);
-      return;
-    }
-    void studio.patch([{ op: 'setProperty', nodeId: ctx.id, property: spec.name, value }]);
+    void studio.patch(patchesFor(value));
   };
   const setKeyframe = (): void => {
     void studio.patch([{ op: 'addKeyframe', nodeId: ctx.id, property: spec.name, keyframe: { t: ctx.local, v: current ?? defaultValue(spec) } }]);
@@ -77,7 +79,16 @@ function PropertyRow(props: { spec: FieldSpec; ctx: NodeContext; studio: Studio;
           </span>
         )}
       </label>
-      <Field name={spec.name} field={spec.field} value={current} onCommit={commit} disabled={!editable} />
+      <Field
+        name={spec.name}
+        field={spec.field}
+        value={current}
+        onCommit={commit}
+        onPreview={(v) => {
+          studio.previewPatches(patchesFor(v));
+        }}
+        disabled={!editable}
+      />
       {spec.animatable && (!animated || keyed) ? (
         <button type="button" className="icon kf-button" aria-label={`Set keyframe: ${spec.name}`} title={`Set keyframe at frame ${String(ctx.local)}`} onClick={setKeyframe}>
           ◆
@@ -98,13 +109,55 @@ const COMPOSITION_FIELDS: readonly FieldSpec[] = [
   { name: 'background', description: '', animatable: false, field: { kind: 'color' } },
 ];
 
+/** Häufige Felder, die der Inspector-Tab immer zeigt (Properties zeigt alle). */
+const COMMON = new Set(['name', 'x', 'y', 'width', 'height', 'rotation', 'scale', 'opacity', 'zIndex', 'fill', 'text', 'fontSize', 'fontFamily', 'fontWeight', 'textAlign', 'visible', 'component', 'props', 'asset']);
+
+/** Gemeinsame Felder mehrerer Nodes; Änderungen gelten für alle (ein Undo-Schritt). */
+function MultiInspector(props: { mode: 'inspector' | 'properties'; studio: Studio; state: StudioState }): ReactNode {
+  const { studio, state } = props;
+  const targets = state.selection.map((id) => ({ id, node: findNode(state.comp, id)?.node })).filter((t): t is { id: string; node: Rec } => t.node !== undefined);
+  const fields = commonFields(targets.map((t) => fieldsFor(str(t.node['type'], ''))));
+  const shown = props.mode === 'properties' ? fields : fields.filter((f) => COMMON.has(f.name) || targets.some((t) => t.node[f.name] !== undefined));
+  const types = [...new Set(targets.map((t) => str(t.node['type'], '')))];
+  return (
+    <div className="inspector">
+      <h3>
+        {targets.length} nodes <span className="muted small">{types.join(', ')}</span>
+      </h3>
+      <p className="hint small">Changes apply to every selected node. Fields with different values show “mixed”.</p>
+      {shown.map((spec) => {
+        const value = sharedValue(targets.map((t) => studio.valueOf(t.id, t.node[spec.name])));
+        const mixed = value === MIXED;
+        const locals = targets.map((t) => ({ ...t, local: studio.localFrame(t.id) }));
+        return (
+          <div className="field" key={spec.name} title={spec.description}>
+            <label className="field-label">{spec.name}</label>
+            <Field
+              name={spec.name}
+              field={spec.field}
+              value={mixed ? undefined : value}
+              {...(mixed ? { placeholder: 'mixed' } : {})}
+              onCommit={(v) => void studio.setOnSelection(spec.name, v)}
+              onPreview={(v) => {
+                studio.previewPatches(multiSetPatches(locals, spec.name, v).patches);
+              }}
+            />
+            <span className="icon" />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Der Inspector-Tab (Übersicht der Auswahl) und der Properties-Tab (alle Felder). */
 export function Inspector(props: { mode: 'inspector' | 'properties' }): ReactNode {
   const [studio, state] = useStudio();
+  if (state.selection.length > 1) return <MultiInspector mode={props.mode} studio={studio} state={state} />;
   const ctx = nodeContext(studio, state);
   if (ctx === undefined) {
     const comp = state.comp;
-    if (comp === undefined) return <p className="empty">Loading…</p>;
+    if (comp === undefined) return <p className="empty">{state.status === 'error' ? 'The project could not be loaded.' : 'Loading…'}</p>;
     return (
       <div className="inspector">
         <h3>Composition {str(comp['id'], '')}</h3>
@@ -122,14 +175,12 @@ export function Inspector(props: { mode: 'inspector' | 'properties' }): ReactNod
   const type = str(ctx.node['type'], '');
   const all = fieldsFor(type);
   // Inspector: gesetzte und häufige Felder; Properties: alle Felder des Schemas.
-  const common = new Set(['name', 'x', 'y', 'width', 'height', 'rotation', 'scale', 'opacity', 'fill', 'text', 'fontSize', 'fontFamily', 'fontWeight', 'textAlign', 'visible', 'component', 'props', 'asset']);
-  const shown = props.mode === 'properties' ? all : all.filter((f) => common.has(f.name) || ctx.node[f.name] !== undefined);
+  const shown = props.mode === 'properties' ? all : all.filter((f) => COMMON.has(f.name) || ctx.node[f.name] !== undefined);
   return (
     <div className="inspector">
       <h3>
         {ctx.id} <span className="muted small">{type}</span>
       </h3>
-      {state.selection.length > 1 && <p className="hint small">{state.selection.length} nodes selected; editing {ctx.id}.</p>}
       <p className="muted small">Frame {state.frame} (local {ctx.local})</p>
       {shown.map((spec) => (
         <PropertyRow key={spec.name} spec={spec} ctx={ctx} studio={studio} comp={state.comp} />

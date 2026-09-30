@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { EvaluatedNode, EvaluatedScene, LayerRequest, RgbaImage } from '@agentic-video/core';
 import { createBrowserBackends, type BrowserBackends } from '../src/backends.js';
-import { buildRuntime, expectGolden, memoryAssets, node, pixel, testFonts, TEST_FONT } from './helpers.js';
+import { CHROMIUM_GRAPHICS_ARGS } from '../src/host.js';
+import { buildRuntime, chromiumProcesses, expectGolden, memoryAssets, node, pixel, testFonts, TEST_FONT } from './helpers.js';
 
 const W = 320;
 const H = 180;
@@ -66,7 +67,8 @@ let backends: BrowserBackends;
 
 beforeAll(async () => {
   buildRuntime();
-  backends = await createBrowserBackends({ assets, fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
+  // Keine Skripte nötig: ohne OS-Sandbox würde allowHtmlScripts den Start abbrechen (Story 16.1).
+  backends = await createBrowserBackends({ assets, fonts: testFonts(), width: W, height: H });
 });
 
 afterAll(async () => {
@@ -76,6 +78,17 @@ afterAll(async () => {
 });
 
 describe('three-Backend', () => {
+  it('startet Chromium für den ersten WebGL-Layer mit den Grafik-Schaltern neu (Story 16.1)', async () => {
+    await backends.browser.renderLayer(request(0, [node('h0', 'html', { width: 10, height: 10, html: '' })]));
+    expect(chromiumProcesses().some((p) => CHROMIUM_GRAPHICS_ARGS.every((f) => p.args.includes(f)))).toBe(false);
+    // Das Rendern selbst kann an einer zu alten Chromium-Version scheitern (WebGPU); der Neustart geschieht vorher.
+    await backends.three.renderLayer(request(0, [threeScene(0)])).catch(() => undefined);
+    expect(chromiumProcesses().some((p) => CHROMIUM_GRAPHICS_ARGS.every((f) => p.args.includes(f)))).toBe(true);
+    // Danach rendert HTML weiter im neu gestarteten Browser.
+    const image = await backends.browser.renderLayer(request(0, [node('h1', 'html', { width: 100, height: 50, html: '', background: '#123456' })]));
+    expect(pixel(image, 10, 10)).toEqual([0x12, 0x34, 0x56, 255]);
+  });
+
   it('rendert eine Beispielszene über den Host (Golden)', async () => {
     const image = await backends.three.renderLayer(request(10, [threeScene(10)]));
     expect([image.width, image.height]).toEqual([W, H]);

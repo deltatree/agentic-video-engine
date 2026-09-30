@@ -47,6 +47,18 @@ export interface ThreeLayerInput {
   /** URL eines Assets auf der Host-Origin. */
   readonly assetUrl: (assetId: string) => string;
   readonly debug?: { readonly showCameraFrustum?: boolean; readonly showLightHelpers?: boolean };
+  /**
+   * Ergebnis der Grafik-Probe, die im Cache-Schlüssel steht (Review M3): `webgpu` entscheidet
+   * `backend: 'auto'`, `maxTextureSize` (WebGL2 `MAX_TEXTURE_SIZE`) die Texturgrenze von WebGL2.
+   * Ohne Angabe prüft der Renderer live (Studio, direkte Nutzung).
+   */
+  readonly graphics?: ThreeGraphicsHint;
+}
+
+/** Grafik-Fähigkeiten aus der Probe des Hosts (siehe {@link ThreeLayerInput.graphics}). */
+export interface ThreeGraphicsHint {
+  readonly webgpu: boolean;
+  readonly maxTextureSize: number;
 }
 
 /** Postprocessing-Einstellungen eines Frames (Zahlen bereits ausgewertet). */
@@ -201,7 +213,7 @@ function addDebugHelpers(scene: Scene, active: Camera, collected: Collected, inp
  * const built = await buildScene(input, assets, (preset) => pmremFor(preset));
  * ```
  */
-export async function buildScene(input: ThreeLayerInput, assets: ThreeAssets, presetEnvironment: PresetEnvironment): Promise<BuiltScene> {
+export async function buildScene(input: ThreeLayerInput, assets: ThreeAssets, presetEnvironment: PresetEnvironment, textureLimit?: { readonly maxSize: number; readonly downscale: boolean }): Promise<BuiltScene> {
   const node = input.node;
   const aspect = input.height > 0 ? input.width / input.height : 1;
   const disposables: { dispose(): void }[] = [];
@@ -214,6 +226,7 @@ export async function buildScene(input: ThreeLayerInput, assets: ThreeAssets, pr
     pixelHeight: Math.max(1, Math.round(input.height * input.scale)),
     aspect,
     disposables,
+    ...(textureLimit !== undefined ? { textureLimit: { ...textureLimit, frame: input.frame } } : {}),
   };
   const scene = new Scene();
   const collected: Collected = { cameras: [], lights: [] };

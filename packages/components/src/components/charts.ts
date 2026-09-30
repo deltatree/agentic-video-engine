@@ -152,6 +152,42 @@ function seriesOf(p: Props): Series[] {
   return single.length > 0 ? [{ name: '', color: p.has('color') ? p.color('color', '#FFFFFF') : undefined, data: single }] : [];
 }
 
+/**
+ * Anfang einer Polyline bis zum Anteil `t` (0..1) ihrer Länge – dieselbe Strecke, die `trimEnd: t`
+ * von der Linie zeigt. Liefert mindestens den ersten Punkt.
+ *
+ * @example
+ * ```ts
+ * polylinePrefix([[0, 0], [10, 0], [10, 10]], 0.75); // [[0, 0], [10, 0], [10, 5]]
+ * ```
+ */
+export function polylinePrefix(points: readonly (readonly [number, number])[], t: number): [number, number][] {
+  const first = points[0];
+  if (first === undefined) return [];
+  const lengths = points.slice(1).map((p, i) => {
+    const prev = points[i] ?? p;
+    return Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+  });
+  const total = lengths.reduce((a, b) => a + b, 0);
+  const k = clamp01(t);
+  if (k >= 1 || total === 0) return k >= 1 ? points.map(([x, y]) => [x, y]) : [[first[0], first[1]]];
+  let left = k * total;
+  const out: [number, number][] = [[first[0], first[1]]];
+  for (let i = 0; i < lengths.length; i += 1) {
+    const len = lengths[i] ?? 0;
+    const a = points[i] ?? first;
+    const b = points[i + 1] ?? a;
+    if (left >= len) {
+      out.push([b[0], b[1]]);
+      left -= len;
+      continue;
+    }
+    if (left > 0) out.push([a[0] + ((b[0] - a[0]) * left) / len, a[1] + ((b[1] - a[1]) * left) / len]);
+    break;
+  }
+  return out;
+}
+
 function buildLine(input: BuildInput): Built {
   const { p, theme } = input;
   const width = p.num('width', 720);
@@ -172,14 +208,20 @@ function buildLine(input: BuildInput): Built {
     const pts: [number, number][] = s.data.map((d, i) => [plot.x + inset + i * stepX, plot.y + plot.h - (Math.max(0, d.value) / plot.max) * plot.h]);
     if (pts.length === 0) return;
     const first = pts[0] ?? [plot.x, plot.y + plot.h];
-    const last = pts[pts.length - 1] ?? first;
     if (area && pts.length >= 2) {
+      // Die Fläche liegt unter der schon gezeichneten Linie: Sie wächst mit demselben Anteil der
+      // Linienlänge wie `trimEnd` und steht nie vor der Linie. Der Verlauf hängt an der Box der
+      // vollen Fläche (Pixel), damit er beim Wachsen nicht mitwandert; am Ende gleicht er `relative`.
+      const base = plot.y + plot.h;
+      const drawn = polylinePrefix(pts, k);
+      const end = drawn[drawn.length - 1] ?? first;
+      const minX = Math.min(...pts.map(([x]) => x));
+      const minY = Math.min(...pts.map(([, y]) => y), base);
       nodes.push({
         id: `area-${String(si)}`,
         type: 'polygon',
-        points: [...pts, [last[0], plot.y + plot.h], [first[0], plot.y + plot.h]],
-        fill: { type: 'linear', start: { x: 0, y: 0 }, end: { x: 0, y: 1 }, stops: [{ offset: 0, color: withAlpha(color, 0.35) }, { offset: 1, color: withAlpha(color, 0) }] },
-        opacity: k,
+        points: [...drawn, [end[0], base], [first[0], base]],
+        fill: { type: 'linear', units: 'pixels', start: { x: minX, y: minY }, end: { x: minX, y: minY + (base - minY) }, stops: [{ offset: 0, color: withAlpha(color, 0.35) }, { offset: 1, color: withAlpha(color, 0) }] },
       });
     }
     if (pts.length >= 2) nodes.push({ id: `line-${String(si)}`, type: 'polyline', points: pts, stroke: color, strokeWidth: 4, strokeJoin: 'round', strokeCap: 'round', trimEnd: k });
@@ -307,7 +349,7 @@ export const BarChart = defineComponent({
 
 export const LineChart = defineComponent({
   name: 'LineChart',
-  description: 'Line chart with one or more series (`series`, or `data` for one series). Lines draw on (trim), points pop in; one series gets a gradient area.',
+  description: 'Line chart with one or more series (`series`, or `data` for one series). Lines draw on (trim), points pop in; one series gets a gradient area that grows with the line.',
   props: { series: Type.Optional(SeriesSchema), data: Type.Optional(Type.Array(Datum)), area: Type.Optional(Type.Boolean()), ...XYProps, ...GrowthProps },
   example: {
     series: [

@@ -60,7 +60,7 @@ export function parseJobInfo(raw: unknown): JobInfo | undefined {
     ...(typeof raw['finishedAt'] === 'string' ? { finishedAt: raw['finishedAt'] } : {}),
     ...('result' in raw ? { result: raw['result'] } : {}),
     ...(isRecord(error) && typeof error['code'] === 'string' && typeof error['problem'] === 'string'
-      ? { error: { code: error['code'], severity: 'error' as const, errorClass: typeof error['errorClass'] === 'string' ? error['errorClass'] : 'JobError', problem: error['problem'], suggestions: Array.isArray(error['suggestions']) ? error['suggestions'].map(String) : [] } }
+      ? { error: { code: error['code'], severity: 'error' as const, errorClass: typeof error['errorClass'] === 'string' ? error['errorClass'] : 'JobError', problem: error['problem'], suggestions: Array.isArray(error['suggestions']) && error['suggestions'].length > 0 ? error['suggestions'].map(String) : ['Start the job again; call diagnostics.get if it fails again.'] } }
       : {}),
     ...(typeof raw['traceparent'] === 'string' ? { traceparent: raw['traceparent'] } : {}),
   };
@@ -200,6 +200,10 @@ export class JobManager {
               diagnostic = { code: 'OV_INTERNAL', severity: 'error', errorClass: 'InternalError', problem: `Job ${id} failed with an internal error.`, suggestions: ['Report this bug with the job id; the server log has the details.'] };
             }
             const cancelled = job.abort.aborted || diagnostic.code === 'OV_RENDER_CANCELLED';
+            // Jede Job-Diagnose trägt einen Vorschlag (Story 19.6), auch wenn der Renderer keinen mitgibt.
+            if (diagnostic.suggestions.length === 0) {
+              diagnostic = { ...diagnostic, suggestions: [cancelled ? 'Start the render again; finished frames come from the cache.' : 'Call diagnostics.get for the project, fix the reported errors and start the render again.'] };
+            }
             if (!cancelled) this.telemetry.metrics.workerFailure(diagnostic.code);
             job.info = { ...job.info, state: cancelled ? 'cancelled' : 'failed', error: diagnostic, finishedAt: new Date().toISOString() };
           },
@@ -227,7 +231,7 @@ export class JobManager {
   /** Bricht einen Job ab: Wartende Jobs starten nie, laufende enden beim nächsten Frame. */
   cancel(id: string): JobInfo {
     const job = this.jobs.get(id);
-    if (job === undefined) throw new OpenVideoError({ code: 'OV_JOB_UNKNOWN', errorClass: 'JobError', problem: `Job "${id}" does not exist.`, suggestions: [] });
+    if (job === undefined) throw new OpenVideoError({ code: 'OV_JOB_UNKNOWN', errorClass: 'JobError', problem: `Job "${id}" does not exist.`, suggestions: ['Use the jobId returned by video.render or preview.render; jobs of other workspaces are not visible.'] });
     if (!finished(job.info.state)) {
       job.abort.aborted = true;
       if (job.info.state === 'queued') {

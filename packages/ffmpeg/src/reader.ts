@@ -13,7 +13,7 @@ import { OpenVideoError, type RgbaImage } from '@agentic-video/core';
 import { locateFfmpeg } from './locate.js';
 import { premultiplyInPlace } from './pixels.js';
 import { decoderArgs, probeMedia, type MediaInfo, type ProbeOptions } from './probe.js';
-import { appendLimited, lastLine, waitForExit } from './process.js';
+import { appendLimited, ffmpegEnv, lastLine, waitForExit } from './process.js';
 
 /** Optionen für {@link VideoFrameReader.open}. */
 export interface VideoFrameReaderOptions extends ProbeOptions {
@@ -199,7 +199,7 @@ export class VideoFrameReader {
       '-map', '0:v:0', '-an', '-sn', '-fps_mode', 'passthrough',
       '-f', 'rawvideo', '-pix_fmt', 'rgba', '-',
     ];
-    const child = spawn(this.#ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(this.#ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'], env: ffmpegEnv() });
     const dec: Decoder = { child, iterator: child.stdout[Symbol.asyncIterator](), chunks: [], bytes: 0, next: index, stderr: '', last: undefined };
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (c: string) => { dec.stderr = appendLimited(dec.stderr, c); });

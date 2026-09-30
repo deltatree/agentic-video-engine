@@ -41,6 +41,7 @@ import {
   type Filter,
   type Renderer,
   type TextStyleAlign,
+  type TextStyleOptions,
 } from 'pixi.js';
 import { LUMINANCE_TO_ALPHA, filterMatrix, toColorMatrix } from './filters.js';
 import { colorAlpha, toFill, toStroke, type Box } from './paint.js';
@@ -205,17 +206,44 @@ async function ensureFont(style: string, weight: number, size: number, family: s
   });
 }
 
+/** Rich-Text als PixiJS-Markup: je Span ein eigenes Tag mit Stil-Überschreibungen. */
+interface RichMarkup {
+  readonly text: string;
+  readonly spans: readonly { readonly tag: string; readonly style: Readonly<Record<string, unknown>> }[];
+}
+
+/**
+ * Baut aus den Spans einer `rich-text`-Node Markup für PixiJS-`tagStyles`. Der Tag-Präfix wird so
+ * gewählt, dass er in keinem Span-Text vorkommt; Span-Text bleibt damit wörtlich.
+ */
+function richMarkup(node: EvaluatedNode): RichMarkup {
+  const raw = node.props['spans'];
+  const spans = Array.isArray(raw) ? raw.filter(isRecord) : [];
+  const texts = spans.map((span) => (typeof span['text'] === 'string' ? span['text'] : ''));
+  let prefix = 'ovs';
+  while (texts.some((t) => t.includes(prefix))) prefix += 'x';
+  const out = spans.map((style, i) => ({ tag: `${prefix}${String(i)}`, style }));
+  return { text: out.map((s, i) => `<${s.tag}>${texts[i] ?? ''}</${s.tag}>`).join(''), spans: out };
+}
+
 async function buildText(node: EvaluatedNode, ctx: BuildContext): Promise<BuiltText> {
-  const text = getString(node, 'text', '');
+  const rich = node.type === 'rich-text' ? richMarkup(node) : undefined;
+  const text = rich?.text ?? getString(node, 'text', '');
   const family = fontFamilyOf(node, ctx.input.defaultFont);
   const size = getNumber(node, 'fontSize', DEFAULT_FONT_SIZE);
   const weight = getNumber(node, 'fontWeight', 400);
   const fontStyle = node.props['fontStyle'] === 'italic' ? 'italic' : 'normal';
-  const lineHeight = getNumber(node, 'lineHeight', DEFAULT_LINE_HEIGHT) * size;
+  // Zeilenhöhe als Vielfaches der größten Schrift im Absatz (bei Rich-Text die größte Span-Schrift).
+  const spanSizes = rich?.spans.map((s) => (typeof s.style['fontSize'] === 'number' ? s.style['fontSize'] : size)) ?? [];
+  const lineHeight = getNumber(node, 'lineHeight', DEFAULT_LINE_HEIGHT) * Math.max(size, ...spanSizes);
   const wrapWidth = node.props['width'];
   const alignRaw = getString(node, 'textAlign', 'left');
   const align: TextStyleAlign = alignRaw === 'center' || alignRaw === 'right' || alignRaw === 'justify' ? alignRaw : alignRaw === 'end' ? 'right' : 'left';
   await ensureFont(fontStyle, weight, size, family);
+  for (const span of rich?.spans ?? []) {
+    const st = span.style;
+    await ensureFont(st['fontStyle'] === 'italic' ? 'italic' : fontStyle, typeof st['fontWeight'] === 'number' ? st['fontWeight'] : weight, typeof st['fontSize'] === 'number' ? st['fontSize'] : size, typeof st['fontFamily'] === 'string' ? st['fontFamily'] : family);
+  }
   const baseStyle = {
     fontFamily: family,
     fontSize: size,
@@ -227,7 +255,9 @@ async function buildText(node: EvaluatedNode, ctx: BuildContext): Promise<BuiltT
     wordWrapWidth: typeof wrapWidth === 'number' ? wrapWidth : 0,
   } as const;
   const styleWeight = String(Math.round(weight));
-  const measureStyle = new TextStyle({ ...baseStyle, fontWeight: isFontWeight(styleWeight) ? styleWeight : 'normal' });
+  // Für die Messung genügen Schrift-Eigenschaften der Spans; Farben folgen, sobald die Box feststeht.
+  const measureTags = rich === undefined ? undefined : Object.fromEntries(rich.spans.map((s) => [s.tag, spanFont(s.style)]));
+  const measureStyle = new TextStyle({ ...baseStyle, fontWeight: isFontWeight(styleWeight) ? styleWeight : 'normal', ...(measureTags !== undefined ? { tagStyles: measureTags } : {}) });
   const metrics = CanvasTextMetrics.measureText(text, measureStyle);
   const width = typeof wrapWidth === 'number' ? wrapWidth : metrics.width;
   const height = metrics.lines.length * lineHeight;
@@ -236,11 +266,13 @@ async function buildText(node: EvaluatedNode, ctx: BuildContext): Promise<BuiltT
   const strokePaint = node.props['stroke'];
   const stroke = strokePaint === undefined ? undefined : strokeOf(ctx, strokePaint, box, node);
   measureStyle.destroy();
+  const tagStyles = rich === undefined ? undefined : Object.fromEntries(rich.spans.map((s) => [s.tag, spanStyle(ctx, s.style, box, node)]));
   const style = new TextStyle({
     ...baseStyle,
     fontWeight: isFontWeight(styleWeight) ? styleWeight : 'normal',
     ...(fill !== undefined ? { fill } : {}),
     ...(stroke !== undefined ? { stroke } : {}),
+    ...(tagStyles !== undefined ? { tagStyles } : {}),
   });
   const content = new Container();
   const k = align === 'center' ? 0.5 : align === 'right' ? 1 : 0;
@@ -269,6 +301,35 @@ async function buildText(node: EvaluatedNode, ctx: BuildContext): Promise<BuiltT
   label.x = (width - metrics.width) * k;
   content.addChild(label);
   return { content, measured: { width, height } };
+}
+
+/** Schrift-Eigenschaften eines Spans als PixiJS-Stil (ohne Farben). */
+function spanFont(span: Readonly<Record<string, unknown>>): TextStyleOptions {
+  const out: TextStyleOptions = {};
+  if (typeof span['fontFamily'] === 'string') out.fontFamily = span['fontFamily'];
+  if (typeof span['fontSize'] === 'number') out.fontSize = span['fontSize'];
+  if (typeof span['fontWeight'] === 'number') {
+    const w = String(Math.round(span['fontWeight']));
+    out.fontWeight = isFontWeight(w) ? w : 'normal';
+  }
+  if (span['fontStyle'] === 'italic' || span['fontStyle'] === 'normal') out.fontStyle = span['fontStyle'];
+  if (typeof span['letterSpacing'] === 'number') out.letterSpacing = span['letterSpacing'];
+  return out;
+}
+
+/** Vollständiger Stil eines Spans: Schrift, Füllung und Kontur (Verläufe relativ zur Textbox). */
+function spanStyle(ctx: BuildContext, span: Readonly<Record<string, unknown>>, box: Box, node: EvaluatedNode): TextStyleOptions {
+  const out = spanFont(span);
+  if (span['fill'] !== undefined) {
+    const fill = fillOf(ctx, span['fill'], box);
+    if (fill !== undefined) out.fill = fill;
+  }
+  if (span['stroke'] !== undefined) {
+    const stroke = toStroke(span['stroke'], box, { ...node.props, ...(typeof span['strokeWidth'] === 'number' ? { strokeWidth: span['strokeWidth'] } : {}) });
+    if (stroke?.fill instanceof FillGradient) track(ctx, stroke.fill);
+    if (stroke !== undefined) out.stroke = stroke;
+  }
+  return out;
 }
 
 const FONT_WEIGHTS = new Set(['100', '200', '300', '400', '500', '600', '700', '800', '900', 'normal', 'bold', 'bolder', 'lighter']);
@@ -423,6 +484,7 @@ async function buildContent(node: EvaluatedNode, ctx: BuildContext): Promise<{ c
     case 'path':
       return { content: buildShape(node, localBox(node), ctx) };
     case 'text':
+    case 'rich-text':
       return buildText(node, ctx);
     case 'image':
       return buildImage(node, ctx);
@@ -535,7 +597,7 @@ export async function buildNode(node: EvaluatedNode, ctx: BuildContext): Promise
   const opacity = Math.min(Math.max(getNumber(node, 'opacity', 1), 0), 1);
   if (opacity < 1) {
     // Opacity wirkt auf das Gruppenbild: bei Kindern oder Fläche plus Kontur als Filter, sonst direkt.
-    const asGroup = node.children.length > 0 || (node.props['stroke'] !== undefined && node.props['fill'] !== undefined) || node.type === 'text';
+    const asGroup = node.children.length > 0 || (node.props['stroke'] !== undefined && node.props['fill'] !== undefined) || node.type === 'text' || node.type === 'rich-text';
     if (asGroup) filters.push(track(ctx, new AlphaFilter({ alpha: opacity })));
     else outer.alpha = opacity;
   }

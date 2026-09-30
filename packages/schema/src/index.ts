@@ -13,6 +13,7 @@ export * from './diagnostics.js';
 export * from './version.js';
 export * from './primitives.js';
 export * from './nodes.js';
+export * from './examples.js';
 export * from './project.js';
 export * from './validator.js';
 export * from './validate.js';

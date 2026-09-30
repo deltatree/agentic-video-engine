@@ -1,0 +1,15 @@
+1
+00:00:00,300 --> 00:00:02,400
+Weekly active users grew all year.
+
+2
+00:00:02,400 --> 00:00:04,400
+We ended 2026 up 38 percent.
+
+3
+00:00:04,800 --> 00:00:07,200
+Most new users came from search.
+
+4
+00:00:07,200 --> 00:00:09,700
+Referrals doubled since spring.

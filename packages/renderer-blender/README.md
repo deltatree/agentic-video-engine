@@ -32,8 +32,13 @@ const images = await backend.renderFrames([request0, request1, request2]); // ei
 - OpenVideo besitzt die Zeit. Blender spielt keine eigene Animation ab.
 - glTF-Clips wertet das Skript zur OpenVideo-Zeit aus (`offset + lokale Zeit · speed`).
 - Motion Blur braucht Zustände an Nachbar-Subframes.
-  Berechne sie mit `evaluateMotionStates()` und übergib sie als `motionStates`.
-- Das Skript setzt daraus lineare Keyframes für Position, Rotation und Skalierung.
+  Der Frame-Render (`@agentic-video/render`) berechnet sie für jede `blender`-Node mit `motionBlur: true`
+  an den Offsets ±0,25 Frames (Verschlusszeit ½ Frame) und übergibt sie als `motionStates`.
+  Das gilt für jedes Backend mit der Fähigkeit `motion-states` (`MOTION_STATES_CAPABILITY`).
+  Die Zustände gehen in den Layer-Schlüssel ein.
+  Direkt am Backend berechnest du sie mit `evaluateMotionStates()`.
+- Das Skript setzt daraus lineare Keyframes für Position, Rotation und Skalierung,
+  auch für jede Instanz (`instances3d`) und jedes Partikel (`particles3d`).
   Material- und Lichtwerte gelten zum Frame selbst.
 
 ## Determinismus
@@ -62,7 +67,12 @@ const images = await backend.renderFrames([request0, request1, request2]); // ei
 Pässe: `depth` (normalisiert, nah = schwarz, Hintergrund = weiß), `normal`
 (Weltnormale in OpenVideo-Achsen, `n · 0,5 + 0,5`), `object-mask` (`maskObject` weiß, verdeckt durch andere Objekte).
 
-Nicht übertragbar: `particles3d`, `instances3d` mit mehr als 10 000 Instanzen,
+`particles3d` wird als Instanzen übertragen: Jedes lebende Partikel ist eine unbeleuchtete Kugel
+(Durchmesser `size`, Farbe über die Objektfarbe), berechnet mit derselben Formel wie im Three.js-Renderer.
+`additive: true` mischt additiv (Emission plus Durchsicht).
+Die Objekte sind nach Partikel-Index gepoolt; nicht lebende Partikel werden ausgeblendet.
+
+Nicht übertragbar: `instances3d` bzw. `particles3d` mit mehr als 10 000 Instanzen/Partikeln,
 GLSL-Shader-Materialien, `postprocessing`. `check()` meldet sie als `OV_BLENDER_UNSUPPORTED`.
 
 ## Fehler

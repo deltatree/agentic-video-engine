@@ -181,6 +181,17 @@ function send(url: URL, lookup: LookupFunction, signal: AbortSignal): Promise<In
   });
 }
 
+function incomplete(received: number, cause?: unknown): OpenVideoError {
+  return new OpenVideoError({
+    code: 'OV_FETCH_INCOMPLETE',
+    errorClass: 'AssetError',
+    problem: `The connection closed after ${String(received)} bytes, before the body was complete.`,
+    details: { receivedBytes: received },
+    ...(cause !== undefined ? { cause } : {}),
+    suggestions: ['Retry the import; the server or network interrupted the download.', 'Download the file manually and import the local copy.'],
+  });
+}
+
 function tooLarge(maxBytes: number, length?: number): OpenVideoError {
   return new OpenVideoError({
     code: 'OV_FETCH_TOO_LARGE',
@@ -211,8 +222,9 @@ function readLimited(res: IncomingMessage, maxBytes: number): Promise<Uint8Array
       else chunks.push(chunk);
     });
     res.on('end', () => { finish(undefined); });
-    res.on('error', (error) => { finish(error); });
-    res.on('close', () => { finish(res.complete ? undefined : new Error('The connection closed before the body was complete.')); });
+    // Bricht die Verbindung vor dem Ende ab (Node meldet `aborted` oder nur `close`), ist das ein unvollständiger Download.
+    res.on('error', (error) => { finish(res.complete ? error : incomplete(total, error)); });
+    res.on('close', () => { finish(res.complete ? undefined : incomplete(total)); });
   });
 }
 

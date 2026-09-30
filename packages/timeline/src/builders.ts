@@ -2,7 +2,7 @@
  * Kleine Helfer, die Animationsdaten der IR erzeugen (reine Daten, kein Zustand).
  * SDK, Komponenten und Adapter nutzen sie; das Ergebnis ist direkt JSON.
  */
-import type { AnimatedValue, TimeValue } from '@agentic-video/schema';
+import { OpenVideoError, type AnimatedValue, type TimeValue } from '@agentic-video/schema';
 
 /** Ein Keyframe. `ease` gilt für das Segment, das auf diesen Keyframe zuläuft. */
 export interface Keyframe<T> {
@@ -72,7 +72,15 @@ export function addTime(a: TimeValue, b: TimeValue): TimeValue {
   const secB = seconds(b);
   if (secA !== undefined && secB !== undefined) return `${String(Math.round((secA + secB) * 1e6) / 1e6)}s`;
   if (typeof a === 'string' && a.startsWith('marker:') && secB !== undefined) return `${a}${secB >= 0 ? '+' : '-'}${String(Math.abs(secB))}s`;
-  throw new TypeError(`Cannot add time values ${JSON.stringify(a)} and ${JSON.stringify(b)} without fps; use frames or seconds.`);
+  // Erreichbar aus TSX (`animate({ from, duration })`): strukturierter Fehler mit Vorschlägen.
+  throw new OpenVideoError({
+    code: 'OV_TIME_ADD',
+    errorClass: 'TimeError',
+    problem: `Cannot add the time values ${JSON.stringify(a)} and ${JSON.stringify(b)} without knowing the fps.`,
+    received: `${JSON.stringify(a)} + ${JSON.stringify(b)}`,
+    expected: 'two frame numbers, two seconds values ("1.5s", "500ms"), or a marker plus seconds',
+    suggestions: ['Use the same unit for both values, e.g. from: "1s" and duration: "0.5s", or from: 30 and duration: 15.', 'Give an explicit end time with `to` instead of `duration`.'],
+  });
 }
 
 function seconds(v: TimeValue): number | undefined {

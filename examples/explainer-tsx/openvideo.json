@@ -1,0 +1,5 @@
+{
+  "name": "explainer-tsx",
+  "entry": "src/video.tsx",
+  "outDir": "out"
+}

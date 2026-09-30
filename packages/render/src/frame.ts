@@ -8,18 +8,30 @@ import {
   contentHash,
   evaluateScene,
   frameKey,
+  getNumber,
   isRecord,
+  localBox,
+  localMatrix,
+  multiply,
   planFrame,
+  scale as scaleMatrix,
+  transformRect,
+  unionRect,
   walkEvaluated,
+  type AssetResolver,
   type DebugOptions,
   type Diagnostic,
   type EvaluatedNode,
   type EvaluatedScene,
   type LayerPlan,
+  type Matrix2D,
   type NodeBounds,
+  type Rect,
   type RgbaImage,
 } from '@agentic-video/core';
-import { decodeRawFrame, encodeRawFrameAsync } from '@agentic-video/png';
+import { hasNodeFilters } from '@agentic-video/compositor';
+import { decodeRawFrameAsync, encodeRawFrameAsync } from '@agentic-video/png';
+import { MOTION_STATES_CAPABILITY, evaluateMotionStates, type BlenderLayerRequest, type MotionState } from '@agentic-video/renderer-blender';
 import type { CompositorNode, RenderEnvironment } from './environment.js';
 
 /** Optionen für {@link renderFrame}. */
@@ -32,6 +44,14 @@ export interface RenderFrameOptions {
   /** Frame-Cache nutzen (Standard `true`). */
   readonly useCache?: boolean;
   readonly signal?: { readonly aborted: boolean };
+  /**
+   * Layer-Cache-Politik im Video-Render (Story 18.3): Mit einer Historie (Layer-ID → letzter
+   * Schlüssel, von {@link renderChunk} über alle Frames eines Chunks geführt) schreibt der
+   * Render nur zeitinvariante Layer in den Layer-Cache und keine, deren Schlüssel sich seit dem
+   * vorigen Frame geändert hat. Zeitabhängige Layer (Video, Lottie, Shader …) umgehen den
+   * Layer-Cache dann ganz. Ohne Historie (Einzelframe, Vorschau) wird jeder Layer gecacht.
+   */
+  readonly layerHistory?: Map<string, string>;
 }
 
 /** Ergebnis eines Frame-Renders. */
@@ -73,6 +93,103 @@ function stripNode(node: EvaluatedNode): unknown {
   return { id: node.id, type: node.type, props: node.props, children: node.children.map(stripNode), mask: node.mask === undefined ? undefined : { ...node.mask, node: stripNode(node.mask.node) }, reveal: node.reveal, time: node.time.localFrame };
 }
 
+/** Wie {@link stripNode}, aber ohne lokale Zeit: für zeitinvariante Layer (Story 18.3). */
+function stripNodeTimeless(node: EvaluatedNode): unknown {
+  return { id: node.id, type: node.type, props: node.props, children: node.children.map(stripNodeTimeless), mask: node.mask === undefined ? undefined : { ...node.mask, node: stripNodeTimeless(node.mask.node) }, reveal: node.reveal };
+}
+
+/**
+ * Node-Typen, die das Skia-Backend nur aus ihren (schon ausgewerteten) Properties zeichnet, ohne
+ * die lokale Zeit zu lesen. Text nur ohne `textAnimation`. Video, Sprite, Lottie, Shader und
+ * Partikel lesen die Zeit und fehlen darum.
+ */
+const TIME_INVARIANT_TYPES: ReadonlySet<string> = new Set(['group', 'rect', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'image', 'svg', 'text', 'rich-text']);
+
+/**
+ * Ist ein Layer zeitinvariant, d. h. hängen seine Pixel nur von den Properties ab (Story 18.3)?
+ * Nur für das Skia-Backend belegt; andere Backends (HTML mit CSS-Animationen, Three.js, Blender)
+ * gelten als zeitabhängig.
+ *
+ * @example
+ * ```ts
+ * isTimeInvariantLayer('skia', [rectNode]); // true
+ * isTimeInvariantLayer('skia', [videoNode]); // false
+ * ```
+ */
+export function isTimeInvariantLayer(backendId: string, nodes: readonly EvaluatedNode[]): boolean {
+  if (backendId !== 'skia') return false;
+  const ok = (n: EvaluatedNode): boolean =>
+    TIME_INVARIANT_TYPES.has(n.type) && !((n.type === 'text' || n.type === 'rich-text') && n.props['textAnimation'] !== undefined) && n.children.every(ok) && (n.mask === undefined || ok(n.mask.node));
+  return nodes.every(ok);
+}
+
+/**
+ * Dekodierte zeitinvariante Layer im Arbeitsspeicher (Story 18.3), je Umgebung: Ein statischer
+ * Hintergrund wird im Video-Render einmal gerendert und danach weder neu gezeichnet noch aus dem
+ * komprimierten Cache entpackt. LRU mit höchstens {@link MEMORY_LAYER_BYTES} Bytes je Umgebung
+ * (4K: vier Layer, 1080p: 16).
+ */
+const memoryLayers = new WeakMap<RenderEnvironment, Map<string, RgbaImage>>();
+const MEMORY_LAYER_BYTES = 136 * 1024 * 1024;
+
+function rememberLayer(env: RenderEnvironment, key: string, image: RgbaImage): void {
+  if (image.data.length > MEMORY_LAYER_BYTES) return;
+  let m = memoryLayers.get(env);
+  if (m === undefined) {
+    m = new Map();
+    memoryLayers.set(env, m);
+  }
+  m.delete(key);
+  m.set(key, image);
+  let total = 0;
+  for (const v of m.values()) total += v.data.length;
+  for (const [k, v] of m) {
+    if (total <= MEMORY_LAYER_BYTES) break;
+    m.delete(k);
+    total -= v.data.length;
+  }
+}
+
+function recallLayer(env: RenderEnvironment, key: string): RgbaImage | undefined {
+  const m = memoryLayers.get(env);
+  const hit = m?.get(key);
+  if (m !== undefined && hit !== undefined) {
+    m.delete(key);
+    m.set(key, hit);
+  }
+  return hit;
+}
+
+/**
+ * Animierte Rasterbilder (GIF, animiertes WebP, APNG) in `image`-Nodes laufen über den
+ * Video-Frame-Pfad: Die Asset-Pipeline normalisiert sie zu einem verlustfreien Video; hier wird
+ * die Node zu einer stummen, endlos laufenden `video`-Node mit denselben Maßen, `fit` und `smoothing`.
+ * Dadurch ist die Node zeitabhängig (Frame- und Layer-Schlüssel enthalten die lokale Zeit).
+ * Ohne animierte Bilder kommt dieselbe Szene zurück.
+ *
+ * @example
+ * ```ts
+ * const scene = resolveAnimatedImages(env.assets, evaluateScene(project, 'main', 12));
+ * ```
+ */
+export function resolveAnimatedImages(assets: AssetResolver, scene: EvaluatedScene): EvaluatedScene {
+  const animated = (node: EvaluatedNode): boolean => {
+    if (node.type !== 'image') return false;
+    const asset = node.props['asset'];
+    return typeof asset === 'string' && assets.get(asset)?.metadata['animated'] === true;
+  };
+  const any = (nodes: readonly EvaluatedNode[]): boolean => nodes.some((n) => animated(n) || any(n.children) || (n.mask !== undefined && any([n.mask.node])));
+  if (!any(scene.nodes)) return scene;
+  const map = (node: EvaluatedNode): EvaluatedNode => {
+    const children = node.children.map(map);
+    const mask = node.mask === undefined ? undefined : { ...node.mask, node: map(node.mask.node) };
+    const base: EvaluatedNode = { ...node, children, ...(mask !== undefined ? { mask } : {}) };
+    if (!animated(node)) return base;
+    return { ...base, type: 'video', props: { ...node.props, loop: true, muted: true } };
+  };
+  return { ...scene, nodes: scene.nodes.map(map) };
+}
+
 interface PlanContext {
   readonly env: RenderEnvironment;
   readonly scene: EvaluatedScene;
@@ -84,8 +201,12 @@ interface PlanContext {
   readonly compositionId: string | undefined;
   readonly counters: { rendered: number; cached: number };
   readonly signal: { readonly aborted: boolean } | undefined;
+  /** Layer-Historie des Video-Renders (siehe {@link RenderFrameOptions.layerHistory}). */
+  readonly layerHistory: Map<string, string> | undefined;
   /** Laufende Cache-Schreibvorgänge; {@link renderFrame} wartet am Ende auf alle. */
   readonly writes: CacheWrites;
+  /** Diagnosen aus dem Zusammensetzen. */
+  readonly diagnostics: Diagnostic[];
 }
 
 /**
@@ -117,6 +238,72 @@ class CacheWrites {
   }
 }
 
+/**
+ * Subframe-Zustände für Backends mit Fähigkeit `motion-states` (Blender, Story 17.5): Hat eine Node
+ * des Layers `motionBlur: true`, wird die Szene an den Nachbar-Subframes ausgewertet. Ohne solche
+ * Nodes oder ohne die Fähigkeit `undefined`.
+ */
+function motionStatesFor(ctx: PlanContext, capabilities: readonly string[], nodes: readonly EvaluatedNode[]): MotionState[] | undefined {
+  if (!capabilities.includes(MOTION_STATES_CAPABILITY) || !nodes.some((n) => n.props['motionBlur'] === true)) return undefined;
+  return evaluateMotionStates(
+    ctx.project,
+    ctx.compositionId,
+    ctx.scene.frame,
+    nodes.map((n) => n.id),
+    undefined,
+    { registry: ctx.env.registry },
+  );
+}
+
+/** Präfix der Code-Hashes geladener Plugin-Dateien in `env.versions` (Review m2). */
+export const PLUGIN_CODE_PREFIX = 'plugin-code:';
+
+/**
+ * Einträge der Versionen, die Code des Hosts beschreiben und darum auch in jeden Layer-Schlüssel
+ * gehören (Review m2): Hashes geladener Plugin-Dateien (`plugin-code:<name>`) und die Freigabe von
+ * HTML-Skripten (`html-scripts`). Ohne Plugins und ohne Skripte `undefined` – Layer-Schlüssel
+ * bleiben dann unverändert.
+ *
+ * @example
+ * ```ts
+ * hostCodeVersions({ openvideo: '0.1.0' }); // undefined
+ * hostCodeVersions({ 'plugin-code:hello': 'sha256:…' }); // { 'plugin-code:hello': 'sha256:…' }
+ * ```
+ */
+export function hostCodeVersions(versions: Readonly<Record<string, string>>): Record<string, string> | undefined {
+  const entries = Object.entries(versions).filter(([k]) => k.startsWith(PLUGIN_CODE_PREFIX) || k === 'html-scripts');
+  return entries.length === 0 ? undefined : Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * Frame-Schlüssel einer ausgewerteten Szene, genau wie {@link renderFrame} ihn bildet.
+ *
+ * @example
+ * ```ts
+ * const key = frameKeyOf(env, project, scene, 0.5);
+ * ```
+ */
+export function frameKeyOf(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, scene: EvaluatedScene, scale: number, debug?: DebugOptions): string {
+  const size = outputSize(scene, scale);
+  return frameKey(scene, env.versions, assetHashes(env, project), { width: size.width, height: size.height, extra: { scale, debug: debug ?? null } });
+}
+
+/**
+ * Wertet einen Frame aus und liefert seinen Frame-Schlüssel, ohne zu rendern (für Teil-Neurender
+ * und den Schlüssel der Ebene `encoding`). Setzt ein vorheriges `env.prepare(project)` voraus.
+ *
+ * @example
+ * ```ts
+ * await env.prepare?.(project);
+ * const key = evaluateFrameKey(env, project, 'main', 12, 1);
+ * ```
+ */
+export function evaluateFrameKey(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, compositionId: string | undefined, frame: number, scale: number): string {
+  // Wie renderFrame: animierte Bilder laufen als Video-Nodes (Story 18.9).
+  const scene = resolveAnimatedImages(env.assets, evaluateScene(project, compositionId, frame, { registry: env.registry }));
+  return frameKeyOf(env, project, scene, scale);
+}
+
 async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: readonly EvaluatedNode[], layerId: string): Promise<RgbaImage> {
   const backend = ctx.env.registry.backends.get(backendId);
   if (backend === undefined) {
@@ -129,17 +316,35 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
       suggestions: [`Run \`openvideo doctor\` to see why the ${backendId} backend is unavailable.`],
     });
   }
-  const key = contentHash({ backend: backendId, versions: backend.versions(), nodes: nodes.map(stripNode), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
+  const motionStates = motionStatesFor(ctx, backend.capabilities, nodes);
+  const invariant = isTimeInvariantLayer(backendId, nodes);
+  const history = ctx.layerHistory;
+  // Video-Render: zeitabhängige Layer treffen nie; weder lesen noch komprimieren (Story 18.3).
+  const bypass = history !== undefined && !invariant;
+  const hostCode = hostCodeVersions(ctx.env.versions);
+  const key = contentHash({ backend: backendId, versions: backend.versions(), ...(hostCode !== undefined ? { hostCode } : {}), nodes: nodes.map(invariant ? stripNodeTimeless : stripNode), ...(invariant ? { timeless: true } : {}), ...(motionStates !== undefined ? { motion: motionStates.map((m) => ({ offset: m.offset, nodes: m.nodes.map(stripNode) })) } : {}), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
   const tier = ctx.env.cache.tier('layer');
-  const hit = await tier.get(key);
-  if (hit !== undefined) {
-    ctx.counters.cached++;
-    ctx.env.telemetry.metrics.cacheHit('layer');
-    return decodeRawFrame(hit);
+  const previous = history?.get(layerId);
+  history?.set(layerId, key);
+  if (!bypass) {
+    const remembered = invariant ? recallLayer(ctx.env, key) : undefined;
+    if (remembered !== undefined) {
+      ctx.counters.cached++;
+      ctx.env.telemetry.metrics.cacheHit('layer');
+      return remembered;
+    }
+    const hit = await tier.get(key);
+    if (hit !== undefined) {
+      ctx.counters.cached++;
+      ctx.env.telemetry.metrics.cacheHit('layer');
+      const image = await decodeRawFrameAsync(hit);
+      if (invariant) rememberLayer(ctx.env, key, image);
+      return image;
+    }
+    ctx.env.telemetry.metrics.cacheMiss('layer');
   }
-  ctx.env.telemetry.metrics.cacheMiss('layer');
   if (ctx.signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
-  const image = await backend.renderLayer({
+  const request: BlenderLayerRequest = {
     layerId,
     scene: ctx.scene,
     nodes,
@@ -150,7 +355,9 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
     fonts: ctx.env.fonts,
     ...(ctx.debug !== undefined ? { debug: ctx.debug } : {}),
     ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-  });
+    ...(motionStates !== undefined ? { motionStates } : {}),
+  };
+  const image = await backend.renderLayer(request);
   if (image.width !== ctx.width || image.height !== ctx.height) {
     throw new OpenVideoError({
       code: 'OV_BACKEND_SIZE',
@@ -160,7 +367,10 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
     });
   }
   ctx.counters.rendered++;
-  ctx.writes.add(image, (bytes) => tier.put(key, bytes));
+  // Im Video-Render nur schreiben, was wieder treffen kann: zeitinvariant und seit dem vorigen Frame unverändert.
+  const animated = previous !== undefined && previous !== key;
+  if (!bypass && !animated) ctx.writes.add(image, (bytes) => tier.put(key, bytes));
+  if (invariant && !animated) rememberLayer(ctx.env, key, image);
   return image;
 }
 
@@ -173,7 +383,7 @@ function findNode(nodes: readonly EvaluatedNode[], id: string): EvaluatedNode | 
 }
 
 async function renderMask(ctx: PlanContext, node: EvaluatedNode): Promise<CompositorNode[]> {
-  const scene: EvaluatedScene = { ...ctx.scene, nodes: [node] };
+  const scene: EvaluatedScene = { ...ctx.scene, background: 'transparent', nodes: [node] };
   return buildTree(ctx, planFrame(scene, ctx.env.registry, { renderer2d: renderer2dOf(ctx.project) }));
 }
 
@@ -188,22 +398,107 @@ async function flattenToImage(ctx: PlanContext, tree: CompositorNode[]): Promise
   );
 }
 
-async function buildGroup(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
-  const childTree = await buildTree(ctx, children);
-  let mask: { image: RgbaImage; mode: 'alpha' | 'luminance'; invert: boolean } | undefined;
-  if (node.mask !== undefined) {
-    // Masken-Node liegt im lokalen Raum der Gruppe (Semantik 1.4); der Compositor transformiert die Maske mit.
-    const maskImage = await flattenToImage(ctx, await renderMask(ctx, node.mask.node));
-    mask = { image: maskImage, mode: node.mask.mode, invert: node.mask.invert };
+/**
+ * Eigengröße einer Node für Transform-Ursprung und Box, wie sie das 2D-Backend misst:
+ * Text über den Textmesser, Rasterbilder über die Asset-Maße.
+ */
+function measuredOf(env: RenderEnvironment, node: EvaluatedNode): { width: number; height: number } | undefined {
+  switch (node.type) {
+    case 'text':
+    case 'rich-text': {
+      const m = env.measurer?.measure(node);
+      return m === undefined ? undefined : { width: m.width, height: m.height };
+    }
+    case 'image':
+    case 'video':
+    case 'svg':
+    case 'sprite': {
+      const asset = node.props['asset'];
+      const dims = typeof asset === 'string' ? env.assets.get(asset)?.dimensions : undefined;
+      if (dims === undefined) return undefined;
+      if (node.type !== 'sprite') return { width: dims.width, height: dims.height };
+      return { width: dims.width / Math.max(1, getNumber(node, 'columns', 1)), height: dims.height / Math.max(1, getNumber(node, 'rows', 1)) };
+    }
+    default:
+      return undefined;
   }
-  return { kind: 'group', node, children: childTree, ...(mask !== undefined ? { mask } : {}) };
 }
 
-async function buildTree(ctx: PlanContext, plan: readonly LayerPlan[]): Promise<CompositorNode[]> {
+/** Box für Reveal-Clips: die lokale Box, bei Gruppen ohne Maße die Hülle der Kinder (wie im 2D-Backend). */
+function contentBox(env: RenderEnvironment, node: EvaluatedNode): Rect {
+  const box = localBox(node, measuredOf(env, node));
+  if ((box.width > 0 && box.height > 0) || (node.type !== 'group' && node.type !== 'layer')) return box;
+  let union: Rect | undefined;
+  for (const child of node.children) {
+    const measured = measuredOf(env, child);
+    union = unionRect(union, transformRect(localMatrix(child, measured), contentBox(env, child)));
+  }
+  return union ?? box;
+}
+
+async function maskOf(ctx: PlanContext, node: EvaluatedNode): Promise<{ image: RgbaImage; mode: 'alpha' | 'luminance'; invert: boolean } | undefined> {
+  if (node.mask === undefined) return undefined;
+  // Masken-Node liegt im lokalen Raum der Node (Semantik 1.4); der Compositor transformiert die Maske mit.
+  const image = await flattenToImage(ctx, await renderMask(ctx, node.mask.node));
+  return { image, mode: node.mask.mode, invert: node.mask.invert };
+}
+
+async function buildGroup(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
+  const childTree = await buildTree(ctx, children);
+  const mask = await maskOf(ctx, node);
+  // filters und shadow der Gruppe wendet der Compositor an (Story 17.11).
+  return {
+    kind: 'group',
+    node,
+    children: childTree,
+    ...(mask !== undefined ? { mask } : {}),
+    ...(node.reveal !== undefined ? { reveal: { reveal: node.reveal, box: contentBox(ctx.env, node) } } : {}),
+  };
+}
+
+/**
+ * Node-Typen, deren Backends `filters` und `shadow` nicht selbst zeichnen (Three.js, Blender).
+ * Für sie wendet der Compositor beides an (Story 17.11).
+ */
+const FILTERLESS_TYPES: ReadonlySet<string> = new Set(['scene3d', 'blender']);
+
+function isolateMatrix(ctx: PlanContext, node: EvaluatedNode): Matrix2D {
+  const s = ctx.scale;
+  return multiply(scaleMatrix(s, s), multiply(localMatrix(node, measuredOf(ctx.env, node)), scaleMatrix(1 / s, 1 / s)));
+}
+
+/** Isolierte Node: Das Backend hat sie transformiert; der Compositor wendet Reveal, Maske und Blend Mode an. */
+async function buildIsolate(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
+  // Filter der Node wendet diese Isolierung an, nicht der Kind-Layer.
+  const childTree = await buildTree(ctx, children, true);
+  const mask = await maskOf(ctx, node);
+  return {
+    kind: 'isolate',
+    node,
+    children: childTree,
+    matrix: isolateMatrix(ctx, node),
+    ...(mask !== undefined ? { mask } : {}),
+    ...(node.reveal !== undefined ? { reveal: { reveal: node.reveal, box: contentBox(ctx.env, node) } } : {}),
+    ...(FILTERLESS_TYPES.has(node.type) && hasNodeFilters(node.props) ? { applyFilters: true } : {}),
+  };
+}
+
+async function buildTree(ctx: PlanContext, plan: readonly LayerPlan[], isolated = false): Promise<CompositorNode[]> {
   const out: CompositorNode[] = [];
   for (const layer of plan) {
     if (layer.kind === 'render') {
-      out.push({ kind: 'image', image: await renderLayerCached(ctx, layer.backend, layer.nodes, layer.id) });
+      const image: CompositorNode = { kind: 'image', image: await renderLayerCached(ctx, layer.backend, layer.nodes, layer.id) };
+      const [only, ...rest] = layer.nodes;
+      if (!isolated && only !== undefined && rest.length === 0 && FILTERLESS_TYPES.has(only.type) && hasNodeFilters(only.props)) {
+        // scene3d/blender mit filters/shadow: Der Compositor zeichnet sie auf dem fertigen Layer (Story 17.11).
+        out.push({ kind: 'isolate', node: only, children: [image], matrix: isolateMatrix(ctx, only), applyFilters: true });
+        continue;
+      }
+      out.push(image);
+      continue;
+    }
+    if (layer.mode === 'isolate') {
+      out.push(await buildIsolate(ctx, layer.node, layer.children));
       continue;
     }
     const blur = layer.node.props['motionBlur'];
@@ -224,11 +519,11 @@ async function motionBlurGroup(ctx: PlanContext, node: EvaluatedNode, samples: n
   const images: RgbaImage[] = [];
   for (let i = 0; i < samples; i++) {
     const offset = (i / (samples - 1) - 0.5) * shutter;
-    const sub = offset === 0 ? ctx.scene : evaluateScene(ctx.project, ctx.compositionId, ctx.scene.frame + offset, { registry: ctx.env.registry });
+    const sub = offset === 0 ? ctx.scene : resolveAnimatedImages(ctx.env.assets, evaluateScene(ctx.project, ctx.compositionId, ctx.scene.frame + offset, { registry: ctx.env.registry, motionKey: false }));
     const subNode = findNode(sub.nodes, node.id);
     if (subNode === undefined) continue;
     const subCtx: PlanContext = { ...ctx, scene: sub };
-    const children = planFrame({ ...sub, nodes: subNode.children }, ctx.env.registry, { renderer2d: renderer2dOf(ctx.project) });
+    const children = planFrame({ ...sub, background: 'transparent', nodes: subNode.children }, ctx.env.registry, { renderer2d: renderer2dOf(ctx.project) });
     const group = await buildGroup(subCtx, { ...subNode, props: { ...subNode.props, motionBlur: undefined } }, children);
     images.push(await flattenToImage(subCtx, [group]));
   }
@@ -254,24 +549,26 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
     }
   };
   const scale = options.scale ?? 1;
-  const scene = await time('timelineEvaluator', () => evaluateScene(project, options.compositionId, options.frame, { registry: env.registry }));
+  // fromAudio-Transkripte zum aktuellen Stand der Deklarationen (Review Q3); danach ohne Kosten.
+  if (env.prepare !== undefined) await time('prepare', () => env.prepare?.(project) ?? Promise.resolve());
+  const scene = await time('timelineEvaluator', () => resolveAnimatedImages(env.assets, evaluateScene(project, options.compositionId, options.frame, { registry: env.registry })));
   const size = outputSize(scene, scale);
   const bounds = await time('bounds', () => computeBounds(scene, env.measurer));
   const diagnostics: Diagnostic[] = [...scene.diagnostics, ...analyzeScene(scene, bounds)];
-  const key = frameKey(scene, env.versions, assetHashes(env, project), { width: size.width, height: size.height, extra: { scale, debug: options.debug ?? null } });
+  const key = frameKeyOf(env, project, scene, scale, options.debug);
   const tier = env.cache.tier('frame');
   if (options.useCache !== false) {
     const hit = await time('frameCache', () => tier.get(key));
     if (hit !== undefined) {
       env.telemetry.metrics.cacheHit('frame');
-      return { image: decodeRawFrame(hit), key, cached: true, scene, bounds, diagnostics, timings, layers: { rendered: 0, cached: 0 } };
+      return { image: await decodeRawFrameAsync(hit), key, cached: true, scene, bounds, diagnostics, timings, layers: { rendered: 0, cached: 0 } };
     }
     env.telemetry.metrics.cacheMiss('frame');
   }
   const plan = await time('framePlan', () => planFrame(scene, env.registry, { renderer2d: renderer2dOf(project) }));
   const counters = { rendered: 0, cached: 0 };
   const writes = new CacheWrites();
-  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal, writes };
+  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal, layerHistory: options.layerHistory, writes, diagnostics };
   let image: RgbaImage;
   try {
     const tree = await time('renderers', () => buildTree(ctx, plan));
@@ -280,8 +577,6 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
       const debug = options.debug;
       tree.push({ kind: 'image', image: await time('debugOverlay', () => overlays.debugOverlay(scene, bounds, debug, { ...size, scale })) });
     }
-    const settings = isRecord(project['settings']) ? project['settings'] : {};
-    const outputSpace = settings['outputColorSpace'] === 'rec709' ? 'rec709' : 'srgb';
     image = await time('compositor', () =>
       env.composite({
         width: size.width,
@@ -289,7 +584,7 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
         scale,
         background: scene.background,
         workingSpace: scene.colorSpace,
-        outputSpace,
+        outputSpace: scene.outputColorSpace ?? 'srgb',
         layers: tree,
         frame: scene.frame,
         seed: scene.seed,

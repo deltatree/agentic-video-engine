@@ -13,3 +13,4 @@ export { compareImages, imageHash, solidImage, checkerImage, type CompareOptions
 export { expectGolden } from './golden.js';
 export { rms, peak, integratedLoudness, findOnsets, type LoudnessOptions, type OnsetOptions } from './audio.js';
 export { determinism, type DeterminismResult } from './determinism.js';
+export { skipUnless, skippedTests, requireAll, perfStrict, type SkipOptions, type SkipRecord } from './skip.js';

@@ -3,13 +3,14 @@
  * Texturen, HDR/EXR-Umgebungen und LUTs. Alles wird pro URL genau einmal geladen.
  */
 import { OpenVideoError } from '@agentic-video/core';
-import { DataTexture, EquirectangularReflectionMapping, HalfFloatType, LinearFilter, LinearSRGBColorSpace, RGBAFormat, SRGBColorSpace, TextureLoader, type AnimationClip, type Data3DTexture, type Object3D, type Texture } from 'three';
+import { CanvasTexture, DataTexture, EquirectangularReflectionMapping, HalfFloatType, LinearFilter, LinearSRGBColorSpace, RGBAFormat, SRGBColorSpace, TextureLoader, type AnimationClip, type Data3DTexture, type Object3D, type Texture } from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { LUTCubeLoader } from 'three/examples/jsm/loaders/LUTCubeLoader.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { isMesh } from './environment.js';
+import { fitTextureSize, textureTooLargeError, type TextureUse } from './texture-limit.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 /** Erkanntes Dateiformat eines Assets. */
@@ -54,13 +55,13 @@ export interface LoadedLut {
   readonly texture: Data3DTexture;
 }
 
-function loadError(url: string, what: string, cause: unknown): OpenVideoError {
+function loadError(url: string, what: string, cause?: unknown): OpenVideoError {
   return new OpenVideoError({
     code: 'OV_THREE_ASSET_LOAD',
     errorClass: 'ThreeRendererError',
     problem: `Could not load ${what} from "${url}".`,
     details: { url },
-    cause,
+    ...(cause !== undefined ? { cause } : {}),
     suggestions: ['Check that the asset id exists and was imported.', 'Check that the host serves the asset under this URL.'],
   });
 }
@@ -73,6 +74,42 @@ function formatError(url: string, what: string, format: AssetFormat, allowed: re
     details: { url, format },
     suggestions: [`Use one of: ${allowed.join(', ')}.`],
   });
+}
+
+/** Pixelgröße eines Textur-Bildes, falls bekannt. */
+function imageSize(image: unknown): { width: number; height: number } | undefined {
+  if (typeof image !== 'object' || image === null) return undefined;
+  if (image instanceof HTMLImageElement) return { width: image.naturalWidth, height: image.naturalHeight };
+  if ('width' in image && 'height' in image && typeof image.width === 'number' && typeof image.height === 'number') return { width: image.width, height: image.height };
+  return undefined;
+}
+
+/** Verkleinert eine Bildtextur auf `size` (bilinear über ein 2D-Canvas) und übernimmt Farbraum und Wiederholung. */
+function downscaleTexture(source: Texture, size: { readonly width: number; readonly height: number }, url: string): Texture {
+  const image: unknown = source.image;
+  const canvas = document.createElement('canvas');
+  canvas.width = size.width;
+  canvas.height = size.height;
+  const ctx = canvas.getContext('2d');
+  if (ctx === null || !(image instanceof HTMLImageElement || image instanceof ImageBitmap || image instanceof HTMLCanvasElement)) {
+    throw new OpenVideoError({
+      code: 'OV_THREE_TEXTURE_DOWNSCALE',
+      errorClass: 'ThreeRendererError',
+      problem: `The texture from "${url}" could not be downscaled to ${String(size.width)} × ${String(size.height)}.`,
+      details: { url },
+      suggestions: [`Resize the asset to <= ${String(Math.max(size.width, size.height))} px before importing it.`],
+    });
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(image, 0, 0, size.width, size.height);
+  const tex = new CanvasTexture(canvas);
+  tex.colorSpace = source.colorSpace;
+  tex.wrapS = source.wrapS;
+  tex.wrapT = source.wrapT;
+  tex.flipY = source.flipY;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 /**
@@ -91,18 +128,19 @@ export class ThreeAssets {
   private readonly textures = new Map<string, Promise<Texture>>();
   private readonly environments = new Map<string, Promise<Texture>>();
   private readonly luts = new Map<string, Promise<LoadedLut>>();
+  private readonly downscaled = new Map<string, Promise<Texture>>();
 
   /** Lädt die Bytes einer URL (einmal pro URL). */
   bytes(url: string): Promise<Uint8Array> {
     let p = this.bytesCache.get(url);
     if (p === undefined) {
       p = fetch(url)
-        .then(async (res) => {
-          if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
-          return new Uint8Array(await res.arrayBuffer());
-        })
         .catch((error: unknown) => {
           throw loadError(url, 'asset bytes', error);
+        })
+        .then(async (res) => {
+          if (!res.ok) throw loadError(url, `asset bytes (HTTP ${String(res.status)})`);
+          return new Uint8Array(await res.arrayBuffer());
         });
       this.bytesCache.set(url, p);
     }
@@ -139,8 +177,27 @@ export class ThreeAssets {
     throw formatError(url, 'model', format, ['.gltf', '.glb', '.obj']);
   }
 
-  /** Lädt eine Bildtextur; `srgb` für Farbtexturen (`map`), sonst linear (Normalen, Rauheit). */
-  texture(url: string, srgb: boolean): Promise<Texture> {
+  /**
+   * Lädt eine Bildtextur; `srgb` für Farbtexturen (`map`), sonst linear (Normalen, Rauheit).
+   * Mit `use` wird die Größe gegen das GPU-Maximum geprüft (Auftrag §40): Ist sie zu groß, wirft
+   * die Methode `OV_THREE_TEXTURE_TOO_LARGE` oder liefert mit `use.downscale` eine verkleinerte Kopie.
+   */
+  async texture(url: string, srgb: boolean, use?: TextureUse): Promise<Texture> {
+    const tex = await this.baseTexture(url, srgb);
+    if (use === undefined) return tex;
+    const size = imageSize(tex.image);
+    if (size === undefined || (size.width <= use.maxSize && size.height <= use.maxSize)) return tex;
+    if (!use.downscale) throw textureTooLargeError(use, size.width, size.height);
+    const key = `${srgb ? 'srgb' : 'linear'}:${String(use.maxSize)}:${url}`;
+    let p = this.downscaled.get(key);
+    if (p === undefined) {
+      p = Promise.resolve(downscaleTexture(tex, fitTextureSize(size.width, size.height, use.maxSize), url));
+      this.downscaled.set(key, p);
+    }
+    return p;
+  }
+
+  private baseTexture(url: string, srgb: boolean): Promise<Texture> {
     const key = `${srgb ? 'srgb' : 'linear'}:${url}`;
     let p = this.textures.get(key);
     if (p === undefined) {
@@ -220,6 +277,7 @@ export class ThreeAssets {
       }
     };
     for (const p of this.textures.values()) (await settle(p))?.dispose();
+    for (const p of this.downscaled.values()) (await settle(p))?.dispose();
     for (const p of this.environments.values()) (await settle(p))?.dispose();
     for (const p of this.luts.values()) (await settle(p))?.texture.dispose();
     for (const p of this.models.values()) {
@@ -229,6 +287,7 @@ export class ThreeAssets {
       });
     }
     this.textures.clear();
+    this.downscaled.clear();
     this.environments.clear();
     this.luts.clear();
     this.models.clear();

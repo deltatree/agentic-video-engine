@@ -12,6 +12,12 @@ import { noise1, noise2, random, randomRange, wiggle } from './random.js';
 /** Wert eines Ausdrucks: Zahl, Vektor oder Text (nur als Funktionsargument). */
 export type ExprValue = number | readonly number[] | string;
 
+/** Ein benanntes Event für Expressions: lokale Zeit in Sekunden und die Daten des Markers. */
+export interface ExprEvent {
+  readonly time: number;
+  readonly data: Readonly<Record<string, string | number | boolean>>;
+}
+
 /** Variablen, die ein Ausdruck lesen darf. */
 export interface ExprScope {
   readonly frame: number;
@@ -24,6 +30,8 @@ export interface ExprScope {
   readonly progress: number;
   /** Marker-Zeiten in Sekunden. */
   readonly markers?: ReadonlyMap<string, number>;
+  /** Benannte Events (Marker mit `kind: 'event'`): Zeit in Sekunden und Daten. */
+  readonly events?: ReadonlyMap<string, ExprEvent>;
   /** Weitere, vom Aufrufer deklarierte Werte (z. B. `index`). */
   readonly vars?: Readonly<Record<string, number | readonly number[]>>;
 }
@@ -55,7 +63,7 @@ function exprError(source: string, problem: string, pos?: number): OpenVideoErro
     received: JSON.stringify(source),
     ...(pos !== undefined ? { details: { position: pos } } : {}),
     suggestions: [
-      'Use numbers, + - * / % **, comparisons, ?:, and functions like sin, cos, clamp, lerp, random, noise, wiggle, ease.',
+      'Use numbers, + - * / % **, comparisons, ?:, and functions like sin, cos, clamp, lerp, random, noise, wiggle, ease, marker, event.',
       'Available variables: frame, time, fps, seed, duration, progress, pi, e.',
     ],
   });
@@ -256,7 +264,7 @@ type Fn = (args: readonly ExprValue[], scope: ExprScope, src: string) => ExprVal
 
 function numArg(args: readonly ExprValue[], i: number, src: string, name: string): number {
   const v = args[i];
-  if (typeof v !== 'number') throw exprError(src, `Argument ${String(i + 1)} of ${name}() must be a number.`);
+  if (typeof v !== 'number') throw exprError(src, `Argument ${String(i + 1)} of ${name}() must be a number${typeof v === 'string' ? `, got the string ${JSON.stringify(v)}` : ''}.`);
   return v;
 }
 
@@ -271,7 +279,7 @@ const unaryMath = (f: (x: number) => number, name: string): Fn => (args, _s, src
 function mapNum(v: ExprValue | undefined, f: (x: number) => number, src: string, name: string): ExprValue {
   if (typeof v === 'number') return f(v);
   if (Array.isArray(v)) return v.map((x: number) => f(x));
-  throw exprError(src, `${name}() expects a number or vector.`);
+  throw exprError(src, `${name}() expects a number or vector${typeof v === 'string' ? `, got the string ${JSON.stringify(v)}` : ''}.`);
 }
 
 /** Funktionen der Expression-Sprache. */
@@ -344,6 +352,16 @@ export const EXPR_FUNCTIONS: Readonly<Record<string, Fn>> = {
     if (t === undefined) throw exprError(src, `Marker "${id}" does not exist.`);
     return t;
   },
+  event: (a, s, src) => {
+    const id = strArg(a, 0, src, 'event');
+    const ev = s.events?.get(id);
+    if (ev === undefined) throw exprError(src, `Event "${id}" does not exist (a composition marker with kind "event").`);
+    if (a.length < 2) return ev.time;
+    const key = strArg(a, 1, src, 'event');
+    const value = own(ev.data, key);
+    if (value === undefined) throw exprError(src, `Event "${id}" has no data field "${key}".`);
+    return typeof value === 'boolean' ? (value ? 1 : 0) : value;
+  },
   vec: (a, _s, src) => a.map((_, i) => numArg(a, i, src, 'vec')),
   length: (a, _s, src) => {
     const v = a[0];
@@ -407,7 +425,7 @@ function evaluate(node: Node, scope: ExprScope, src: string): ExprValue {
     case 'arr':
       return node.items.map((item) => {
         const v = evaluate(item, scope, src);
-        if (typeof v !== 'number') throw exprError(src, 'Vector items must be numbers.');
+        if (typeof v !== 'number') throw exprError(src, `Vector items must be numbers${typeof v === 'string' ? `, got the string ${JSON.stringify(v)}` : ''}.`);
         return v;
       });
     case 'un': {
@@ -426,7 +444,8 @@ function evaluate(node: Node, scope: ExprScope, src: string): ExprValue {
       if (typeof l === 'string' || typeof r === 'string') {
         if (node.op === '==') return l === r ? 1 : 0;
         if (node.op === '!=') return l !== r ? 1 : 0;
-        throw exprError(src, `Operator "${node.op}" cannot use strings.`);
+        const text = typeof l === 'string' ? l : r;
+        throw exprError(src, `Operator "${node.op}" cannot use the string ${JSON.stringify(text)}. Strings (e.g. text data from event(id, key)) only work with == and !=.`);
       }
       if (typeof l === 'number' && typeof r === 'number') return arith(node.op, l, r);
       const la: readonly number[] = typeof l === 'number' ? [] : l;

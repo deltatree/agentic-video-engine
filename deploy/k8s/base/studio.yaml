@@ -1,5 +1,6 @@
 # Studio: Web-Oberfläche mit eigener Agent API (`openvideo serve`), Workspace im emptyDir.
-# Das Studio schickt das Token aus der Adresse mit: http://<studio>/?token=<api-token>
+# Das Studio liest das Token aus dem Fragment der Adresse: http://<studio>/#token=<api-token>
+# (das Fragment geht nie an den Server, in Logs oder Referer; "?token=" wird verworfen).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

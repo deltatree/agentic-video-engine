@@ -16,4 +16,5 @@ export { PIXI_BLEND_MODES, PIXI_NODE_TYPES, checkPixiNode } from './check.js';
 export { LUMINANCE_TO_ALPHA, filterMatrix } from './filters.js';
 export { fragmentSource, shaderUniforms } from './shader.js';
 export { PixiLayerRenderer } from './renderer.js';
+export { HueBlend, registerHueBlend } from './hue-blend.js';
 export type { PixiLayerInput } from './build.js';

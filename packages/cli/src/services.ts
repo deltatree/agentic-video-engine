@@ -8,8 +8,8 @@ import { JobManager, Workspace, type AgentServices, type SourceService, type Tem
 import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
 import { OpenVideoError, contentHash, isRecord } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
-import { createNodeEnvironment, type BackendProvider, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
-import { createProcessChunkRunner, createRemoteChunkRunner } from '@agentic-video/scheduler';
+import { OPENVIDEO_VERSION, createNodeEnvironment, describeChunkRunner, renderChunk, type BackendProvider, type ChunkResult, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
+import { createDockerChunkRunner, createProcessChunkRunner, createRemoteChunkRunner, defaultWorkerCount } from '@agentic-video/scheduler';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 import { createTemplateCatalog } from '@agentic-video/templates';
 
@@ -26,7 +26,10 @@ export interface LocalServicesOptions {
   /** Backends mit eigenem Prozess (Browser, Blender). */
   readonly providers?: () => readonly BackendProvider[];
   readonly chunkRunner?: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => ChunkRunner;
-  /** Anzahl lokaler Worker-Prozesse für Video-Renders (`--workers`). Ohne Angabe rendert der Server selbst. */
+  /**
+   * Anzahl lokaler Worker-Prozesse für Video-Renders (`--workers`). `1` rendert im Server-Prozess.
+   * Ohne Angabe: {@link defaultWorkerCount} (Kerne und Speicher, Story 18.7).
+   */
   readonly workers?: number;
   readonly benchmark?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
   readonly maxConcurrentJobs?: number;
@@ -36,24 +39,90 @@ export interface LocalServicesOptions {
    * nie für `serve`, `dev`, `studio` oder `mcp` (B6). Standard `false`.
    */
   readonly allowOutsidePaths?: boolean;
-  /** Umgebungsvariablen (Standard `process.env`), z. B. `OPENVIDEO_CONTAINER_IMAGE`. */
+  /** Umgebungsvariablen (Standard `process.env`), z. B. `OPENVIDEO_ALLOW_HTML_SCRIPTS`, `OPENVIDEO_COORDINATOR_URL`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Fabrik für Render-Umgebungen (Standard {@link createNodeEnvironment}); Tests ersetzen sie. */
   readonly createEnvironment?: (options: NodeEnvironmentOptions) => Promise<NodeEnvironment>;
+  /**
+   * Wo Video-Chunks rendern (Story 21.3): `process` (lokale Worker-Prozesse, Standard) oder `docker`
+   * (je Worker ein Container ohne Netz, read-only, `--cap-drop ALL`; ADR 0008). Standard:
+   * `OPENVIDEO_RENDER_ISOLATION`. Ein Koordinator (`OPENVIDEO_COORDINATOR_URL`) hat Vorrang.
+   */
+  readonly renderIsolation?: RenderIsolation;
+  /** Image, GPU-Quota und Befehl der Docker-Worker (Standard aus {@link dockerSettingsFromEnv}). */
+  readonly docker?: Partial<DockerIsolationSettings>;
+}
+
+/** Wo Video-Chunks rendern: lokale Prozesse oder Docker-Container. */
+export type RenderIsolation = 'process' | 'docker';
+
+/** Einstellungen der Docker-Worker (Story 21.3). */
+export interface DockerIsolationSettings {
+  /** Worker-Image. */
+  readonly image: string;
+  /** GPU-Quota für `docker run --gpus` (z. B. `all`, `1`, `device=0`). */
+  readonly gpus?: string;
+  /** Browser-Renderer im Container auf der GPU (`OPENVIDEO_BROWSER_GPU=1`). */
+  readonly browserGpu: boolean;
+  /** Argumente nach dem Image. */
+  readonly command: readonly string[];
+  /** Docker-Programm (Standard `docker`; `OPENVIDEO_DOCKER`, z. B. `podman`). */
+  readonly docker?: string;
 }
 
 /**
- * Dürfen HTML-Skripte laufen (ADR 0008)? Nur mit `--trusted` oder im Container
- * (`OPENVIDEO_CONTAINER_IMAGE` gesetzt).
+ * Liest `OPENVIDEO_RENDER_ISOLATION` (`process` oder `docker`); leer ergibt `undefined`.
  *
  * @example
  * ```ts
- * htmlScriptsAllowed('container', process.env); // true nur im Container-Image
+ * renderIsolationFromEnv({ OPENVIDEO_RENDER_ISOLATION: 'docker' }); // 'docker'
+ * ```
+ */
+export function renderIsolationFromEnv(env: Readonly<Record<string, string | undefined>>): RenderIsolation | undefined {
+  const raw = nonEmpty(env['OPENVIDEO_RENDER_ISOLATION']);
+  if (raw === undefined) return undefined;
+  if (raw === 'process' || raw === 'docker') return raw;
+  throw new OpenVideoError({ code: 'OV_RENDER_ISOLATION', errorClass: 'ConfigError', problem: `OPENVIDEO_RENDER_ISOLATION="${raw}" is not a known isolation.`, suggestions: ['Use "process" (local worker processes) or "docker" (one container per worker).'] });
+}
+
+/**
+ * Einstellungen der Docker-Worker: Image aus `OPENVIDEO_WORKER_IMAGE`, GPU-Quota aus
+ * `OPENVIDEO_WORKER_GPUS`, Browser-GPU aus `OPENVIDEO_BROWSER_GPU`, Programm aus `OPENVIDEO_DOCKER`. Ohne Image gilt
+ * `ghcr.io/deltatree/openvideo-worker:<version>`, mit GPU-Quota `…/openvideo-render-gpu:<version>`
+ * (Einstieg `openvideo`, darum der Befehl `worker --stdio`). `overrides` (CLI: `--image`, `--gpus`)
+ * haben Vorrang.
+ *
+ * @example
+ * ```ts
+ * dockerSettingsFromEnv({ OPENVIDEO_WORKER_GPUS: 'device=0' }).image; // 'ghcr.io/deltatree/openvideo-render-gpu:0.1.0'
+ * ```
+ */
+export function dockerSettingsFromEnv(env: Readonly<Record<string, string | undefined>>, overrides: Partial<DockerIsolationSettings> = {}): DockerIsolationSettings {
+  const gpus = overrides.gpus ?? nonEmpty(env['OPENVIDEO_WORKER_GPUS']);
+  const customImage = overrides.image ?? nonEmpty(env['OPENVIDEO_WORKER_IMAGE']);
+  const image = customImage ?? `ghcr.io/deltatree/${gpus !== undefined ? 'openvideo-render-gpu' : 'openvideo-worker'}:${OPENVIDEO_VERSION}`;
+  // Das GPU-Image startet `openvideo`; das Worker-Image startet `openvideo-worker`.
+  const command = overrides.command ?? (customImage === undefined && gpus !== undefined ? ['worker', '--stdio'] : ['--stdio']);
+  const gpuEnv = nonEmpty(env['OPENVIDEO_BROWSER_GPU'])?.toLowerCase();
+  const browserGpu = overrides.browserGpu ?? (gpuEnv === '1' || gpuEnv === 'true' || gpuEnv === 'native');
+  const docker = overrides.docker ?? nonEmpty(env['OPENVIDEO_DOCKER']);
+  return { image, ...(gpus !== undefined ? { gpus } : {}), browserGpu, command, ...(docker !== undefined ? { docker } : {}) };
+}
+
+/**
+ * Dürfen HTML-Skripte laufen (ADR 0008, Story 16.1)? Nur ausdrücklich: mit `--trusted` oder
+ * `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`. `OPENVIDEO_CONTAINER_IMAGE` erlaubt nichts mehr (H1): die
+ * Variable steht in jedem Image, auch im API-Pod. Auch mit Erlaubnis laufen Skripte nur, wenn
+ * Chromium mit der OS-Sandbox startet; sonst bricht der Browser-Host mit `OV_BROWSER_NO_OS_SANDBOX` ab.
+ *
+ * @example
+ * ```ts
+ * htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: '1' }); // true
+ * htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-render-cpu:1' }); // false
  * ```
  */
 export function htmlScriptsAllowed(isolation: 'container' | 'trusted', env: Readonly<Record<string, string | undefined>>): boolean {
-  const image = env['OPENVIDEO_CONTAINER_IMAGE'];
-  return isolation === 'trusted' || (image !== undefined && image !== '');
+  return isolation === 'trusted' || env['OPENVIDEO_ALLOW_HTML_SCRIPTS'] === '1';
 }
 
 /** Eine zwischengespeicherte Umgebung mit Referenzzähler. */
@@ -92,8 +161,14 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
   const allowHtmlScripts = htmlScriptsAllowed(isolation, options.env ?? process.env);
   // Im Cluster rendern die Worker am Koordinator; der Cache muss dann der gemeinsame S3-Speicher sein.
   const coordinatorUrl = nonEmpty((options.env ?? process.env)['OPENVIDEO_COORDINATOR_URL']);
-  const coordinatorToken = nonEmpty((options.env ?? process.env)['OPENVIDEO_WORKER_TOKEN']);
+  // Rolle `submit` (Story 16.3); ein gemeinsames Token (`openvideo coordinator --token`) bleibt als Rückfall.
+  const coordinatorToken = nonEmpty((options.env ?? process.env)['OPENVIDEO_SUBMIT_TOKEN']) ?? nonEmpty((options.env ?? process.env)['OPENVIDEO_WORKER_TOKEN']);
   const create = options.createEnvironment ?? createNodeEnvironment;
+  // Lokale Worker (Story 18.7): `--workers`, sonst `OPENVIDEO_WORKERS`, sonst nach Kernen und Speicher.
+  const localWorkers = options.workers ?? workersFromEnv(options.env ?? process.env) ?? defaultWorkerCount();
+  // Docker-Worker (Story 21.3): `--isolation docker` bzw. OPENVIDEO_RENDER_ISOLATION=docker.
+  const renderIsolation = options.renderIsolation ?? renderIsolationFromEnv(options.env ?? process.env) ?? 'process';
+  const docker = renderIsolation === 'docker' ? dockerSettingsFromEnv(options.env ?? process.env, options.docker) : undefined;
   // LRU mit Referenzzählung (B14): Die Map-Reihenfolge ist die Nutzungsreihenfolge.
   const envs = new Map<string, EnvEntry>();
 
@@ -128,6 +203,8 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
         telemetry,
         trusted: isolation === 'trusted',
         allowHtmlScripts,
+        // Umgebung des Aufrufs: Plugin-Politik (OPENVIDEO_ALLOW_PLUGINS) und Browser-GPU (OPENVIDEO_BROWSER_GPU).
+        ...(options.env !== undefined ? { env: options.env } : {}),
         ...(options.offline !== undefined ? { offline: options.offline } : {}),
         ...(options.providers !== undefined ? { providers: options.providers() } : {}),
       });
@@ -168,12 +245,16 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
       ? { chunkRunner: options.chunkRunner }
       : coordinatorUrl !== undefined
         ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => remoteRunner(env, project, coordinatorUrl, coordinatorToken) }
-        : options.workers !== undefined
-        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, options.workers ?? 1, isolation === 'trusted') }
+        : docker !== undefined
+        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => dockerRunner(env, project, localWorkers, docker) }
+        : localWorkers > 1
+        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, localWorkers, isolation === 'trusted') }
         : {}),
     ...(options.benchmark !== undefined ? { benchmark: options.benchmark } : {}),
     assets: {
-      async import(projectDir, input) {
+      async import(projectDir, input, project) {
+        // Asset Loader aus Plugins (Story 21.1): dieselbe Umgebung und Rechteprüfung wie beim Rendern.
+        const loaders = project !== undefined && hasPlugins(project) ? await withEnvironment(projectDir, project, (env) => Promise.resolve([...env.registry.assetLoaders.values()])) : [];
         const r = await importAsset(
           projectDir,
           {
@@ -184,7 +265,7 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
             ...(input.id !== undefined ? { id: input.id } : {}),
             ...(input.type !== undefined ? { type: input.type } : {}),
           },
-          { cache, allowOutsidePaths, ...(options.offline !== undefined ? { offline: options.offline } : {}) },
+          { cache, allowOutsidePaths, ...(loaders.length > 0 ? { loaders } : {}), ...(options.offline !== undefined ? { offline: options.offline } : {}) },
         );
         return r;
       },
@@ -233,6 +314,26 @@ export function telemetryFromEnv(env: Readonly<Record<string, string | undefined
   return createTelemetry({ serviceName: 'openvideo', exporter, ...(exporter === 'prometheus' ? { prometheusPort: port } : {}) });
 }
 
+/**
+ * Worker-Zahl aus `OPENVIDEO_WORKERS` (ganze Zahl ≥ 1), sonst `undefined`. In Containern, deren
+ * CPU- oder Speichergrenze Node nicht sieht, legt die Variable die Zahl fest.
+ *
+ * @example
+ * ```ts
+ * workersFromEnv({ OPENVIDEO_WORKERS: '2' }); // 2
+ * ```
+ */
+export function workersFromEnv(env: Readonly<Record<string, string | undefined>>): number | undefined {
+  const n = Number(env['OPENVIDEO_WORKERS'] ?? '');
+  return Number.isInteger(n) && n >= 1 ? n : undefined;
+}
+
+/** Lädt das Projekt Plugins (`settings.plugins`)? */
+function hasPlugins(project: Readonly<Record<string, unknown>>): boolean {
+  const settings = project['settings'];
+  return isRecord(settings) && Array.isArray(settings['plugins']) && settings['plugins'].length > 0;
+}
+
 function nonEmpty(value: string | undefined): string | undefined {
   return value !== undefined && value !== '' ? value : undefined;
 }
@@ -247,14 +348,45 @@ function projectDirOf(env: RenderEnvironment): string {
 
 /**
  * Chunk-Runner mit Pull-Workern am Koordinator (`OPENVIDEO_COORDINATOR_URL`, Kubernetes).
+ * Der Runner prüft die Frames der Worker im Speicher der Umgebung (Präfix und SHA-256, T8).
+ * Die Versionen der entfernten Worker sind vor dem Render unbekannt: Ausgaben dieses Runners
+ * nutzen die Cache-Ebene `encoding` nicht (Review M2, ADR 0021).
  *
  * @example
  * ```ts
- * const runChunks = remoteRunner(env, project, 'http://coordinator:8080', process.env.OPENVIDEO_WORKER_TOKEN);
+ * const runChunks = remoteRunner(env, project, 'http://coordinator:8080', process.env.OPENVIDEO_SUBMIT_TOKEN);
  * ```
  */
 export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, coordinatorUrl: string, token: string | undefined): ChunkRunner {
-  return createRemoteChunkRunner({ coordinatorUrl, projectDir: projectDirOf(env), project, telemetry: env.telemetry, ...(token !== undefined ? { token } : {}) });
+  return describeChunkRunner(createRemoteChunkRunner({ coordinatorUrl, store: env.cache.store, projectDir: projectDirOf(env), project, telemetry: env.telemetry, ...(token !== undefined ? { token } : {}) }), null);
+}
+
+/**
+ * Chunk-Runner mit Docker-Containern (Story 21.3, `--isolation docker`): je Worker ein Container
+ * ohne Netz, read-only, ohne Capabilities, optional mit GPU-Quota (`--gpus`). Die Frames kommen
+ * über stdout zurück in den Cache der Umgebung. Image, GPU-Quota, Browser-GPU-Modus und Befehl
+ * stehen als Fingerabdruck im Schlüssel der Cache-Ebene `encoding` (Review M2).
+ *
+ * @example
+ * ```ts
+ * const runChunks = dockerRunner(env, project, 2, dockerSettingsFromEnv(process.env, { gpus: 'device=0' }));
+ * ```
+ */
+export function dockerRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, workers: number, settings: DockerIsolationSettings): ChunkRunner {
+  const timeout = Number(process.env['OPENVIDEO_CHUNK_TIMEOUT_MS'] ?? '');
+  const runner = createDockerChunkRunner({
+    image: settings.image,
+    concurrency: Math.max(1, Math.floor(workers)),
+    projectDir: projectDirOf(env),
+    project,
+    cache: env.cache,
+    telemetry: env.telemetry,
+    ...(settings.gpus !== undefined ? { limits: { gpus: settings.gpus } } : {}),
+    worker: { browserGpu: settings.browserGpu, command: settings.command },
+    ...(settings.docker !== undefined ? { docker: settings.docker } : {}),
+    ...(Number.isFinite(timeout) && timeout > 0 ? { chunkTimeoutMs: timeout } : {}),
+  });
+  return describeChunkRunner(runner, { kind: 'docker', image: settings.image, gpus: settings.gpus ?? null, browserGpu: settings.browserGpu, command: settings.command.join(' ') });
 }
 
 /**
@@ -266,5 +398,19 @@ export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<st
  * ```
  */
 export function processRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, workers: number, trusted: boolean): ChunkRunner {
-  return createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted });
+  // Chunk-Timeout (Story 18.8): hängende Worker nach OPENVIDEO_CHUNK_TIMEOUT_MS beenden, Chunk wiederholen.
+  const timeout = Number(process.env['OPENVIDEO_CHUNK_TIMEOUT_MS'] ?? '');
+  const pool = createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted, ...(Number.isFinite(timeout) && timeout > 0 ? { chunkTimeoutMs: timeout } : {}) });
+  // Ein einzelner Chunk lohnt keinen Worker-Start (Node, Skia, Chromium): dann im eigenen Prozess.
+  // Worker-Prozesse derselben Installation und Umgebung rendern wie der eigene Prozess (Review M2).
+  return describeChunkRunner(async (chunks, onDone, run) => {
+    if (chunks.length > 1) return pool(chunks, onDone, run);
+    const results: ChunkResult[] = [];
+    for (const c of chunks) {
+      const r = await renderChunk(env, project, c, run?.signal);
+      onDone(r);
+      results.push(r);
+    }
+    return results;
+  }, { kind: 'process' });
 }

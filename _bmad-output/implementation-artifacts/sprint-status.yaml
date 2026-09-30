@@ -87,7 +87,76 @@ development_status:
   14-4-kubernetes: done
   14-5-benchmarks: done
   14-6-ci: done
-  epic-15: in-progress
+  epic-15: done
   15-1-agent-dokumentation: done
-  15-2-definition-of-done-test: in-progress
-  15-3-veroeffentlichung: in-progress
+  15-2-definition-of-done-test: done
+  15-3-veroeffentlichung: done  # Release-Workflow bereit (22-7); npm-Publish löst der Maintainer per Tag aus (T3)
+  # Epics 16–22: planning-artifacts/epics-2026-09-30.md (Audit 2026-09-30)
+  epic-16: done
+  16-1-html-skripte-nur-ausdruecklich: done
+  16-2-worker-ergebnisse-und-s3-identitaeten: done
+  16-3-rollen-tokens-koordinator: done
+  16-4-koordinator-grenzen: done
+  16-5-ffmpeg-eingaben-haerten: done
+  16-6-lieferkette: done
+  16-7-studio-header-und-token: done
+  epic-17: done
+  17-1-planner-composite-grenzfaelle: done
+  17-2-farbraeume-pro-layer: done
+  17-3-zindex: done
+  17-4-animierte-bilder: done
+  17-5-blender-motion-blur-partikel: done
+  17-6-text-svg-html-ohne-stille-auslassung: done
+  17-7-audio-verschachtelt: done
+  17-8-untertitel-transkription-ass-karaoke: done
+  17-9-fonts-woff: done
+  17-10-events-und-sequence: done
+  17-11-effekte-hochgestuft-farbraum-abgleich: done
+  epic-18: done
+  18-1-compositor-bounds: done
+  18-2-color-grade-vorberechnet: done
+  18-3-layer-cache-und-skia-surface: done
+  18-4-html-capture-bounds: done
+  18-5-natives-hashing: done
+  18-6-encoding-parallel: done
+  18-7-standard-parallelitaet: done
+  18-8-abbruch-und-timeout: done
+  18-9-cache-budget-lru-locale-pixel: done
+  18-10-messung: done
+  epic-19: done
+  19-1-typisiertes-patch-schema: done
+  19-2-cli-paritaet: done
+  19-3-selbstbeschreibung: done
+  19-4-projekte-oeffnen: done
+  19-5-neue-operationen: done
+  19-6-diagnose-haertung: done
+  19-7-beispiele-je-node-typ: done
+  19-8-doku-drift-english-first: done
+  epic-20: done
+  20-1-live-sync-und-dev-watcher: done
+  20-2-ton-in-vorschau: done
+  20-3-boot-queue-verlauf: done
+  20-4-transform-griffe: done
+  20-5-live-vorschau-ziehen: done
+  20-6-ebenen-marker-timeline: done
+  20-7-audio-spuren: done
+  20-8-multi-edit-a11y-layout-onboarding: done
+  epic-21: done
+  21-1-plugins-wirken: done
+  21-2-cache-ebenen: done
+  21-3-docker-worker-cli-gpu-quota: done
+  21-4-browser-gpu-modus: done
+  21-5-ehrliches-manifest: done
+  21-6-pixi-rueckfall-dual-shader: done
+  21-7-strukturierte-fehler-texturgrenzen: done
+  21-8-kubernetes-produktion: done
+  epic-22: done
+  22-1-ci-ohne-stille-skips: done
+  22-2-determinismus-suite: done
+  22-3-nightly-benchmark: done
+  22-4-flakiness: done
+  22-5-fehlende-tests: done
+  22-6-lizenzinventar: done
+  22-7-npm-release: done
+  polish-p1-offene-punkte: done
+  reviews: done  # reviews/review-2026-09-30-*.md, alle Befunde behoben

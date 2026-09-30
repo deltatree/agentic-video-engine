@@ -91,9 +91,29 @@ describe('End-to-End: JSON → Frames → MP4 (Story 2.7)', () => {
     expect(validateManifest(JSON.parse(readFileSync(r.manifestPath, 'utf8')))).toEqual([]);
     expect(r.manifest.skiaVersion).toBe('0.42.0');
     expect(r.manifest.frameHashes).toHaveLength(60);
+    // Zweiter Lauf in der gleichen Umgebung: alles aus dem Cache, gleiche Datei.
     const again = await renderVideo(env, project, { outPath: join(dir, 'out', 'e2e-2.mp4'), profile: { format: 'mp4', codec: 'h264' } });
     expect(again.manifest.frameHashes).toEqual(r.manifest.frameHashes);
     expect(again.manifest.cache.framesFromCache).toBe(60);
     expect(again.manifest.outputs[0]?.hash).toBe(r.manifest.outputs[0]?.hash);
+  });
+
+  it('ist ohne Cache bitgleich: frische Umgebung mit leerem Cache rendert jeden Frame neu (FR-9, Story 22.2)', async () => {
+    const encoderThreads = 2;
+    const first = await renderVideo(env, project, { outPath: join(dir, 'out', 'e2e-t2.mp4'), profile: { format: 'mp4', codec: 'h264' }, encoderThreads });
+    const freshDir = mkdtempSync(join(tmpdir(), 'ov-e2e-fresh-'));
+    mkdirSync(join(freshDir, 'assets'));
+    writeFileSync(join(freshDir, 'assets', 'tone.wav'), readFileSync(join(dir, 'assets', 'tone.wav')));
+    writeFileSync(join(freshDir, 'assets', 'subs.srt'), readFileSync(join(dir, 'assets', 'subs.srt')));
+    const fresh = await createNodeEnvironment({ projectDir: freshDir, project, cache: createCache(new FileStore(join(freshDir, '.openvideo', 'cache'))) });
+    try {
+      const second = await renderVideo(fresh, project, { outPath: join(freshDir, 'out', 'e2e.mp4'), profile: { format: 'mp4', codec: 'h264' }, encoderThreads });
+      expect(second.manifest.cache.framesFromCache).toBe(0);
+      expect(second.manifest.cache.framesRendered).toBe(60);
+      expect(second.manifest.frameHashes).toEqual(first.manifest.frameHashes);
+      expect(second.manifest.outputs[0]?.hash).toBe(first.manifest.outputs[0]?.hash);
+    } finally {
+      await fresh.dispose();
+    }
   });
 });

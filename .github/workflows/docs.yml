@@ -1,0 +1,58 @@
+# API-Referenz (Story 19.8): TypeDoc-HTML aller Pakete auf GitHub Pages.
+# Die Ausgabe (über 1800 Dateien, mehrere MB) wird nicht eingecheckt; lokal erzeugt `npm run docs`
+# die Markdown-Fassung in docs/api/ (in .gitignore).
+# Voraussetzung: Repository-Einstellung Pages → Source „GitHub Actions“ (docs/guide/maintainers.md).
+name: API reference
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Lieferkette (Story 16.6): keine Rechte auf Workflow-Ebene; Actions per Commit-SHA gepinnt (Tag als Kommentar).
+permissions: {}
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten
+        run: npm ci
+      - name: Build (TypeScript-Deklarationen für TypeDoc)
+        run: npm run build
+      - name: TypeDoc als HTML (typedoc.json ohne Markdown-Plugin)
+        run: |
+          node -e "const c=require('./typedoc.json');for(const k of ['plugin','hidePageHeader','hideBreadcrumbs','useCodeBlocks'])delete c[k];c.out='_site';require('fs').writeFileSync('typedoc.pages.json',JSON.stringify(c,null,2))"
+          npx typedoc --options typedoc.pages.json
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

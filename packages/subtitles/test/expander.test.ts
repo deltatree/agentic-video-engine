@@ -108,8 +108,11 @@ describe('subtitlesExpander: Stile', () => {
     expect(fills(expandAt({ style: 'word-highlight', highlightColor: red }, 2.9)[0])).toEqual([white, white, white, red]);
   });
 
-  it('karaoke färbt alle gesungenen Wörter', () => {
-    expect(fills(expandAt({ style: 'karaoke', highlightColor: red }, 2.2)[0])).toEqual([red, red, red, white]);
+  it('karaoke färbt gesungene Wörter und füllt das laufende Wort anteilig (Story 17.8)', () => {
+    // 2,2 s: "new" läuft von 2 bis 2,5 s → 40 % gefüllt; ohne Textmesser nach Graphemen geteilt.
+    const spans = expandAt({ style: 'karaoke', highlightColor: red }, 2.2)[0]!.spans;
+    expect(spans.map((s) => [s.text, s.fill])).toEqual([['Hello ', red], ['brave ', red], ['n', red], ['ew ', white], ['world', white]]);
+    expect(fills(expandAt({ style: 'karaoke', highlightColor: red }, 2.49)[0])).toEqual([red, red, red, white, white]);
   });
 
   it('pop vergrößert das aktuelle Wort', () => {
@@ -215,7 +218,7 @@ describe('subtitlesExpander: Tracks aus Assets und Fehler', () => {
     expect(() => e.expand({ id: 'captions', type: 'subtitles', track: 'nope' }, ctx(p, 1))).toThrow(/Subtitle track "nope" does not exist/u);
     expect(() => e.expand({ id: 'captions', type: 'subtitles', track: 'subs' }, ctx(p, 1))).toThrow(/is not loaded/u);
     const pa = project({}, [{ id: 'subs', kind: 'subtitle', fromAudio: { source: 'vo', provider: 'whisper-cpp' } }]);
-    expect(() => e.expand({ id: 'captions', type: 'subtitles', track: 'subs' }, ctx(pa, 1))).toThrow(/has no cues yet/u);
+    expect(() => e.expand({ id: 'captions', type: 'subtitles', track: 'subs' }, ctx(pa, 1))).toThrow(/has fromAudio, but it was not transcribed/u);
   });
 });
 

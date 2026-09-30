@@ -4,7 +4,10 @@ import { createBrowserHost, type BrowserHost } from '../src/host.js';
 import { checkHtmlNode } from '../src/html-check.js';
 import { cssBlendMode, cssFilter, cssMatrix, htmlNodeStyle } from '../src/runtime/style.js';
 import { fontFaceCss, mimeType, startHostServer } from '../src/server.js';
-import { buildRuntime, hashImage, memoryAssets, node, pixel, testFonts, TEST_FONT } from './helpers.js';
+import { buildRuntime, hashImage, memoryAssets, node, osSandboxAvailable, pixel, testFonts, TEST_FONT } from './helpers.js';
+
+/** HTML-Skripte laufen nur mit OS-Sandbox (Story 16.1). */
+const sandbox = await osSandboxAvailable();
 
 const W = 240;
 const H = 135;
@@ -61,8 +64,8 @@ describe('Determinismus', () => {
 
   it('zwei getrennte Hosts, Frames in unterschiedlicher Reihenfolge → gleiche Hashes', async () => {
     const frames = [0, 7, 15, 30, 45];
-    const a = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
-    const b = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
+    const a = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: sandbox });
+    const b = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: sandbox });
     try {
       const first = await renderAll(a, frames);
       const second = await renderAll(b, [...frames].reverse());
@@ -79,7 +82,7 @@ describe('Sicherheit', () => {
   let host: BrowserHost;
   beforeAll(async () => {
     buildRuntime();
-    host = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: 100, height: 60, allowHtmlScripts: true });
+    host = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: 100, height: 60, allowHtmlScripts: sandbox });
   });
   afterAll(async () => {
     await host.close();
@@ -93,7 +96,8 @@ describe('Sicherheit', () => {
       html: '<img src="https://example.com/x.png" style="display:none"><link rel="stylesheet" href="https://example.com/x.css"><div style="width:100px;height:60px;background:#0a0"></div><script>fetch("http://example.org/data").catch(() => {});</script>',
     });
     const image = await host.render('html', { nodes: [n], width: 100, height: 60, scale: 1, frame: 0, time: 0, fps: 30, seed: 1 });
-    expect(host.blockedRequests - before).toBeGreaterThanOrEqual(3);
+    // Ohne OS-Sandbox läuft das fetch-Skript nicht; dann blockiert der Host nur img und link.
+    expect(host.blockedRequests - before).toBeGreaterThanOrEqual(sandbox ? 3 : 2);
     expect(pixel(image, 50, 30)).toEqual([0, 170, 0, 255]);
   });
 

@@ -151,7 +151,7 @@ describe('Regressionserkennung', () => {
     const c = compareToBaseline([fakeResult('text-heavy', 7), fakeResult('mixed', 3.9)], baseline, { tolerance: 0.2 });
     expect(c.compared).toBe(2);
     expect(c.regressions).toHaveLength(1);
-    expect(c.regressions[0]).toMatchObject({ scenario: 'text-heavy', baselineFps: 10, fps: 7 });
+    expect(c.regressions[0]).toMatchObject({ scenario: 'text-heavy', metric: 'fps', baseline: 10, current: 7 });
     expect(c.regressions[0]?.change).toBeCloseTo(-0.3);
   });
 

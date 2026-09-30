@@ -31,7 +31,7 @@ import { OpenVideoError, type ColorSpace, type OutputFormat, type RgbaImage, typ
 import { probeCapabilities, type FfmpegCapabilities, type HardwareFamily } from './capabilities.js';
 import { locateFfmpeg, type FfmpegLocateOptions } from './locate.js';
 import { unpremultiplyInto } from './pixels.js';
-import { appendLimited, processError, runProcess, spawnError, timeoutError, waitForExit } from './process.js';
+import { appendLimited, ffmpegEnv, processError, runProcess, spawnError, timeoutError, waitForExit } from './process.js';
 import { toRational } from './probe.js';
 
 /** Hardware-Wahl: `auto` nutzt Hardware nur nach erfolgreicher Probe, sonst immer CPU. */
@@ -55,6 +55,7 @@ export interface EncoderOptions extends FfmpegLocateOptions {
   readonly alpha?: boolean;
   /** Farbraum für die Metadaten (Standard `srgb`). */
   readonly colorSpace?: ColorSpace;
+  /** Hardware-Encoder: `none` (Standard, CPU, bitgleich), `auto` (nach Probe) oder eine Familie. */
   readonly hardware?: HardwareMode;
   /** WAV-Datei, die als Tonspur gemuxt wird. */
   readonly audioPath?: string;
@@ -66,6 +67,175 @@ export interface EncoderOptions extends FfmpegLocateOptions {
   readonly threads?: number;
   /** Timeout für das Schreiben eines Frames und für den Abschluss in Millisekunden (Standard 600 000). */
   readonly timeoutMs?: number;
+  /**
+   * Codec aus einem Plugin (Story 21.1): ersetzt `codec` und die eingebauten Video-Argumente.
+   * `formats` begrenzt die Container; `args` wird gegen eine Allowlist geprüft ({@link checkCustomCodecArgs}).
+   */
+  readonly customCodec?: CustomCodec;
+}
+
+/** Ein Video-Codec aus einem Plugin (`CodecDefinition` in core). */
+export interface CustomCodec {
+  readonly id: string;
+  readonly formats: readonly string[];
+  /** FFmpeg-Argumente des Video-Encoders, z. B. `['-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p']`. */
+  readonly args: readonly string[];
+}
+
+/** Zahl, z. B. `18`, `-1`, `0.5`. */
+const NUMBER = /^-?\d{1,9}(?:\.\d{1,6})?$/u;
+/** Ganzzahl, z. B. `4`, `-1`. */
+const INTEGER = /^-?\d{1,9}$/u;
+/** Bitrate, z. B. `2500k`, `4M`, `0`. */
+const BITRATE = /^\d{1,9}(?:\.\d{1,6})?[kKMG]?$/u;
+/** Einfacher Bezeichner ohne Pfad- und Trennzeichen, z. B. `slow`, `yuv420p`, `high`, `4.1`. */
+const TOKEN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/u;
+/** Encoder-Name, z. B. `libx264`, `h264_nvenc`, `libsvtav1`. */
+const ENCODER = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
+/** Wert in `-x264-params` & Co.: keine Pfade (`/`, `\`), keine Trenner (`:`, `=`). */
+const PARAM_VALUE = /^[A-Za-z0-9_.,+-]{1,64}$/u;
+
+/** Erlaubte Schlüssel in den Encoder-Parameterlisten (keine Schlüssel mit Dateien, keine Threads). */
+const X264_PARAMS: ReadonlySet<string> = new Set([
+  'keyint', 'min-keyint', 'scenecut', 'bframes', 'b-adapt', 'b-bias', 'b-pyramid', 'ref', 'no-deblock', 'deblock', 'crf', 'qp', 'qpmin', 'qpmax', 'qpstep',
+  'vbv-maxrate', 'vbv-bufsize', 'vbv-init', 'aq-mode', 'aq-strength', 'rc-lookahead', 'mbtree', 'no-mbtree', 'weightp', 'weightb', 'no-weightb', 'me', 'merange',
+  'subme', 'psy-rd', 'psy', 'no-psy', 'mixed-refs', 'no-mixed-refs', '8x8dct', 'no-8x8dct', 'trellis', 'fast-pskip', 'no-fast-pskip', 'dct-decimate', 'no-dct-decimate',
+  'cabac', 'no-cabac', 'direct', 'partitions', 'open-gop', 'bluray-compat', 'colorprim', 'transfer', 'colormatrix', 'range', 'fullrange', 'nal-hrd', 'filler',
+  'chroma-qp-offset', 'deadzone-inter', 'deadzone-intra', 'ipratio', 'pbratio', 'qcomp', 'cplxblur', 'qblur', 'intra-refresh', 'stitchable', 'slices', 'aud',
+]);
+const X265_PARAMS: ReadonlySet<string> = new Set([
+  'keyint', 'min-keyint', 'scenecut', 'bframes', 'b-adapt', 'ref', 'crf', 'qp', 'vbv-maxrate', 'vbv-bufsize', 'vbv-init', 'aq-mode', 'aq-strength', 'rc-lookahead',
+  'psy-rd', 'psy-rdoq', 'rdoq-level', 'rd', 'me', 'merange', 'subme', 'deblock', 'no-deblock', 'sao', 'no-sao', 'strong-intra-smoothing', 'no-strong-intra-smoothing',
+  'open-gop', 'no-open-gop', 'colorprim', 'transfer', 'colormatrix', 'range', 'master-display', 'max-cll', 'hdr10', 'hdr10-opt', 'repeat-headers', 'aud', 'hrd',
+  'profile', 'level-idc', 'high-tier', 'no-high-tier', 'tu-intra-depth', 'tu-inter-depth', 'limit-tu', 'ctu', 'min-cu-size', 'weightp', 'weightb', 'cutree', 'no-cutree',
+  'log-level', 'info', 'no-info', 'lossless', 'cbqpoffs', 'crqpoffs', 'selective-sao', 'tskip', 'no-tskip', 'rect', 'no-rect', 'amp', 'no-amp',
+]);
+const SVTAV1_PARAMS: ReadonlySet<string> = new Set([
+  'preset', 'crf', 'qp', 'tune', 'keyint', 'irefresh-type', 'lookahead', 'scd', 'enable-overlays', 'enable-tf', 'enable-qm', 'qm-min', 'qm-max', 'film-grain',
+  'film-grain-denoise', 'fast-decode', 'tile-rows', 'tile-columns', 'aq-mode', 'enable-cdef', 'enable-restoration', 'sharpness', 'variance-boost-strength',
+  'enable-variance-boost', 'color-primaries', 'transfer-characteristics', 'matrix-coefficients', 'color-range', 'mastering-display', 'content-light', 'hierarchical-levels',
+]);
+const AOM_PARAMS: ReadonlySet<string> = new Set([
+  'tune', 'enable-cdef', 'enable-restoration', 'enable-qm', 'deltaq-mode', 'aq-mode', 'sharpness', 'enable-chroma-deltaq', 'enable-tpl-model', 'arnr-strength',
+  'arnr-maxframes', 'lag-in-frames', 'kf-max-dist', 'kf-min-dist', 'enable-fwd-kf', 'cq-level', 'tile-columns', 'tile-rows', 'row-mt', 'denoise-noise-level',
+]);
+
+/** Bekannte Flags für `-movflags` (keine, die Dateien lesen oder schreiben). */
+const MOVFLAGS: ReadonlySet<string> = new Set([
+  'faststart', 'frag_keyframe', 'empty_moov', 'default_base_moof', 'separate_moof', 'omit_tfhd_offset', 'negative_cts_offsets', 'cmaf', 'delay_moov', 'write_colr',
+  'write_gama', 'disable_chpl', 'skip_sidx', 'global_sidx', 'frag_discont', 'use_metadata_tags', 'skip_trailer',
+]);
+
+/** Prüft `schlüssel=wert:schlüssel=wert` gegen eine Schlüsselliste. */
+function paramList(keys: ReadonlySet<string>): (value: string) => boolean {
+  return (value) => value.split(':').every((pair) => {
+    const eq = pair.indexOf('=');
+    const key = eq < 0 ? pair : pair.slice(0, eq);
+    return keys.has(key) && (eq < 0 || PARAM_VALUE.test(pair.slice(eq + 1)));
+  });
+}
+
+/** `-movflags +faststart+frag_keyframe` */
+function movflags(value: string): boolean {
+  const parts = value.split(/[+-]/u);
+  return /^[+-]?[a-z_]+(?:[+-][a-z_]+)*$/u.test(value) && parts.every((p) => p === '' || MOVFLAGS.has(p));
+}
+
+/**
+ * Allowlist der Optionen in Video-Argumenten eines Plugins (Review Q2): Name → Prüfung des Werts.
+ * Jede Option hat genau einen Wert. Nicht enthalten (und damit verboten) sind u. a. Eingaben,
+ * Ausgaben, Muxer, Mappings, alle Filter (`-vf`, `-filter*`, `-lavfi`), Fortschritt/Berichte,
+ * `-threads` (setzt OpenVideo) und `-r`/`-s` (Maße und Bildrate setzt OpenVideo).
+ */
+const ALLOWED_CUSTOM_OPTIONS: ReadonlyMap<string, (value: string) => boolean> = (() => {
+  const base: [string, (value: string) => boolean][] = [
+    ['-c:v', (v) => ENCODER.test(v)],
+    ['-codec:v', (v) => ENCODER.test(v)],
+    ['-vcodec', (v) => ENCODER.test(v)],
+    ['-crf', (v) => NUMBER.test(v)],
+    ['-qp', (v) => NUMBER.test(v)],
+    ['-q:v', (v) => NUMBER.test(v)],
+    ['-cq', (v) => NUMBER.test(v)],
+    ['-global_quality', (v) => NUMBER.test(v)],
+    ['-qmin', (v) => INTEGER.test(v)],
+    ['-qmax', (v) => INTEGER.test(v)],
+    ['-b:v', (v) => BITRATE.test(v)],
+    ['-minrate', (v) => BITRATE.test(v)],
+    ['-maxrate', (v) => BITRATE.test(v)],
+    ['-bufsize', (v) => BITRATE.test(v)],
+    ['-preset', (v) => TOKEN.test(v)],
+    ['-tune', (v) => TOKEN.test(v)],
+    ['-profile:v', (v) => TOKEN.test(v)],
+    ['-level', (v) => TOKEN.test(v)],
+    ['-pix_fmt', (v) => TOKEN.test(v)],
+    ['-tag:v', (v) => TOKEN.test(v)],
+    ['-colorspace', (v) => TOKEN.test(v)],
+    ['-color_primaries', (v) => TOKEN.test(v)],
+    ['-color_trc', (v) => TOKEN.test(v)],
+    ['-color_range', (v) => TOKEN.test(v)],
+    ['-g', (v) => INTEGER.test(v)],
+    ['-keyint_min', (v) => INTEGER.test(v)],
+    ['-bf', (v) => INTEGER.test(v)],
+    ['-refs', (v) => INTEGER.test(v)],
+    ['-sc_threshold', (v) => INTEGER.test(v)],
+    ['-x264-params', paramList(X264_PARAMS)],
+    ['-x265-params', paramList(X265_PARAMS)],
+    ['-svtav1-params', paramList(SVTAV1_PARAMS)],
+    ['-aom-params', paramList(AOM_PARAMS)],
+    ['-row-mt', (v) => INTEGER.test(v)],
+    ['-cpu-used', (v) => INTEGER.test(v)],
+    ['-deadline', (v) => TOKEN.test(v)],
+    ['-quality', (v) => TOKEN.test(v)],
+    ['-speed', (v) => INTEGER.test(v)],
+    ['-tiles', (v) => /^\d{1,2}x\d{1,2}$/u.test(v)],
+    ['-tile-columns', (v) => INTEGER.test(v)],
+    ['-tile-rows', (v) => INTEGER.test(v)],
+    ['-lag-in-frames', (v) => INTEGER.test(v)],
+    ['-auto-alt-ref', (v) => INTEGER.test(v)],
+    ['-aq-mode', (v) => INTEGER.test(v)],
+    ['-lossless', (v) => INTEGER.test(v)],
+    ['-movflags', movflags],
+  ];
+  const map = new Map<string, (value: string) => boolean>();
+  for (const [name, check] of base) {
+    map.set(name, check);
+    // Gleichbedeutend mit Stream-Angabe für das Video, z. B. `-crf:v`, `-preset:v`.
+    if (!name.includes(':') && name !== '-vcodec' && name !== '-movflags') map.set(`${name}:v`, check);
+  }
+  return map;
+})();
+
+const CUSTOM_ARGS_SUGGESTIONS: readonly string[] = [
+  'Only pass video encoder options as "-option value" pairs: -c:v, -crf, -qp, -b:v, -maxrate, -bufsize, -preset, -tune, -profile:v, -level, -pix_fmt, -g, -keyint_min, -bf, -x264-params, -x265-params, -row-mt, -cpu-used, -deadline, -movflags and similar.',
+  'Inputs, outputs, filters (-vf, -filter*), muxers, stream mappings, threads, frame rate, size, progress/report files and URLs are set by OpenVideo and may not appear.',
+];
+
+/**
+ * Prüft die FFmpeg-Argumente eines Plugin-Codecs (Story 21.1, Review Q2) gegen eine Allowlist:
+ * Jedes Argument ist entweder eine erlaubte Option oder der Wert direkt dahinter. Werte werden
+ * je Option geprüft (Zahlen, Bezeichner, Parameterlisten ohne Pfade, bekannte `-movflags`).
+ *
+ * @example
+ * ```ts
+ * checkCustomCodecArgs({ id: 'x264-film', formats: ['mp4'], args: ['-c:v', 'libx264', '-tune', 'film'] });
+ * ```
+ */
+export function checkCustomCodecArgs(codec: CustomCodec): void {
+  const reject = (arg: string, why: string): OpenVideoError =>
+    encodeError('OV_ENCODE_CODEC_ARGS', `Codec "plugin:${codec.id}" uses the FFmpeg argument "${arg}", which plugins may not set (${why}).`, CUSTOM_ARGS_SUGGESTIONS, { codec: codec.id, argument: arg });
+  let hasEncoder = false;
+  for (let i = 0; i < codec.args.length; i += 2) {
+    const name = codec.args[i] ?? '';
+    const check = ALLOWED_CUSTOM_OPTIONS.get(name);
+    if (check === undefined) throw reject(name, name.startsWith('-') ? 'option not allowed' : 'value without an option');
+    const value = codec.args[i + 1];
+    if (value === undefined) throw reject(name, 'missing value');
+    if (!check(value)) throw reject(`${name} ${value}`, 'value not allowed');
+    if (name === '-c:v' || name === '-codec:v' || name === '-vcodec') hasEncoder = true;
+  }
+  if (!hasEncoder) {
+    throw encodeError('OV_ENCODE_CODEC_ARGS', `Codec "plugin:${codec.id}" does not choose an encoder with -c:v.`, ['Return e.g. ["-c:v", "libx264", ...] from encoderArgs.'], { codec: codec.id });
+  }
 }
 
 /** Ergebnis eines abgeschlossenen Encodings (für das Manifest). */
@@ -76,7 +246,8 @@ export interface EncodeResult {
   /** Dauer in Sekunden (`frames / fps`). */
   readonly duration: number;
   readonly format: OutputFormat;
-  readonly codec: VideoCodec | 'jpeg';
+  /** Codec; Plugin-Codecs als `plugin:<id>`. */
+  readonly codec: VideoCodec | 'jpeg' | `plugin:${string}`;
   /** Verwendeter FFmpeg-Encoder, z. B. `libx264`. */
   readonly encoder: string;
   readonly audioEncoder: string | undefined;
@@ -139,7 +310,9 @@ function defaultCodec(format: OutputFormat, alpha: boolean): VideoCodec | 'jpeg'
 /** Geprüfte, vollständige Encoder-Einstellungen. */
 interface Plan {
   readonly format: OutputFormat;
-  readonly codec: VideoCodec | 'jpeg';
+  readonly codec: VideoCodec | 'jpeg' | `plugin:${string}`;
+  /** Video-Argumente eines Plugin-Codecs. */
+  readonly custom?: CustomCodec;
   readonly alpha: boolean;
   readonly quality: number;
   readonly threads: number;
@@ -154,8 +327,18 @@ interface Plan {
 function resolvePlan(o: EncoderOptions): Plan {
   const alpha = o.alpha ?? false;
   const allowed = FORMAT_CODECS[o.format];
-  const codec = o.codec ?? defaultCodec(o.format, alpha);
-  if (o.codec !== undefined && !allowed.includes(o.codec)) {
+  const custom = o.customCodec;
+  if (custom !== undefined) {
+    if (!custom.formats.includes(o.format)) {
+      throw encodeError('OV_ENCODE_CODEC_UNSUPPORTED', `Codec "plugin:${custom.id}" is not supported in format "${o.format}".`, [`Use one of: ${custom.formats.join(', ')}.`], { format: o.format, codec: `plugin:${custom.id}` });
+    }
+    if (SEQUENCE_EXT[o.format] !== undefined) {
+      throw encodeError('OV_ENCODE_CODEC_UNSUPPORTED', `Plugin codecs cannot write image sequences ("${o.format}").`, ['Use a container format such as mp4, mov or webm.'], { format: o.format, codec: `plugin:${custom.id}` });
+    }
+    checkCustomCodecArgs(custom);
+  }
+  const codec: Plan['codec'] = custom !== undefined ? `plugin:${custom.id}` : (o.codec ?? defaultCodec(o.format, alpha));
+  if (custom === undefined && o.codec !== undefined && !allowed.includes(o.codec)) {
     throw encodeError(
       'OV_ENCODE_CODEC_UNSUPPORTED',
       `Codec "${o.codec}" is not supported in format "${o.format}".`,
@@ -163,7 +346,7 @@ function resolvePlan(o: EncoderOptions): Plan {
       { format: o.format, codec: o.codec },
     );
   }
-  if (alpha && !ALPHA_COMBINATIONS.includes(`${o.format}/${codec}`)) {
+  if (alpha && custom === undefined && !ALPHA_COMBINATIONS.includes(`${o.format}/${codec}`)) {
     throw encodeError('OV_ENCODE_ALPHA_UNSUPPORTED', `Format "${o.format}" with codec "${codec}" cannot store alpha.`, [
       'Use format "webm" with codec "vp9" (yuva420p).',
       'Use format "mov" with codec "prores-4444" (yuva444p10le).',
@@ -199,11 +382,13 @@ function resolvePlan(o: EncoderOptions): Plan {
   return {
     format: o.format,
     codec,
+    ...(custom !== undefined ? { custom } : {}),
     alpha,
     quality,
     threads: Math.max(1, Math.floor(o.threads ?? 4)),
     colorSpace: o.colorSpace ?? 'srgb',
-    hardware: o.hardware ?? 'auto',
+    // Standard `none` (Story 21.5): gleiche Bytes auf jeder Maschine; Hardware-Encoding nur als Opt-in.
+    hardware: o.hardware ?? 'none',
     audioCodec,
     audioBitrate: o.audioBitrate ?? 192,
     sequenceExt: SEQUENCE_EXT[o.format],
@@ -245,6 +430,10 @@ function videoArgs(plan: Plan, caps: FfmpegCapabilities, hw: HardwareFamily | un
     ...extra,
   ];
   const mp4Tag = plan.format === 'mp4' || plan.format === 'mov';
+  if (plan.custom !== undefined) {
+    const at = plan.custom.args.findIndex((a) => a === '-c:v' || a === '-codec:v' || a === '-vcodec');
+    return { encoder: plan.custom.args[at + 1] ?? plan.custom.id, args: [...plan.custom.args] };
+  }
   if (hw !== undefined && (plan.codec === 'h264' || plan.codec === 'h265')) {
     const encoder = need(caps, [`${plan.codec === 'h264' ? 'h264' : 'hevc'}_${hw}`], plan.codec);
     const crf = String(plan.codec === 'h264' ? Math.round(35 - 0.23 * q) : Math.round(38 - 0.24 * q));
@@ -307,6 +496,9 @@ function videoArgs(plan: Plan, caps: FfmpegCapabilities, hw: HardwareFamily | un
     }
     case 'jpeg':
       return { encoder: 'mjpeg', args: ['-pix_fmt', 'yuvj420p', '-c:v', need(caps, ['mjpeg'], 'jpeg'), '-q:v', String(Math.round(31 - 0.29 * q))] };
+    default:
+      // Plugin-Codecs sind oben behandelt; ohne ihre Argumente gibt es keinen Encoder.
+      throw encodeError('OV_ENCODE_CODEC_UNSUPPORTED', `Codec "${plan.codec}" has no encoder arguments.`, ['Register the codec with a plugin (settings.plugins) or use a built-in codec.'], { codec: plan.codec });
   }
 }
 
@@ -335,7 +527,8 @@ function buildArgs(o: EncoderOptions, plan: Plan, caps: FfmpegCapabilities): { a
   const audio: string[] = [];
   if (o.audioPath !== undefined && plan.audioCodec !== undefined) {
     audioEncoder = audioEncoderOf(plan.audioCodec, caps);
-    input.push('-i', o.audioPath);
+    // Nur eine lokale WAV-Datei (Mix aus der Audio-Engine), keine Playlists oder Netzquellen (M3, Story 16.5).
+    input.push('-protocol_whitelist', 'file', '-format_whitelist', 'wav,w64', '-i', o.audioPath);
     audio.push('-map', '0:v:0', '-map', '1:a:0', '-c:a', audioEncoder, ...(plan.audioCodec === 'pcm' ? [] : ['-b:a', `${String(plan.audioBitrate)}k`]), '-shortest');
   } else {
     audio.push('-map', '0:v:0');
@@ -354,7 +547,8 @@ function buildArgs(o: EncoderOptions, plan: Plan, caps: FfmpegCapabilities): { a
 
 /**
  * Erzeugt einen Encoder. Prüft Format, Codec, Alpha und Audio sofort; FFmpeg startet mit dem ersten Frame.
- * `hardware: 'auto'` (Standard) nutzt Hardware nur nach erfolgreicher Probe, sonst CPU.
+ * `hardware` ist standardmäßig `none` (CPU, bitgleich auf jeder Maschine). `auto` nutzt Hardware
+ * nur nach erfolgreicher Probe, sonst CPU; `nvenc`/`vaapi`/`qsv`/`videotoolbox` verlangen die Familie.
  *
  * @example
  * ```ts
@@ -372,6 +566,7 @@ export function createEncoder(options: EncoderOptions): Encoder {
   let starting: Promise<void> | undefined;
   let built: ReturnType<typeof buildArgs> | undefined;
   let stderr = '';
+  let stdinError = '';
   let exited: string | undefined;
   let exitPromise: Promise<string> | undefined;
   let spawnFailure: unknown;
@@ -379,7 +574,10 @@ export function createEncoder(options: EncoderOptions): Encoder {
   let state: 'open' | 'finished' | 'aborted' = 'open';
 
   const failure = (): OpenVideoError =>
-    spawnFailure !== undefined ? spawnError(bins.ffmpeg, spawnFailure) : processError(bins.ffmpeg, built?.args ?? [], stderr, exited ?? 'stdin closed', ['Check details.lastStderr for the FFmpeg message.', 'Check the codec, size and audio options.']);
+    spawnFailure !== undefined
+      ? spawnError(bins.ffmpeg, spawnFailure)
+      : // Die Meldung von FFmpeg zuerst; ein Schreibfehler auf stdin (EPIPE) ist nur die Folge davon.
+        processError(bins.ffmpeg, built?.args ?? [], stderr.trim() !== '' ? stderr : stdinError, exited ?? 'stdin closed', ['Check details.lastStderr for the FFmpeg message.', 'Check the codec, size and audio options.']);
 
   const start = async (): Promise<void> => {
     const caps = await probeCapabilities({ ffmpegPath: bins.ffmpeg, ffprobePath: bins.ffprobe });
@@ -396,11 +594,11 @@ export function createEncoder(options: EncoderOptions): Encoder {
         cause: error,
       });
     }
-    const proc = spawn(bins.ffmpeg, built.args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    const proc = spawn(bins.ffmpeg, built.args, { stdio: ['pipe', 'ignore', 'pipe'], env: ffmpegEnv() });
     child = proc;
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (c: string) => { stderr = appendLimited(stderr, c); });
-    proc.stdin.on('error', (error) => { stderr = appendLimited(stderr, `\nstdin: ${error.message}`); });
+    proc.stdin.on('error', (error) => { stdinError = `stdin: ${error.message}`; });
     proc.on('error', (error) => { spawnFailure = error; });
     // Synchron vermerken, damit spätere `close`-Beobachter den Exit-Status schon sehen.
     proc.once('close', (code: number | null, signal: NodeJS.Signals | null) => {

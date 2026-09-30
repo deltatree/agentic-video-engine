@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { probeWebGPU } from '../src/webgpu-probe.js';
 import { THREE_CASES } from './fixtures/three-cases.js';
 import { bundle, fromPage, hashImage, matchGolden, openPage, serve, writeContactSheet, type Rgba } from './harness.js';
 
@@ -78,8 +79,10 @@ describe('Semantik', () => {
     }
   });
 
-  it('wählt mit auto WebGPU und fällt für GLSL auf WebGL2 zurück', async () => {
-    expect((await renderCase(page, 'geometry-box', 'auto')).backend).toBe('webgpu');
+  it('wählt mit auto WebGPU (nur wenn der Mini-Render gelingt) und fällt für GLSL auf WebGL2 zurück', async () => {
+    // Politur P1: Ein Adapter mit unvollständiger API (altes Chromium ohne `swizzle` als Text) zählt nicht.
+    const usable = (await page.evaluate(probeWebGPU)).available;
+    expect((await renderCase(page, 'geometry-box', 'auto')).backend).toBe(usable ? 'webgpu' : 'webgl2');
     const shader = await page.evaluate(() =>
       (window as unknown as { ovRender: (n: string, b: string) => Promise<PageResult> }).ovRender('shader-material', 'auto').then((r) => r.backend),
     );
@@ -89,6 +92,52 @@ describe('Semantik', () => {
   it('meldet GLSL unter erzwungenem WebGPU als OV_THREE_BACKEND_FEATURE', async () => {
     const code = await page.evaluate(() => (window as unknown as { ovRenderError: (n: string, b: string) => Promise<string> }).ovRenderError('shader-material-webgpu', 'webgpu'));
     expect(code).toBe('OV_THREE_BACKEND_FEATURE');
+  });
+});
+
+describe('Texturgrenzen (Story 21.7, Auftrag §40)', () => {
+  type LimitResult = { ok: boolean; diagnostic?: { code?: string; nodeId?: string; frame?: number; details?: Record<string, unknown>; suggestions?: string[] }; width?: number };
+  const limit = (option: boolean, nodeProp?: boolean): Promise<LimitResult> =>
+    page.evaluate(([o, n]) => (window as unknown as { ovTextureLimit: (o: boolean, n?: boolean) => Promise<LimitResult> }).ovTextureLimit(o, n), [option, nodeProp] as const);
+
+  it('wirft OV_THREE_TEXTURE_TOO_LARGE mit Node, Frame, Asset-Maßen und GPU-Maximum', async () => {
+    const result = await limit(false);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.code).toBe('OV_THREE_TEXTURE_TOO_LARGE');
+    expect(result.diagnostic?.frame).toBe(7);
+    expect(result.diagnostic?.nodeId).toMatch(/.+/u);
+    expect(result.diagnostic?.details).toEqual({ Asset: 'checker\n64 × 64', 'GPU maximum': '32 × 32' });
+    expect(result.diagnostic?.suggestions?.[0]).toBe('Resize the asset to <= 32 px.');
+  });
+
+  it('verkleinert mit downscaleTextures oder textureDownscale an der Node', async () => {
+    expect(await limit(true)).toEqual({ ok: true, width: 160 });
+    expect(await limit(false, true)).toEqual({ ok: true, width: 160 });
+    expect((await limit(true, false)).ok).toBe(false);
+  });
+});
+
+describe('Grafik-Probe des Hosts statt Live-Entscheidung (Review M3)', () => {
+  type HintResult = { ok: boolean; backend?: string; diagnostic?: { code?: string; details?: Record<string, unknown> } };
+  const withGraphics = (webgpu: boolean, maxTextureSize: number): Promise<HintResult> =>
+    page.evaluate(([w, m]) => (window as unknown as { ovRenderWithGraphics: (w: boolean, m: number) => Promise<HintResult> }).ovRenderWithGraphics(w, m), [webgpu, maxTextureSize] as const);
+
+  it('nutzt die Texturgrenze der Probe (WebGL2), nicht die live gemessene', async () => {
+    // Live erlaubt die GPU 8192 px; die Probe im Schlüssel sagt 32 px: Die 64-px-Textur ist zu groß.
+    const result = await withGraphics(false, 32);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.code).toBe('OV_THREE_TEXTURE_TOO_LARGE');
+    expect(result.diagnostic?.details?.['GPU maximum']).toBe('32 × 32');
+  });
+
+  it('wählt bei auto WebGL2, wenn die Probe WebGPU als nicht verfügbar meldet', async () => {
+    expect(await withGraphics(false, 8192)).toEqual({ ok: true, backend: 'webgl2' });
+  });
+
+  it('meldet eine Probe, die mehr verspricht als die GPU kann, als OV_THREE_GRAPHICS_MISMATCH', async () => {
+    const result = await withGraphics(false, 1 << 20);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.code).toBe('OV_THREE_GRAPHICS_MISMATCH');
   });
 });
 

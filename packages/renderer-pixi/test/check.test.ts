@@ -27,7 +27,7 @@ describe('checkPixiNode', () => {
   });
 
   it('meldet nicht unterstützte Node-Typen als Fehler mit Vorschlag skia', () => {
-    for (const type of ['rich-text', 'svg', 'lottie', 'html', 'scene3d']) {
+    for (const type of ['svg', 'lottie', 'html', 'scene3d']) {
       const d = checkPixiNode({ id: 'x', type });
       expect(d).toHaveLength(1);
       expect(d[0]?.code).toBe('OV_PIXI_UNSUPPORTED');
@@ -57,8 +57,17 @@ describe('checkPixiNode', () => {
     expect(features({ id: 'r', type: 'path', d: 'M0 0', strokeDash: [4, 2], trimStart: 0.1, trimEnd: 0.9, trimOffset: 0.2, fillRule: 'evenodd' })).toEqual(['strokeDash', 'trim', 'trim', 'trim', 'fillRule.evenodd']);
   });
 
-  it('meldet Blend Mode hue und Schatten', () => {
-    expect(features({ id: 'r', type: 'rect', blendMode: 'hue', shadow: { color: '#000000' } })).toEqual(['blendMode.hue', 'shadow']);
+  it('akzeptiert Blend Mode hue (eigener Filter, ADR 0018) und meldet Schatten', () => {
+    expect(features({ id: 'r', type: 'rect', blendMode: 'hue', shadow: { color: '#000000' } })).toEqual(['shadow']);
+  });
+
+  it('akzeptiert rich-text und meldet nicht darstellbare Span-Stile', () => {
+    expect(checkPixiNode({ id: 'rt', type: 'rich-text', spans: [{ text: 'a', fill: '#FF0000', fontWeight: 700 }, { text: 'b', fontStyle: 'italic' }] })).toEqual([]);
+    expect(features({ id: 'rt', type: 'rich-text', spans: [{ text: 'a', decoration: 'underline' }, { text: 'b', fill: { type: 'conic', stops: [] } }], textAnimation: { unit: 'char' } })).toEqual([
+      'text.textAnimation',
+      'text.decoration',
+      'gradient.conic',
+    ]);
   });
 
   it('meldet cubic-Glättung (info) und Video-Loop', () => {

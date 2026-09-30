@@ -2,8 +2,8 @@
  * TSX → IR (FR-17, FR-18): esbuild bündelt, die Sandbox wertet aus, `toIR` erzeugt die IR.
  * Laufzeitfehler werden per Sourcemap auf Datei und Zeile der TSX-Quelle abgebildet.
  */
-import { build, type Message, type Plugin } from 'esbuild';
-import { existsSync } from 'node:fs';
+import { build, version as esbuildVersion, type Message, type Plugin } from 'esbuild';
+import { existsSync, readFileSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { SourceMap, builtinModules, type SourceMapPayload } from 'node:module';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -19,6 +19,15 @@ const GLOBAL_NAME = '__openvideo';
 const PACKAGES_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const BUILTINS: ReadonlySet<string> = new Set(builtinModules);
 
+/**
+ * Speicher für Compiler-Output (Cache-Ebene `compiled`, Story 21.2). Passt strukturell auf
+ * `cache.tier('compiled')` aus `@agentic-video/cache`.
+ */
+export interface CompiledStore {
+  get(key: string): Promise<Uint8Array | undefined>;
+  put(key: string, bytes: Uint8Array): Promise<void>;
+}
+
 /** Optionen für {@link compileTsx}. */
 export interface CompileOptions {
   /** Projektwurzel; Quellpfade in Diagnosen und `meta.source` sind relativ dazu. */
@@ -26,6 +35,12 @@ export interface CompileOptions {
   /** Standard `docker`. `trusted-host` nur für eigene Projekte. */
   readonly mode?: SandboxMode;
   readonly limits?: Partial<SandboxLimits>;
+  /**
+   * Cache für den Compiler-Output (Ebene `compiled`). Schlüssel: Hash des Bündels (alle Quellen samt
+   * SDK) und der Compiler-Version ({@link compiledCacheKey}). Ein Treffer spart die Auswertung in der
+   * Sandbox; das Bündeln läuft immer (es liefert den Hash).
+   */
+  readonly cache?: CompiledStore;
 }
 
 /** Ergebnis von {@link compileTsx}. */
@@ -35,8 +50,55 @@ export interface CompileResult {
   readonly diagnostics: readonly Diagnostic[];
   /** `sha256:<hex>` des Bündels. */
   readonly bundleHash: string;
-  /** `true`, wenn ohne Container ausgewertet wurde. */
+  /** `true`, wenn ohne Container ausgewertet wurde (bei einem Cache-Treffer: bei der ursprünglichen Auswertung). */
   readonly trusted: boolean;
+  /** `true`, wenn das Ergebnis aus der Cache-Ebene `compiled` kam. */
+  readonly cached: boolean;
+}
+
+/** Version dieses Pakets (aus `package.json`), Teil des Cache-Schlüssels. */
+function packageVersion(): string {
+  const raw: unknown = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  return isRecord(raw) && typeof raw['version'] === 'string' ? raw['version'] : 'unknown';
+}
+
+/** Compiler-Version für den Cache-Schlüssel: Paket, esbuild und Format des Eintrags. */
+export const COMPILER_VERSION = `compiler-${packageVersion()}+esbuild-${esbuildVersion}+entry-1`;
+
+/**
+ * Schlüssel der Cache-Ebene `compiled`: SHA-256 über die Compiler-Version und den Code des Bündels.
+ * Das Bündel enthält alle importierten Quellen (Projekt und SDK), aber keine Pfade außerhalb der
+ * Sourcemap; eine Änderung an irgendeiner Quelle ändert den Schlüssel.
+ *
+ * @example
+ * ```ts
+ * const key = compiledCacheKey(bundle.code); // 'tsx-<hex>'
+ * ```
+ */
+export function compiledCacheKey(bundleCode: string): string {
+  return `tsx-${sha256Hex(`${COMPILER_VERSION}\n${bundleCode}`)}`;
+}
+
+/** Eintrag der Ebene `compiled`: Ausgabe der Sandbox (IR und SDK-Diagnosen), nicht die Validierung. */
+interface CompiledEntry {
+  readonly project: IrProject;
+  readonly diagnostics: readonly Diagnostic[];
+  readonly trusted: boolean;
+}
+
+async function readCompiled(store: CompiledStore, key: string): Promise<CompiledEntry | undefined> {
+  const bytes = await store.get(key);
+  if (bytes === undefined) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(new TextDecoder().decode(bytes));
+  } catch (error) {
+    // Ein beschädigter Eintrag gilt als Fehlgriff; die Auswertung läuft neu und überschreibt ihn.
+    if (error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+  if (!isRecord(value) || !isIrProjectShape(value['project']) || !Array.isArray(value['diagnostics']) || typeof value['trusted'] !== 'boolean') return undefined;
+  return { project: value['project'], diagnostics: value['diagnostics'].filter(isDiagnostic), trusted: value['trusted'] };
 }
 
 /** Ein gebündeltes Programm mit Sourcemap. */
@@ -334,6 +396,13 @@ function withSource(project: IrProject, d: Diagnostic): Diagnostic {
 export async function compileTsx(entryPath: string, options: CompileOptions): Promise<CompileResult> {
   const projectDir = resolve(options.projectDir);
   const bundle = await bundleTsx(entryPath, projectDir);
+  const bundleHash = `sha256:${sha256Hex(bundle.code)}`;
+  const cacheKey = compiledCacheKey(bundle.code);
+  const hit = options.cache !== undefined ? await readCompiled(options.cache, cacheKey) : undefined;
+  if (hit !== undefined) {
+    const validation = validateProject(hit.project).diagnostics;
+    return { project: hit.project, diagnostics: [...hit.diagnostics, ...validation].map((d) => withSource(hit.project, d)), bundleHash, trusted: hit.trusted, cached: true };
+  }
   const code = `${bundle.code}\n;${GLOBAL_NAME}.result;\n`;
   let result;
   try {
@@ -350,11 +419,16 @@ export async function compileTsx(entryPath: string, options: CompileOptions): Pr
   if (!isIrProjectShape(project)) {
     throw compileError('OV_COMPILE_OUTPUT', 'The composition did not produce an IR project.', ['export default composition({ … }) or project({ … }) from the entry file.']);
   }
+  if (options.cache !== undefined) {
+    const entry: CompiledEntry = { project, diagnostics: sdkDiagnostics, trusted: result.trusted };
+    await options.cache.put(cacheKey, new TextEncoder().encode(JSON.stringify(entry)));
+  }
   const validation = validateProject(project).diagnostics;
   return {
     project,
     diagnostics: [...sdkDiagnostics, ...validation].map((d) => withSource(project, d)),
-    bundleHash: `sha256:${sha256Hex(bundle.code)}`,
+    bundleHash,
     trusted: result.trusted,
+    cached: false,
   };
 }

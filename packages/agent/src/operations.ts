@@ -1,199 +1,59 @@
 /**
  * Die Operationen der Agent API (FR-21, Auftrag A5).
  */
-import { join, relative } from 'node:path';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, realpath } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import Type from 'typebox';
 import {
-  OUTPUT_FORMATS,
   OpenVideoError,
   SCHEMA_VERSION,
   analyzeScene,
   applyPatches,
   compositionDurationFrames,
   computeBounds,
-  contentHash,
   evaluateScene,
   findComposition,
   formatDiagnostic,
   isRecord,
-  resolveMarkers,
-  toFrames,
   validateProject,
   type Diagnostic,
   type Patch,
-  type Registry,
 } from '@agentic-video/core';
-import { checkProject, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, type OutputProfile, type RenderEnvironment } from '@agentic-video/render';
-import { assertFps, assertFrameCount, assertImageSize, containsScripts, sampleFrames, scriptsInScene, type SceneSample } from './guards.js';
+import { FrameManifestSchema, buildFrameManifest, checkProject, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, type ManifestFrame, type OutputProfile } from '@agentic-video/render';
+import { assertFps, assertFrameCount, assertImageSize, sampleFrames } from './guards.js';
+import { describeOperations } from './describe.js';
+import { projectImport } from './importing.js';
+import { pluginsList } from './plugins.js';
+import { assertProjectAccess } from './project-access.js';
 import { defineOperation, type OperationContext, type OperationDefinition } from './operation.js';
+import { PatchSchema, checkPatchList, toCorePatches } from './patch-schema.js';
+import {
+  AnyObject,
+  CompositionId,
+  DebugSchema,
+  Diagnostics,
+  FrameRef,
+  ImageResult,
+  JobResult,
+  ProjectId,
+  assertRenderable,
+  errorKey,
+  fileSafe,
+  frameOf,
+  imageOutput,
+  loadProject,
+  outputFormat,
+  plainDiagnostics,
+  rangeError,
+  shortHash,
+  tsxProjectError,
+  validateOptionsOf,
+  withEnv,
+  type Loaded,
+} from './shared.js';
+import { subtitlesTranscribe } from './transcribe.js';
 import { isSourceEntry, readProjectConfig, safeJoin, safeRealPath, writeAtomic } from './workspace.js';
-
-// ---------------------------------------------------------------------------
-// Gemeinsame Schemas
-// ---------------------------------------------------------------------------
-
-const ProjectId = Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,62}$', description: 'Project id returned by project.create.', examples: ['launch-video'] });
-const CompositionId = Type.Optional(Type.String({ description: 'Composition id; default is the first composition.' }));
-const FrameRef = Type.Union([Type.Integer({ minimum: 0 }), Type.String({ description: 'Time value like "2s" or "marker:intro".' })], { description: 'Frame number or time value.' });
-const DiagnosticSchema = Type.Object(
-  {
-    code: Type.String(),
-    severity: Type.String(),
-    errorClass: Type.String(),
-    problem: Type.String(),
-    path: Type.Optional(Type.String()),
-    nodeId: Type.Optional(Type.String()),
-    frame: Type.Optional(Type.Number()),
-    suggestions: Type.Immutable(Type.Array(Type.String())),
-  },
-  { additionalProperties: true },
-);
-const Diagnostics = Type.Array(DiagnosticSchema);
-const DebugSchema = Type.Object(
-  {
-    showBounds: Type.Optional(Type.Boolean()),
-    showAnchors: Type.Optional(Type.Boolean()),
-    showSafeArea: Type.Optional(Type.Boolean()),
-    showBaseline: Type.Optional(Type.Boolean()),
-    showGrid: Type.Optional(Type.Boolean()),
-    showNodeIds: Type.Optional(Type.Boolean()),
-    showCameraFrustum: Type.Optional(Type.Boolean()),
-    showLightHelpers: Type.Optional(Type.Boolean()),
-  },
-  { additionalProperties: false },
-);
-const ImageResult = Type.Object(
-  {
-    file: Type.String(),
-    url: Type.String(),
-    mimeType: Type.Literal('image/png'),
-    width: Type.Integer(),
-    height: Type.Integer(),
-    base64: Type.Optional(Type.String()),
-  },
-  { additionalProperties: true },
-);
-const JobResult = Type.Object({ jobId: Type.String(), state: Type.String() }, { additionalProperties: true });
-const AnyObject = Type.Record(Type.String(), Type.Unknown());
-
-// ---------------------------------------------------------------------------
-// Hilfen
-// ---------------------------------------------------------------------------
-
-interface Loaded {
-  readonly dir: string;
-  readonly entry: string;
-  readonly project: Record<string, unknown>;
-}
-
-async function loadProject(ctx: OperationContext, projectId: string): Promise<Loaded> {
-  const dir = ctx.services.workspace.projectDir(projectId);
-  const config = await readProjectConfig(dir);
-  if (isSourceEntry(config.entry)) {
-    const sources = ctx.services.sources;
-    if (sources === undefined) {
-      throw new OpenVideoError({ code: 'OV_SOURCE_UNAVAILABLE', errorClass: 'ProjectError', problem: 'This is a TSX project, but no TSX compiler is configured.', suggestions: ['Start the server with the compiler enabled (Docker required), or use a JSON project.'] });
-    }
-    const compiled = await sources.compile(dir, config.entry);
-    const errors = compiled.diagnostics.filter((d) => d.severity === 'error');
-    if (errors.length > 0 && errors[0] !== undefined) throw new OpenVideoError(errors[0]);
-    await ctx.services.workspace.save(projectId, compiled.project);
-    return { dir, entry: config.entry, project: compiled.project };
-  }
-  return { dir, entry: config.entry, project: await ctx.services.workspace.load(projectId) };
-}
-
-/** Leiht die Render-Umgebung eines geladenen Projekts aus. */
-function withEnv<T>(ctx: OperationContext, loaded: Loaded, fn: (env: RenderEnvironment) => Promise<T>): Promise<T> {
-  return ctx.services.withEnvironment(loaded.dir, loaded.project, fn);
-}
-
-/**
- * Früher, freundlicher Hinweis auf Skripte (ADR 0008); die harte Grenze setzt der Browser.
- * Prüft die IR und die ausgewertete Szene an den gegebenen Frames.
- */
-function assertRenderable(ctx: OperationContext, project: Readonly<Record<string, unknown>>, registry: Registry, samples: readonly SceneSample[]): void {
-  if (ctx.services.isolation !== 'container') return;
-  const scripted = [...new Set([...containsScripts(project), ...scriptsInScene(project, samples, registry)])];
-  if (scripted.length > 0) {
-    throw new OpenVideoError({
-      code: 'OV_SANDBOX_REQUIRED',
-      errorClass: 'SecurityError',
-      problem: `HTML nodes with scripts (${scripted.join(', ')}) may only render inside a container worker.`,
-      suggestions: ['Render through a container worker (`openvideo worker` / Docker).', 'Remove scripts from the HTML (CSS animations are fine).', 'For your own trusted project, use the CLI with --trusted.'],
-    });
-  }
-}
-
-/** Macht aus einer ID einen sicheren Dateinamen-Teil (nur `A-Za-z0-9_-`). */
-function fileSafe(text: string): string {
-  const s = text.replace(/[^A-Za-z0-9_-]+/gu, '-').replace(/^-+|-+$/gu, '').slice(0, 64);
-  return s === '' ? 'x' : s;
-}
-
-/** Kurzer, stabiler Hash für Dateinamen. */
-function shortHash(value: unknown): string {
-  return contentHash(value).slice('sha256:'.length, 'sha256:'.length + 10);
-}
-
-/** Prüft ein Ausgabeformat gegen {@link OUTPUT_FORMATS}. */
-function outputFormat(value: unknown): (typeof OUTPUT_FORMATS)[number] {
-  const hit = OUTPUT_FORMATS.find((f) => f === value);
-  if (hit === undefined) {
-    throw new OpenVideoError({ code: 'OV_RENDER_PROFILE', errorClass: 'RenderError', problem: `Unknown output format "${String(value)}".`, suggestions: [`Use one of: ${OUTPUT_FORMATS.join(', ')}.`] });
-  }
-  return hit;
-}
-
-function rangeError(problem: string): OpenVideoError {
-  return new OpenVideoError({ code: 'OV_RANGE_INVALID', errorClass: 'ApiError', problem, suggestions: ['Use frames between 0 and the composition duration (timeline.inspect shows it).'] });
-}
-
-function frameOf(project: Readonly<Record<string, unknown>>, compositionId: string | undefined, frame: number | string): number {
-  if (typeof frame === 'number') return frame;
-  const comp = findComposition(project, compositionId);
-  const fps = Number(comp['fps']);
-  const markers = resolveMarkers(
-    Array.isArray(comp['markers']) ? comp['markers'].filter(isRecord).map((m) => ({ id: String(m['id']), time: typeof m['time'] === 'number' ? m['time'] : String(m['time']) })) : [],
-    fps,
-  );
-  return Math.round(toFrames(frame, { fps, markers }));
-}
-
-async function imageOutput(ctx: OperationContext, projectId: string, name: string, png: Uint8Array, size: { width: number; height: number }, inline: boolean) {
-  const dir = join(await ctx.services.workspace.outDir(projectId), 'frames');
-  await mkdir(dir, { recursive: true });
-  const file = safeJoin(dir, name);
-  await writeFile(file, png);
-  return {
-    file,
-    url: `/v1/files/${projectId}/${relative(ctx.services.workspace.projectDir(projectId), file)}`,
-    mimeType: 'image/png' as const,
-    width: size.width,
-    height: size.height,
-    ...(inline ? { base64: Buffer.from(png).toString('base64') } : {}),
-  };
-}
-
-function plainDiagnostics(list: readonly Diagnostic[]): Diagnostic[] {
-  return list.map((d) => ({ ...d }));
-}
-
-/** Validierungsoptionen mit Plugin-Nodes und Komponenten des Registers. */
-function validateOptionsOf(registry: Registry): { extraNodeSchemas: ReturnType<Registry['extraNodeSchemas']>; components?: string[] } {
-  const components = [...registry.components.keys()];
-  return { extraNodeSchemas: registry.extraNodeSchemas(), ...(components.length > 0 ? { components } : {}) };
-}
-
-/** Schlüssel einer Diagnose für „nur neue Fehler“ (wie `applyPatches`). */
-function errorKey(d: Diagnostic): string {
-  return `${d.code}|${d.path ?? ''}|${d.problem}`;
-}
-
-function tsxProjectError(): OpenVideoError {
-  return new OpenVideoError({ code: 'OV_PROJECT_TSX', errorClass: 'ProjectError', problem: 'TSX projects are edited in their source file.', suggestions: ['Edit the TSX entry file, or use composition.patch (AST write-back).'] });
-}
 
 // ---------------------------------------------------------------------------
 // Operationen
@@ -222,7 +82,7 @@ const projectCreate = defineOperation({
     if (input.project !== undefined) project = { ...input.project };
     else if (input.template !== undefined) {
       const catalog = ctx.services.templates;
-      if (catalog === undefined) throw new OpenVideoError({ code: 'OV_TEMPLATES_UNAVAILABLE', errorClass: 'ApiError', problem: 'No template catalog is configured.', suggestions: [] });
+      if (catalog === undefined) throw new OpenVideoError({ code: 'OV_TEMPLATES_UNAVAILABLE', errorClass: 'ApiError', problem: 'No template catalog is configured.', suggestions: ['Start the host with the template catalog (openvideo serve/mcp include it).', 'Create the project from JSON with "project" instead of "template".'] });
       project = { ...(await catalog.get(input.template)).project };
     } else {
       project = {
@@ -255,6 +115,57 @@ const projectCreate = defineOperation({
       await ctx.services.workspace.remove(id);
       throw error;
     }
+  },
+});
+
+/** Liegt `path` (echter Pfad) in `root` (echter Pfad)? */
+function inside(root: string, path: string): boolean {
+  const rel = relative(root, path);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
+const projectOpen = defineOperation({
+  name: 'project.open',
+  summary: 'Open an existing project folder (openvideo.json or project.json) inside the allowed project roots and return its projectId.',
+  input: Type.Object(
+    {
+      path: Type.String({ minLength: 1, description: 'Project folder; absolute, or relative to the first allowed root.' }),
+      id: Type.Optional(Type.String({ pattern: '^[a-z0-9][a-z0-9-]{0,57}$', description: 'Preferred project id (default: folder name).' })),
+    },
+    { additionalProperties: false },
+  ),
+  output: Type.Object({ projectId: Type.String(), name: Type.String(), entry: Type.String(), kind: Type.String(), compositions: Type.Array(Type.String()) }),
+  example: { input: { path: 'launch-video' } },
+  async handler(input, ctx) {
+    const roots = ctx.services.projectRoots ?? [];
+    const first = roots[0];
+    if (first === undefined) {
+      throw new OpenVideoError({
+        code: 'OV_PROJECT_OPEN_DISABLED',
+        errorClass: 'SecurityError',
+        problem: 'Opening project folders is not enabled on this host.',
+        suggestions: ['Start the server with `openvideo mcp --project <dir>` or `openvideo serve --project <dir>`.', 'Or set OPENVIDEO_PROJECT_ROOTS to a comma-separated list of folders.', 'Or create a new project with project.create.'],
+      });
+    }
+    const notFound = (): OpenVideoError =>
+      new OpenVideoError({ code: 'OV_PROJECT_UNKNOWN', errorClass: 'ProjectError', problem: `No project folder "${input.path}" inside the allowed roots.`, received: JSON.stringify(input.path), suggestions: ['Pass a folder that contains openvideo.json or project.json.', `Allowed roots: ${String(roots.length)} configured; relative paths start at the first one.`] });
+    let dir: string;
+    try {
+      dir = await realpath(isAbsolute(input.path) ? input.path : resolve(first, input.path));
+    } catch (error) {
+      if (error instanceof Error && 'code' in error) throw notFound();
+      throw error;
+    }
+    const realRoots = await Promise.all(roots.map((r) => realpath(r).catch(() => undefined)));
+    if (!realRoots.some((r) => r !== undefined && inside(r, dir))) {
+      throw new OpenVideoError({ code: 'OV_PATH_OUTSIDE', errorClass: 'SecurityError', problem: `"${input.path}" is outside the allowed project roots.`, received: JSON.stringify(input.path), suggestions: ['Open a folder inside the roots given with --project or OPENVIDEO_PROJECT_ROOTS.', 'Or restart the server with --project pointing to this folder.'] });
+    }
+    if (!existsSync(join(dir, 'openvideo.json')) && !existsSync(join(dir, 'project.json'))) throw notFound();
+    const config = await readProjectConfig(dir);
+    const projectId = await ctx.services.workspace.link(dir, input.id);
+    const loaded = await loadProject(ctx, projectId);
+    const comps = Array.isArray(loaded.project['compositions']) ? loaded.project['compositions'].filter(isRecord).map((c) => String(c['id'])) : [];
+    return { projectId, name: config.name, entry: config.entry, kind: isSourceEntry(config.entry) ? 'tsx' : 'json', compositions: comps };
   },
 });
 
@@ -357,97 +268,30 @@ const compositionValidate = defineOperation({
   },
 });
 
-const PatchSchema = Type.Record(Type.String(), Type.Unknown(), {
-  description:
-    'A patch object with "op": setProperty | addNode | removeNode | moveNode | addKeyframe | removeKeyframe | replaceAsset | addAsset | removeAsset | setCompositionProperty | setProjectProperty. setProperty/setCompositionProperty/setProjectProperty accept "keepNull": true to store null instead of deleting the property.',
-});
-
-function asPatches(list: readonly Readonly<Record<string, unknown>>[]): Patch[] {
-  const out: Patch[] = [];
-  for (const p of list) {
-    const r = applyPatchesShapeCheck(p);
-    out.push(r);
-  }
-  return out;
-}
-
-function applyPatchesShapeCheck(p: Readonly<Record<string, unknown>>): Patch {
-  const str = (k: string): string => {
-    const v = p[k];
-    if (typeof v !== 'string') throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "${k}" as string.`, suggestions: [] });
-    return v;
-  };
-  const optStr = (k: string): string | undefined => (typeof p[k] === 'string' ? p[k] : undefined);
-  const comp = optStr('compositionId');
-  const withComp = comp !== undefined ? { compositionId: comp } : {};
-  const time = (k: string): number | string => {
-    const v = p[k];
-    if (typeof v === 'number' || typeof v === 'string') return v;
-    throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "${k}" as time value.`, suggestions: [] });
-  };
-  const obj = (k: string): Readonly<Record<string, unknown>> => {
-    const v = p[k];
-    if (!isRecord(v)) throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "${k}" as object.`, suggestions: [] });
-    return v;
-  };
-  const rawIndex = p['index'];
-  if (rawIndex !== undefined && (typeof rawIndex !== 'number' || !Number.isInteger(rawIndex) || rawIndex < 0)) {
-    throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "index" as a non-negative integer.`, suggestions: ['Leave out "index" to append, or use 0 for the first position.'] });
-  }
-  const index = typeof rawIndex === 'number' ? { index: rawIndex } : {};
-  const rawKeepNull = p['keepNull'];
-  if (rawKeepNull !== undefined && typeof rawKeepNull !== 'boolean') {
-    throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Patch ${String(p['op'])} needs "keepNull" as boolean.`, suggestions: ['Use "keepNull": true to store null instead of deleting the property.'] });
-  }
-  const keepNull = rawKeepNull === true ? { keepNull: true } : {};
-  switch (p['op']) {
-    case 'setProperty':
-      return { op: 'setProperty', nodeId: str('nodeId'), property: str('property'), value: p['value'], ...keepNull, ...withComp };
-    case 'addNode':
-      return { op: 'addNode', parentId: typeof p['parentId'] === 'string' ? p['parentId'] : null, node: obj('node'), ...index, ...withComp };
-    case 'removeNode':
-      return { op: 'removeNode', nodeId: str('nodeId'), ...withComp };
-    case 'moveNode':
-      return { op: 'moveNode', nodeId: str('nodeId'), parentId: typeof p['parentId'] === 'string' ? p['parentId'] : null, ...index, ...withComp };
-    case 'addKeyframe': {
-      const k = obj('keyframe');
-      const t = k['t'];
-      if (typeof t !== 'number' && typeof t !== 'string') throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: 'keyframe.t must be a time value.', suggestions: ['keyframe: { t: "1s", v: 100 }'] });
-      return { op: 'addKeyframe', nodeId: str('nodeId'), property: str('property'), keyframe: { t, v: k['v'], ...(typeof k['ease'] === 'string' ? { ease: k['ease'] } : {}) }, ...withComp };
-    }
-    case 'removeKeyframe':
-      return { op: 'removeKeyframe', nodeId: str('nodeId'), property: str('property'), t: time('t'), ...withComp };
-    case 'replaceAsset':
-      return { op: 'replaceAsset', assetId: str('assetId'), src: str('src'), ...(optStr('type') !== undefined ? { type: str('type') } : {}), ...(optStr('hash') !== undefined ? { hash: str('hash') } : {}) };
-    case 'addAsset':
-      return { op: 'addAsset', asset: obj('asset') };
-    case 'removeAsset':
-      return { op: 'removeAsset', assetId: str('assetId') };
-    case 'setCompositionProperty':
-      return { op: 'setCompositionProperty', compositionId: str('compositionId'), property: str('property'), value: p['value'], ...keepNull };
-    case 'setProjectProperty':
-      return { op: 'setProjectProperty', property: str('property'), value: p['value'], ...keepNull };
-    default:
-      throw new OpenVideoError({ code: 'OV_PATCH_INVALID', errorClass: 'PatchError', problem: `Unknown patch op "${String(p['op'])}".`, suggestions: ['Use setProperty, addNode, removeNode, moveNode, addKeyframe, removeKeyframe, replaceAsset.'] });
-  }
-}
-
 const compositionPatch = defineOperation({
   name: 'composition.patch',
   summary: 'Apply semantic patches atomically; TSX projects are updated through AST edits.',
-  input: Type.Object({ projectId: ProjectId, patches: Type.Array(PatchSchema, { minItems: 1 }), dryRun: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  input: Type.Object(
+    {
+      projectId: ProjectId,
+      patches: Type.Array(PatchSchema, { minItems: 1, description: 'Applied in order, all or nothing. See schema.get { "name": "patch" } for every patch kind.' }),
+      dryRun: Type.Optional(Type.Boolean({ description: 'Check and return diagnostics and inverse without saving.' })),
+    },
+    { additionalProperties: false },
+  ),
   output: Type.Object({ ok: Type.Boolean(), diagnostics: Diagnostics, inverse: Type.Array(AnyObject), sourceUpdated: Type.Boolean() }),
   example: { input: { projectId: 'launch-video', patches: [{ op: 'setProperty', nodeId: 'headline', property: 'fontSize', value: 82 }, { op: 'setProperty', nodeId: 'headline', property: 'y', value: 720 }] } },
+  check: (input) => (isRecord(input) && input['patches'] !== undefined ? checkPatchList(input['patches'], 'patches') : undefined),
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    const patches = asPatches(input.patches);
+    const patches = toCorePatches(input.patches);
     return withEnv(ctx, loaded, async (env) => {
       const result = applyPatches(loaded.project, patches, { validateOptions: validateOptionsOf(env.registry) });
       const inverse = result.inverse.map((p) => ({ ...p }));
       if (!result.ok || input.dryRun === true) return { ok: result.ok, diagnostics: plainDiagnostics(result.diagnostics), inverse, sourceUpdated: false };
       if (isSourceEntry(loaded.entry)) {
         const sources = ctx.services.sources;
-        if (sources === undefined) throw new OpenVideoError({ code: 'OV_SOURCE_UNAVAILABLE', errorClass: 'ProjectError', problem: 'TSX write-back is not configured.', suggestions: [] });
+        if (sources === undefined) throw new OpenVideoError({ code: 'OV_SOURCE_UNAVAILABLE', errorClass: 'ProjectError', problem: 'TSX write-back is not configured.', suggestions: ['Start the host with the TSX compiler (openvideo serve/mcp with Docker or --trusted).', 'Edit the TSX entry file directly and call composition.validate.'] });
         // Atomar (B10): Quelle sichern, zurückschreiben, neu kompilieren; bei Fehlern die alte Quelle wiederherstellen.
         const file = safeJoin(loaded.dir, loaded.entry);
         const original = await readFile(file, 'utf8');
@@ -487,9 +331,10 @@ const assetImport = defineOperation({
   example: { input: { projectId: 'launch-video', path: 'assets/logo.svg', id: 'logo' } },
   async handler(input, ctx) {
     const service = ctx.services.assets;
-    if (service === undefined) throw new OpenVideoError({ code: 'OV_ASSETS_UNAVAILABLE', errorClass: 'ApiError', problem: 'No asset service is configured.', suggestions: [] });
+    if (service === undefined) throw new OpenVideoError({ code: 'OV_ASSETS_UNAVAILABLE', errorClass: 'ApiError', problem: 'No asset service is configured.', suggestions: ['Start the host with the asset service (openvideo serve/mcp include it).', 'Copy the file into the project assets/ folder and declare it with an addAsset patch.'] });
     const loaded = await loadProject(ctx, input.projectId);
-    const imported = await service.import(loaded.dir, input);
+    // Mit dem Projekt: Asset Loader aus Plugins gelten auch beim Import (Story 21.1).
+    const imported = await service.import(loaded.dir, input, loaded.project);
     const declared = Array.isArray(loaded.project['assets']) ? loaded.project['assets'].filter(isRecord) : [];
     const exists = declared.some((a) => a['id'] === imported.id);
     const sameFile = declared.filter((a) => a['id'] !== imported.id && a['src'] === imported.src).map((a) => String(a['id']));
@@ -516,7 +361,7 @@ const assetInspect = defineOperation({
   example: { input: { projectId: 'launch-video', assetId: 'logo' } },
   async handler(input, ctx) {
     const service = ctx.services.assets;
-    if (service === undefined) throw new OpenVideoError({ code: 'OV_ASSETS_UNAVAILABLE', errorClass: 'ApiError', problem: 'No asset service is configured.', suggestions: [] });
+    if (service === undefined) throw new OpenVideoError({ code: 'OV_ASSETS_UNAVAILABLE', errorClass: 'ApiError', problem: 'No asset service is configured.', suggestions: ['Start the host with the asset service (openvideo serve/mcp include it).', 'Copy the file into the project assets/ folder and declare it with an addAsset patch.'] });
     const loaded = await loadProject(ctx, input.projectId);
     return { ...(await service.inspect(loaded.dir, loaded.project, input.assetId)) };
   },
@@ -525,11 +370,23 @@ const assetInspect = defineOperation({
 const frameRender = defineOperation({
   name: 'frame.render',
   summary: 'Render one frame to PNG; returns the image, diagnostics and the frame cache key.',
-  input: Type.Object({ projectId: ProjectId, compositionId: CompositionId, frame: FrameRef, scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 4 })), debug: Type.Optional(DebugSchema), inline: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
-  output: Type.Object({ image: ImageResult, key: Type.String(), cached: Type.Boolean(), diagnostics: Diagnostics }),
+  input: Type.Object(
+    {
+      projectId: ProjectId,
+      compositionId: CompositionId,
+      frame: FrameRef,
+      scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 4 })),
+      debug: Type.Optional(DebugSchema),
+      inline: Type.Optional(Type.Boolean()),
+      patches: Type.Optional(Type.Array(PatchSchema, { minItems: 1, description: 'Transient preview: applied only for this render and never saved (e.g. while dragging in the Studio).' })),
+    },
+    { additionalProperties: false },
+  ),
+  output: Type.Object({ image: ImageResult, key: Type.String(), cached: Type.Boolean(), diagnostics: Diagnostics, manifest: FrameManifestSchema }),
   example: { input: { projectId: 'launch-video', frame: '2s', scale: 0.5, debug: { showBounds: true } } },
+  check: (input) => (isRecord(input) && input['patches'] !== undefined ? checkPatchList(input['patches'], 'patches') : undefined),
   async handler(input, ctx) {
-    const loaded = await loadProject(ctx, input.projectId);
+    const loaded = await withPreviewPatches(ctx, await loadProject(ctx, input.projectId), input.patches);
     const comp = findComposition(loaded.project, input.compositionId);
     const scale = input.scale ?? 1;
     assertImageSize(Number(comp['width']) * scale, Number(comp['height']) * scale, 'frame.render');
@@ -538,9 +395,77 @@ const frameRender = defineOperation({
       assertRenderable(ctx, loaded.project, env.registry, [{ compositionId: input.compositionId, frame }]);
       const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame, scale, ...(input.debug !== undefined ? { debug: input.debug } : {}) });
       // Der Name kommt aus geprüften Teilen; Varianten (scale, debug) bekommen einen eigenen Hash (B4, B16).
-      const variant = input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
+      // Transiente Vorschauen überschreiben eine feste Datei, statt je Zwischenstand eine neue anzulegen.
+      const variant = input.patches !== undefined ? '-preview' : input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
       const image = await imageOutput(ctx, input.projectId, `${fileSafe(r.scene.compositionId)}-${String(frame)}${variant}.png`, ctx.services.encodePng(r.image), r.image, input.inline !== false);
-      return { image, key: r.key, cached: r.cached, diagnostics: plainDiagnostics(r.diagnostics) };
+      // Kurzmanifest (Story 21.5): Eingaben, Pixel-Hash, genutzte Backends, Grafik, Chromium, GPU.
+      const manifest = await buildFrameManifest(env, loaded.project, [{ frame, ...r }], scale);
+      return { image, key: r.key, cached: r.cached, diagnostics: plainDiagnostics(r.diagnostics), manifest };
+    });
+  },
+});
+
+/**
+ * Wendet Vorschau-Patches nur im Speicher an (`frame.render` mit `patches`, Story 20.5).
+ * Abgelehnte Patches melden die erste neue Fehlerdiagnose; gespeichert wird nie.
+ */
+async function withPreviewPatches(ctx: OperationContext, loaded: Loaded, patches: readonly unknown[] | undefined): Promise<Loaded> {
+  if (patches === undefined) return loaded;
+  const result = await withEnv(ctx, loaded, (env) => Promise.resolve(applyPatches(loaded.project, toCorePatches(patches), { validateOptions: validateOptionsOf(env.registry) })));
+  if (!result.ok) {
+    const first = result.diagnostics.find((d) => d.severity === 'error');
+    throw new OpenVideoError({
+      code: 'OV_PREVIEW_PATCH',
+      errorClass: 'ValidationError',
+      problem: `The preview patches were rejected: ${first?.problem ?? 'unknown error'}`,
+      ...(first?.nodeId !== undefined ? { nodeId: first.nodeId } : {}),
+      suggestions: ['Check the patches with composition.patch { dryRun: true }.', ...(first?.suggestions ?? [])],
+    });
+  }
+  return { ...loaded, project: result.project };
+}
+
+const frameRenderMany = defineOperation({
+  name: 'frame.renderMany',
+  summary: 'Render several frames to separate PNGs in one call (e.g. before/after a change); returns one image per frame.',
+  input: Type.Object(
+    {
+      projectId: ProjectId,
+      compositionId: CompositionId,
+      frames: Type.Array(FrameRef, { minItems: 1, maxItems: 16, description: 'Up to 16 frames or times; duplicates are rendered once.' }),
+      scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 4 })),
+      debug: Type.Optional(DebugSchema),
+      inline: Type.Optional(Type.Boolean({ description: 'Include base64 PNG data (default true; MCP shows the images).' })),
+    },
+    { additionalProperties: false },
+  ),
+  output: Type.Object({ frames: Type.Array(Type.Number()), images: Type.Array(ImageResult), keys: Type.Array(Type.String()), diagnostics: Diagnostics, manifest: FrameManifestSchema }),
+  example: { input: { projectId: 'launch-video', frames: [0, '2s', 'marker:outro'], scale: 0.5 } },
+  async handler(input, ctx) {
+    const loaded = await loadProject(ctx, input.projectId);
+    const comp = findComposition(loaded.project, input.compositionId);
+    const scale = input.scale ?? 1;
+    assertImageSize(Number(comp['width']) * scale, Number(comp['height']) * scale, 'frame.renderMany');
+    const total = compositionDurationFrames(comp);
+    const frames = [...new Set(input.frames.map((f) => frameOf(loaded.project, input.compositionId, f)))];
+    const outside = frames.find((f) => f < 0 || f >= total);
+    if (outside !== undefined) throw rangeError(`Frame ${String(outside)} is outside the composition (0–${String(total - 1)}).`);
+    return withEnv(ctx, loaded, async (env) => {
+      assertRenderable(ctx, loaded.project, env.registry, frames.map((frame) => ({ compositionId: input.compositionId, frame })));
+      const images = [];
+      const keys: string[] = [];
+      const diagnostics: Diagnostic[] = [];
+      const rendered: ManifestFrame[] = [];
+      const variant = input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
+      for (const frame of frames) {
+        const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame, scale, ...(input.debug !== undefined ? { debug: input.debug } : {}) });
+        images.push(await imageOutput(ctx, input.projectId, `${fileSafe(r.scene.compositionId)}-${String(frame)}${variant}.png`, ctx.services.encodePng(r.image), r.image, input.inline !== false));
+        keys.push(r.key);
+        rendered.push({ frame, ...r });
+        // Gleiche Meldung an mehreren Frames nur einmal (Frame steht in der Diagnose).
+        for (const d of r.diagnostics) if (d.severity !== 'info' && !diagnostics.some((x) => x.code === d.code && x.path === d.path && x.problem === d.problem)) diagnostics.push(d);
+      }
+      return { frames, images, keys, diagnostics: plainDiagnostics(diagnostics), manifest: await buildFrameManifest(env, loaded.project, rendered, scale) };
     });
   },
 });
@@ -554,7 +479,9 @@ const frameInspect = defineOperation({
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
     const frame = frameOf(loaded.project, input.compositionId, input.frame);
-    return withEnv(ctx, loaded, (env) => {
+    return withEnv(ctx, loaded, async (env) => {
+      // fromAudio-Transkripte wie beim Render (Review Q3).
+      await env.prepare?.(loaded.project);
       const scene = evaluateScene(loaded.project, input.compositionId, frame, { registry: env.registry });
       const bounds = computeBounds(scene, env.measurer);
       return Promise.resolve({ frame, tree: sceneTree(scene, bounds).map((n) => ({ ...n })), diagnostics: plainDiagnostics([...scene.diagnostics, ...analyzeScene(scene, bounds)]), description: describeScene(scene, bounds) });
@@ -583,7 +510,7 @@ const previewContactSheet = defineOperation({
     { projectId: ProjectId, compositionId: CompositionId, frames: Type.Optional(Type.Array(FrameRef, { minItems: 1, maxItems: 64 })), count: Type.Optional(Type.Integer({ minimum: 1, maximum: 64 })), columns: Type.Optional(Type.Integer({ minimum: 1, maximum: 8 })), cellWidth: Type.Optional(Type.Integer({ minimum: 64, maximum: 1920 })), inline: Type.Optional(Type.Boolean()) },
     { additionalProperties: false },
   ),
-  output: Type.Object({ image: ImageResult, frames: Type.Array(Type.Number()), diagnostics: Diagnostics }),
+  output: Type.Object({ image: ImageResult, frames: Type.Array(Type.Number()), diagnostics: Diagnostics, manifest: FrameManifestSchema }),
   example: { input: { projectId: 'launch-video', frames: [0, 90, 180, 360] } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
@@ -600,15 +527,17 @@ const previewContactSheet = defineOperation({
       if (overlays === undefined) throw new OpenVideoError({ code: 'OV_BACKEND_MISSING', errorClass: 'RendererError', problem: 'Contact sheets need the Skia backend.', suggestions: ['Run `openvideo doctor`.'] });
       const diagnostics: Diagnostic[] = [];
       const cells = [];
+      const rendered: ManifestFrame[] = [];
       for (const f of frames) {
         const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame: f, scale });
+        rendered.push({ frame: f, ...r });
         diagnostics.push(...r.diagnostics.filter((d) => d.severity !== 'info'));
         cells.push({ image: r.image, label: `#${String(f)} · ${(f / fps).toFixed(2)}s` });
       }
       const sheet = overlays.contactSheet(cells, { columns, cellWidth, background: '#1B1D24' });
       const name = `contact-sheet-${fileSafe(String(comp['id']))}-${shortHash({ frames, columns, cellWidth })}.png`;
       const image = await imageOutput(ctx, input.projectId, name, ctx.services.encodePng(sheet), sheet, input.inline !== false);
-      return { image, frames, diagnostics: plainDiagnostics(diagnostics) };
+      return { image, frames, diagnostics: plainDiagnostics(diagnostics), manifest: await buildFrameManifest(env, loaded.project, rendered, scale) };
     });
   },
 });
@@ -728,12 +657,19 @@ const videoRender = defineOperation({
 
 const renderStatus = defineOperation({
   name: 'render.status',
-  summary: 'Status, progress and result of a render job.',
-  input: Type.Object({ jobId: Type.String() }, { additionalProperties: false }),
+  summary: 'Status, progress and result of a render job; without jobId, all jobs (optionally of one project), newest first.',
+  input: Type.Object({ jobId: Type.Optional(Type.String()), projectId: Type.Optional(ProjectId) }, { additionalProperties: false }),
   output: AnyObject,
   example: { input: { jobId: 'job-…' } },
   handler(input, ctx) {
-    return Promise.resolve({ ...ctx.services.jobs.status(input.jobId) });
+    if (input.jobId !== undefined) return Promise.resolve({ ...ctx.services.jobs.status(input.jobId) });
+    // Liste (Story 20.8): das Studio stellt damit seine Render Queue nach einem Neuladen wieder her.
+    const jobs = ctx.services.jobs
+      .list()
+      .filter((j) => input.projectId === undefined || j.projectId === input.projectId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((j) => ({ ...j }));
+    return Promise.resolve({ jobs });
   },
 });
 
@@ -756,9 +692,10 @@ const diagnosticsGet = defineOperation({
   example: { input: { projectId: 'launch-video', frame: 120 } },
   async handler(input, ctx) {
     const loaded = await loadProject(ctx, input.projectId);
-    const list = await withEnv(ctx, loaded, (env) => {
+    const list = await withEnv(ctx, loaded, async (env) => {
       const out: Diagnostic[] = [...checkProject(env, loaded.project)];
       if (input.frame !== undefined && out.every((d) => d.severity !== 'error')) {
+        await env.prepare?.(loaded.project);
         const scene = evaluateScene(loaded.project, input.compositionId, frameOf(loaded.project, input.compositionId, input.frame), { registry: env.registry });
         out.push(...scene.diagnostics, ...analyzeScene(scene, computeBounds(scene, env.measurer)));
       }
@@ -801,7 +738,7 @@ const templatesInspect = defineOperation({
   example: { input: { name: 'product-launch' } },
   async handler(input, ctx) {
     const catalog = ctx.services.templates;
-    if (catalog === undefined) throw new OpenVideoError({ code: 'OV_TEMPLATES_UNAVAILABLE', errorClass: 'ApiError', problem: 'No template catalog is configured.', suggestions: [] });
+    if (catalog === undefined) throw new OpenVideoError({ code: 'OV_TEMPLATES_UNAVAILABLE', errorClass: 'ApiError', problem: 'No template catalog is configured.', suggestions: ['Start the host with the template catalog (openvideo serve/mcp include it).', 'Create the project from JSON with "project" instead of "template".'] });
     const t = await catalog.get(input.name);
     return { info: { ...t.info }, files: { ...t.files }, project: { ...t.project } };
   },
@@ -857,10 +794,16 @@ const benchmarkRun = defineOperation({
   },
 });
 
+const [capabilitiesGet, schemaGet] = describeOperations(() => OPERATIONS);
+
 /** Alle Operationen nach Namen (FR-21). */
 export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<string, OperationDefinition>(
   [
+    capabilitiesGet,
+    schemaGet,
     projectCreate,
+    projectOpen,
+    projectImport,
     projectInspect,
     projectUpdate,
     compositionCreate,
@@ -870,6 +813,7 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
     assetImport,
     assetInspect,
     frameRender,
+    frameRenderMany,
     frameInspect,
     previewRender,
     previewContactSheet,
@@ -877,6 +821,7 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
     renderStatus,
     renderCancel,
     diagnosticsGet,
+    subtitlesTranscribe,
     fontsList,
     templatesList,
     templatesInspect,
@@ -884,6 +829,7 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
     sceneTreeOp,
     timelineInspect,
     benchmarkRun,
+    pluginsList,
   ].map((op): [string, OperationDefinition] => [op.name, op]),
 );
 
@@ -897,6 +843,7 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
  * ```
  */
 export async function readProjectFile(ctx: OperationContext, projectId: string, path: string): Promise<Uint8Array> {
+  await assertProjectAccess(ctx.services, projectId);
   const file = await safeRealPath(ctx.services.workspace.projectDir(projectId), path);
   try {
     return await readFile(file);

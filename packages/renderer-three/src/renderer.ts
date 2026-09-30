@@ -4,7 +4,7 @@
  */
 import { OpenVideoError } from '@agentic-video/core';
 import { ThreeAssets } from './assets.js';
-import { requiresWebGL2 } from './check.js';
+import { requiresWebGL2, threeBackendFor, threeTextureLimit } from './check.js';
 import { buildScene, outputSize, wantsAntialias, type ThreeLayerInput } from './scene.js';
 import { WebGLBackend } from './webgl.js';
 import { WebGPUBackend, webgpuAvailable } from './webgpu.js';
@@ -21,7 +21,10 @@ type Backend = WebGLBackend | WebGPUBackend;
  *   und kein `requestAnimationFrame`. Die Szene wird pro Aufruf neu aufgebaut, daher hängt
  *   Frame n nie von Frame n−1 ab.
  * - Backend: Node-Property `backend`, sonst `preferredBackend` des Konstruktors. `auto` nutzt
- *   WebGPU, außer die Szene braucht WebGL2 (GLSL-Shader) oder WebGPU fehlt.
+ *   WebGPU, außer die Szene braucht WebGL2 (GLSL-Shader) oder WebGPU fehlt. Mit `input.graphics`
+ *   (Probe des Hosts, steht im Cache-Schlüssel) entscheidet dieses Ergebnis statt einer Live-Prüfung.
+ * - Bildtexturen werden gegen das GPU-Maximum geprüft (`OV_THREE_TEXTURE_TOO_LARGE`); mit
+ *   `textureDownscale` (Node) bzw. `downscaleTextures` (Option) werden sie verkleinert.
  * - Ergebnis: ein neues 2D-Canvas `width·scale × height·scale`, transparent ohne `background`.
  *   Die Pixel im Canvas sind wie bei jedem 2D-Canvas vormultipliziert gespeichert.
  *
@@ -38,8 +41,20 @@ export class ThreeLayerRenderer {
   private webgpuOk: Promise<boolean> | undefined;
   private active: 'webgpu' | 'webgl2' | undefined;
 
-  constructor(options?: { preferredBackend?: ThreeBackendPreference }) {
+  private readonly downscaleTextures: boolean;
+  private readonly maxTextureSize: number | undefined;
+
+  /**
+   * @param options.preferredBackend Standard-Backend (`auto`).
+   * @param options.downscaleTextures Zu große Bildtexturen verkleinern statt `OV_THREE_TEXTURE_TOO_LARGE`
+   *   zu werfen (Standard `false`; die Node-Property `textureDownscale` hat Vorrang).
+   * @param options.maxTextureSize Obergrenze der Texturkante zusätzlich zum GPU-Maximum, z. B. um
+   *   Speicher zu begrenzen.
+   */
+  constructor(options?: { preferredBackend?: ThreeBackendPreference; downscaleTextures?: boolean; maxTextureSize?: number }) {
     this.preferred = options?.preferredBackend ?? 'auto';
+    this.downscaleTextures = options?.downscaleTextures ?? false;
+    this.maxTextureSize = options?.maxTextureSize;
   }
 
   /** Backend des letzten Renderaufrufs, vorher `undefined`. */
@@ -61,7 +76,10 @@ export class ThreeLayerRenderer {
     const kind = await this.chooseBackend(input);
     const antialias = wantsAntialias(input.node);
     const backend = await this.backend(kind, antialias);
-    const built = await buildScene(input, this.assets, (preset) => backend.presetEnvironment(preset));
+    const prop = input.node.props['textureDownscale'];
+    // Mit Probe-Ergebnis gilt dessen Grenze (Review M3), sonst die live gemessene.
+    const textureLimit = { maxSize: threeTextureLimit(kind, backend.maxTextureSize, input.graphics?.maxTextureSize, this.maxTextureSize), downscale: typeof prop === 'boolean' ? prop : this.downscaleTextures };
+    const built = await buildScene(input, this.assets, (preset) => backend.presetEnvironment(preset), textureLimit);
     const { width, height } = outputSize(input);
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -95,9 +113,12 @@ export class ThreeLayerRenderer {
       }
       return 'webgpu';
     }
+    // `auto`: dieselbe reine Regel wie Manifest und Cache-Schlüssel (threeBackendFor, Story 21.5).
     if (requiresWebGL2({ children: input.node.children.map(toRaw) })) return 'webgl2';
+    // Mit Probe-Ergebnis des Hosts entscheidet genau das, was im Schlüssel steht – nie live (Review M3).
+    if (input.graphics !== undefined) return threeBackendFor({ backend: 'auto', children: [] }, input.graphics.webgpu);
     this.webgpuOk ??= webgpuAvailable();
-    return (await this.webgpuOk) ? 'webgpu' : 'webgl2';
+    return threeBackendFor({ backend: 'auto', children: [] }, await this.webgpuOk);
   }
 
   private backend(kind: 'webgpu' | 'webgl2', antialias: boolean): Promise<Backend> {

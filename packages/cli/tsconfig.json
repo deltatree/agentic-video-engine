@@ -49,6 +49,9 @@
       "path": "../renderer-blender"
     },
     {
+      "path": "../renderer-browser"
+    },
+    {
       "path": "../sandbox"
     },
     {

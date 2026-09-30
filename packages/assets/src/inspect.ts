@@ -2,7 +2,7 @@
  * Metadaten je Asset-Typ (FR-49): Maße, Dauer, Codec, Farbraum, Alpha, Lizenz-Hinweise.
  */
 import { probeMedia } from '@agentic-video/ffmpeg';
-import { parseFontInfo } from '@agentic-video/fonts';
+import { fontContainer, fontFaceCount, parseFontInfo } from '@agentic-video/fonts';
 import { OpenVideoError, isRecord } from '@agentic-video/core';
 import { sniffFormat, type DetectedFormat } from './detect.js';
 
@@ -193,7 +193,8 @@ export async function inspectAsset(path: string, bytes: Uint8Array, detected: De
     }
     case 'font': {
       const info = parseFontInfo(bytes);
-      return { metadata: { ...info } };
+      const faces = fontFaceCount(bytes);
+      return { metadata: { ...info, container: fontContainer(bytes), ...(faces > 1 ? { faces } : {}) } };
     }
     case 'subtitle': {
       const t = text();

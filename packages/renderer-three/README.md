@@ -31,7 +31,7 @@ renderer.dispose();
 | Thema | Regel |
 |---|---|
 | Zeit | Nur aus der Eingabe. Die Szene wird pro Aufruf neu gebaut. |
-| Backend | Node-Property `backend`, sonst `preferredBackend`. `auto` = WebGPU, außer GLSL-Shader oder kein WebGPU. |
+| Backend | Node-Property `backend`, sonst `preferredBackend`. `auto` = WebGPU, außer GLSL-Shader oder kein nutzbares WebGPU (`probeWebGPU`: Mini-Render auf dem Pfad von Three.js, ein Adapter allein reicht nicht). |
 | Orthografische Kamera | Sichtbare Höhe 10 m ÷ `zoom`. |
 | Lichter | `directional`, `spot`, `hemisphere` stehen ohne `position` bei `[0, 1, 0]`. `spot.angle` ist der halbe Öffnungswinkel (Standard 60°). |
 | Geometrie | Standardmaße von Three.js (Kante 1, Radius 1), 32 Segmente. |
@@ -44,6 +44,23 @@ renderer.dispose();
 | Color Grading | Im Anzeige-Raum: `rgb · 2^exposure`, dann Kontrast um 0,5, dann Sättigung (Rec.-709-Luma). |
 | Depth of Field | Eigene Rechnung, in beiden Backends gleich: `blur = clamp(|focus − Abstand| · aperture, 0, maxBlur)`. |
 | Asset-Format | Erst Dateiendung, dann erste Bytes (Host-URLs haben oft keine Endung). HDR über `HDRLoader` (Nachfolger von `RGBELoader`). |
+
+## Texturgrenzen
+
+Bildtexturen (`map`, `normalMap`, `roughnessMap`) werden gegen das GPU-Maximum geprüft
+(WebGL2 `MAX_TEXTURE_SIZE`, WebGPU `maxTextureDimension2D`, optional zusätzlich die Option
+`maxTextureSize`). Ist eine Textur größer, wirft der Renderer `OV_THREE_TEXTURE_TOO_LARGE` mit Node,
+Frame, Asset-Maßen, GPU-Maximum und Vorschlägen (Auftrag §40). Mit `textureDownscale: true` an der
+`scene3d`-Node oder `new ThreeLayerRenderer({ downscaleTextures: true })` wird die Textur stattdessen
+seitenverhältnistreu auf die Grenze verkleinert (die Node-Property hat Vorrang).
+
+Beim Video-Render gibt der Browser-Host jedem `three`-Layer das Ergebnis der Grafik-Probe mit, das im
+Cache-Schlüssel steht (`input.graphics`: `webgpu`, `maxTextureSize`; ADR 0019, Nachtrag 2026-09-30).
+`backend: 'auto'` richtet sich dann danach, und für WebGL2 gilt genau die Texturgrenze der Probe
+(`threeTextureLimit`), nicht die live gemessene. Erlaubt die GPU weniger als die Probe meldet, wirft der
+Renderer `OV_THREE_GRAPHICS_MISMATCH`, statt still anders zu rendern (Abhilfe: gespeicherte Probe mit
+`openvideo cache clear --tier layer` löschen oder auf der Maschine der Probe rendern). Ohne Probe (Studio,
+direkte Nutzung) prüft der Renderer wie bisher live.
 
 ## Einschränkungen
 

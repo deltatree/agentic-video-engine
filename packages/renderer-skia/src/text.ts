@@ -502,11 +502,24 @@ function drawAnimated(canvas: Canvas, node: EvaluatedNode, layout: TextLayout, s
   });
 }
 
-function drawOnPath(canvas: Canvas, layout: TextLayout, textPath: Readonly<Record<string, unknown>>, ctx: TextDrawContext): void {
+/** Ein Graphem auf dem Pfad: Position, Richtung und Rechteck im Absatz. */
+interface PathGlyph {
+  readonly start: number;
+  readonly end: number;
+  readonly rect: { readonly l: number; readonly t: number; readonly r: number; readonly b: number };
+  /** Punkt auf dem Pfad (Mitte der Grundlinie) und Winkel in Grad. */
+  readonly x: number;
+  readonly y: number;
+  readonly angle: number;
+}
+
+/** Legt die Grapheme entlang des Pfads (Mitte jedes Graphems auf `offset + Mitte`). */
+function pathGlyphs(layout: TextLayout, textPath: Readonly<Record<string, unknown>>, ctx: TextDrawContext): { glyphs: PathGlyph[]; pointAt: (distance: number) => { x: number; y: number; angle: number } | undefined } {
   const { ck, scope } = ctx;
-  if (typeof textPath['d'] !== 'string') return;
+  const none = { glyphs: [], pointAt: () => undefined };
+  if (typeof textPath['d'] !== 'string') return none;
   const path = nullable(ck.Path.MakeFromSVGString(textPath['d']));
-  if (path === null) return;
+  if (path === null) return none;
   scope.add(path);
   const iter = scope.add(new ck.ContourMeasureIter(path, false, 1));
   const contours: { measure: ContourMeasure; start: number; length: number }[] = [];
@@ -516,27 +529,138 @@ function drawOnPath(canvas: Canvas, layout: TextLayout, textPath: Readonly<Recor
     contours.push({ measure: m, start: total, length: m.length() });
     total += m.length();
   }
-  const offset = typeof textPath['offset'] === 'number' ? textPath['offset'] : 0;
-  const baseline = layout.fill.getAlphabeticBaseline();
-  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-  for (const seg of segmenter.segment(layout.text)) {
-    const rects = rangeRects(layout.fill, ck, seg.index, seg.index + seg.segment.length).filter((r) => r.r > r.l);
-    const rect = rects[0];
-    if (rect === undefined) continue;
-    const cx = (rect.l + rect.r) / 2;
-    const distance = offset + cx;
+  const pointAt = (distance: number): { x: number; y: number; angle: number } | undefined => {
     const contour = contours.find((c) => distance >= c.start && distance <= c.start + c.length);
-    if (contour === undefined) continue;
-    const posTan = contour.measure.getPosTan(distance - contour.start);
-    const [px = 0, py = 0, tx = 1, ty = 0] = posTan;
+    if (contour === undefined) return undefined;
+    const [px = 0, py = 0, tx = 1, ty = 0] = contour.measure.getPosTan(distance - contour.start);
+    return { x: px, y: py, angle: (Math.atan2(ty, tx) * 180) / Math.PI };
+  };
+  const offset = typeof textPath['offset'] === 'number' ? textPath['offset'] : 0;
+  const glyphs: PathGlyph[] = [];
+  const segmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
+  for (const seg of segmenter.segment(layout.text)) {
+    const rect = rangeRects(layout.fill, ck, seg.index, seg.index + seg.segment.length).filter((r) => r.r > r.l)[0];
+    if (rect === undefined) continue;
+    const at = pointAt(offset + (rect.l + rect.r) / 2);
+    if (at === undefined) continue;
+    glyphs.push({ start: seg.index, end: seg.index + seg.segment.length, rect, ...at });
+  }
+  return { glyphs, pointAt };
+}
+
+/** Setzt die Zeichenfläche in den Rahmen eines Graphems (Grundlinie auf dem Pfad). */
+function enterGlyph(canvas: Canvas, g: PathGlyph, baseline: number): void {
+  canvas.translate(g.x, g.y);
+  canvas.rotate(g.angle, 0, 0);
+  canvas.translate(-(g.rect.l + g.rect.r) / 2, -baseline);
+}
+
+/**
+ * Hintergrund entlang des Pfads: ein Band in Zeilenhöhe plus `paddingY`, das dem Pfad folgt
+ * (parallel zur Grundlinie, von `paddingX` vor dem ersten bis `paddingX` nach dem letzten Graphem).
+ * `radius > 0` rundet die Enden (Halbkreis). Das Band ist ein einziger Strich, daher ohne Fugen
+ * in Kurven.
+ */
+function drawPathBackground(canvas: Canvas, node: EvaluatedNode, layout: TextLayout, glyphs: readonly PathGlyph[], baseline: number, offset: number, pointAt: (distance: number) => { x: number; y: number; angle: number } | undefined, ctx: TextDrawContext): void {
+  const bg = node.props['background'];
+  const first = glyphs[0];
+  const last = glyphs[glyphs.length - 1];
+  if (!isRecord(bg) || typeof bg['color'] !== 'string' || first === undefined || last === undefined) return;
+  const { ck, scope } = ctx;
+  const radius = typeof bg['radius'] === 'number' ? bg['radius'] : 0;
+  const top = Math.min(...glyphs.map((g) => g.rect.t)) - layout.padY;
+  const bottom = Math.max(...glyphs.map((g) => g.rect.b)) + layout.padY;
+  const height = bottom - top;
+  // Mittellinie des Bands, versetzt zur Grundlinie (lokales y nach unten).
+  const mid = (top + bottom) / 2 - baseline;
+  const cap = radius > 0 ? height / 2 : 0;
+  const from = offset + first.rect.l - layout.padX + cap;
+  const to = offset + last.rect.r + layout.padX - cap;
+  const b = new ck.PathBuilder();
+  let started = false;
+  const steps = Math.max(2, Math.ceil((to - from) / 2));
+  for (let i = 0; i <= steps; i++) {
+    const at = pointAt(from + ((to - from) * i) / steps);
+    if (at === undefined) continue;
+    const a = (at.angle * Math.PI) / 180;
+    const x = at.x - Math.sin(a) * mid;
+    const y = at.y + Math.cos(a) * mid;
+    if (started) b.lineTo(x, y);
+    else b.moveTo(x, y);
+    started = true;
+  }
+  const band = scope.add(b.detachAndDelete());
+  if (!started) return;
+  const paint = scope.add(new ck.Paint());
+  paint.setAntiAlias(true);
+  paint.setColor(toColor(ck, bg['color']));
+  paint.setStyle(ck.PaintStyle.Stroke);
+  paint.setStrokeWidth(height);
+  paint.setStrokeJoin(ck.StrokeJoin.Round);
+  paint.setStrokeCap(radius > 0 ? ck.StrokeCap.Round : ck.StrokeCap.Butt);
+  canvas.drawPath(band, paint);
+}
+
+function drawOnPath(canvas: Canvas, node: EvaluatedNode, layout: TextLayout, textPath: Readonly<Record<string, unknown>>, ctx: TextDrawContext): void {
+  const { ck, scope } = ctx;
+  const { glyphs, pointAt } = pathGlyphs(layout, textPath, ctx);
+  const baseline = layout.fill.getAlphabeticBaseline();
+  const offset = typeof textPath['offset'] === 'number' ? textPath['offset'] : 0;
+  drawPathBackground(canvas, node, layout, glyphs, baseline, offset, pointAt, ctx);
+  const anim = node.props['textAnimation'];
+  // Einheiten der Animation: Zeichenbereiche im Text und ihr Mittelpunkt auf dem Pfad.
+  let units: { start: number; end: number }[] = [];
+  if (isRecord(anim)) {
+    const unit = anim['unit'] === 'word' || anim['unit'] === 'line' ? anim['unit'] : 'char';
+    let cursor = 0;
+    units = splitTextUnits(layout.text, unit).map((u) => {
+      const found = layout.text.indexOf(u, cursor);
+      const start = found < 0 ? cursor : found;
+      cursor = start + u.length;
+      return { start, end: start + u.length };
+    });
+  }
+  const drawGlyph = (g: PathGlyph): void => {
     canvas.save();
-    canvas.translate(px, py);
-    canvas.rotate((Math.atan2(ty, tx) * 180) / Math.PI, 0, 0);
-    canvas.translate(-cx, -baseline);
-    canvas.clipRect(ck.LTRBRect(rect.l, rect.t, rect.r, rect.b), ck.ClipOp.Intersect, true);
+    enterGlyph(canvas, g, baseline);
+    canvas.clipRect(ck.LTRBRect(g.rect.l, g.rect.t, g.rect.r, g.rect.b), ck.ClipOp.Intersect, true);
     drawParagraphs(canvas, layout, 0, 0);
     canvas.restore();
+  };
+  if (units.length === 0) {
+    for (const g of glyphs) drawGlyph(g);
+    return;
   }
+  units.forEach((u, i) => {
+    const members = glyphs.filter((g) => g.start >= u.start && g.end <= u.end);
+    if (members.length === 0) return;
+    const state = textUnitState(node, i, units.length, node.time.localFrame, ctx.fps);
+    if (state.opacity <= 0 || state.scale === 0) return;
+    // Verschiebung, Drehung und Skalierung wirken um die Mitte der Einheit auf dem Pfad.
+    const l = Math.min(...members.map((g) => g.rect.l));
+    const r = Math.max(...members.map((g) => g.rect.r));
+    const center = pointAt(offset + (l + r) / 2) ?? { x: members[0]?.x ?? 0, y: members[0]?.y ?? 0, angle: 0 };
+    canvas.save();
+    canvas.translate(center.x + state.dx, center.y + state.dy);
+    if (state.rotation !== 0) canvas.rotate(state.rotation, 0, 0);
+    if (state.scale !== 1) canvas.scale(state.scale, state.scale);
+    canvas.translate(-center.x, -center.y);
+    const needsLayer = state.opacity < 1 || state.blur > 0 || state.color !== undefined;
+    if (needsLayer) {
+      const paint = scope.add(new ck.Paint());
+      paint.setAlphaf(Math.min(state.opacity, 1));
+      if (state.blur > 0) paint.setImageFilter(scope.add(ck.ImageFilter.MakeBlur(state.blur, state.blur, ck.TileMode.Decal, null)));
+      if (state.color !== undefined && state.color.mix > 0) {
+        const identity = scope.add(ck.ColorFilter.MakeMatrix(ck.ColorMatrix.identity()));
+        const tint = scope.add(ck.ColorFilter.MakeBlend(toColor(ck, state.color.from), ck.BlendMode.SrcIn));
+        paint.setColorFilter(scope.add(ck.ColorFilter.MakeLerp(state.color.mix, identity, tint)));
+      }
+      canvas.saveLayer(paint);
+    }
+    for (const g of members) drawGlyph(g);
+    if (needsLayer) canvas.restore();
+    canvas.restore();
+  });
 }
 
 /**
@@ -550,7 +674,8 @@ function drawOnPath(canvas: Canvas, layout: TextLayout, textPath: Readonly<Recor
 export function drawTextLayout(canvas: Canvas, node: EvaluatedNode, layout: TextLayout, ctx: TextDrawContext): void {
   const textPath = node.props['textPath'];
   if (isRecord(textPath)) {
-    drawOnPath(canvas, layout, textPath, ctx);
+    // Auf dem Pfad wirken Hintergrund und textAnimation ebenfalls (Story 17.6).
+    drawOnPath(canvas, node, layout, textPath, ctx);
     return;
   }
   drawBackground(ctx.ck, canvas, node, layout, ctx.scope);

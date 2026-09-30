@@ -1,0 +1,140 @@
+# Produktion mit Hochverfügbarkeit (Story 21.8, ADR 0027).
+#
+# Baut auf overlays/prometheus auf (Produktion + Prometheus-Metriken) und ergänzt:
+# - PodDisruptionBudgets: Knoten-Drains und Cluster-Upgrades lassen immer Worker und Studio laufen.
+# - Replikate und RollingUpdate für die zustandslosen Teile (worker-cpu, Studio).
+# - Single-Writer bleiben bewusst einzeln (Koordinator: Journal, API: Workspace und Job-Manager,
+#   Object Storage): Recreate, höchste Priorität, schneller Neustart; siehe ADR 0027.
+# - GPU-Autoscaling über die GPU-Auslastung (DCGM-Exporter, KEDA-Trigger "prometheus").
+#
+# Voraussetzungen: KEDA, Prometheus (prometheus-operated.monitoring), NVIDIA GPU Operator mit
+# DCGM-Exporter, mindestens drei Knoten. Einsatz: kubectl apply -k deploy/k8s/overlays/production-ha
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: openvideo
+labels:
+  - pairs:
+      app.kubernetes.io/name: openvideo
+      app.kubernetes.io/part-of: openvideo
+    includeSelectors: false
+resources:
+  - ../prometheus
+  - priorityclass.yaml
+  - pdb.yaml
+patches:
+  # --- Single-Writer: nicht verdrängen lassen, sauber neu starten ------------------------------
+  - target: { kind: Deployment, name: "coordinator|api" }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: openvideo-critical
+  - target: { kind: StatefulSet, name: object-storage }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: openvideo-critical
+  # Der Koordinator ist der einzige Schreiber seines Journals (RWO-PVC). Recreate bleibt; die
+  # Annotation dokumentiert das im Cluster, damit niemand ihn hochskaliert.
+  - target: { kind: Deployment, name: coordinator }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          openvideo.io/single-writer: "journal on PVC coordinator-journal; keep replicas 1 (ADR 0027)"
+  - target: { kind: Deployment, name: api }
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          openvideo.io/single-writer: "workspace on PVC api-workspace and in-process job manager; keep replicas 1 (ADR 0027)"
+
+  # --- Studio: zwei Replikate, RollingUpdate, Sitzung bleibt am Pod ----------------------------
+  # Jede Studio-Replik hat ihren eigenen Workspace (emptyDir). ClientIP-Affinität hält einen
+  # Browser bei derselben Replik; fällt sie aus, öffnet der Browser eine neue Sitzung.
+  - target: { kind: Deployment, name: studio }
+    patch: |-
+      - op: add
+        path: /spec/replicas
+        value: 2
+      - op: add
+        path: /spec/strategy
+        value: { type: RollingUpdate, rollingUpdate: { maxSurge: 1, maxUnavailable: 0 } }
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector: { matchLabels: { app.kubernetes.io/component: studio } }
+  - target: { kind: Service, name: studio }
+    patch: |-
+      - op: add
+        path: /spec/sessionAffinity
+        value: ClientIP
+
+  # --- Worker: RollingUpdate ohne Kapazitätsverlust, über Knoten verteilt ----------------------
+  - target: { kind: Deployment, name: worker-cpu }
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value: { type: RollingUpdate, rollingUpdate: { maxSurge: 25%, maxUnavailable: 0 } }
+      - op: add
+        path: /spec/template/spec/topologySpreadConstraints
+        value:
+          - maxSkew: 1
+            topologyKey: kubernetes.io/hostname
+            whenUnsatisfiable: ScheduleAnyway
+            labelSelector: { matchLabels: { app.kubernetes.io/component: worker, openvideo.io/worker-class: cpu } }
+  # GPUs sind knapp: erst einen alten Worker beenden (gibt seinen Chunk zurück), dann den neuen starten.
+  - target: { kind: Deployment, name: "worker-gpu|worker-blender" }
+    patch: |-
+      - op: add
+        path: /spec/strategy
+        value: { type: RollingUpdate, rollingUpdate: { maxSurge: 0, maxUnavailable: 1 } }
+  # Mindestens zwei CPU-Worker, damit ein Knotenausfall die Queue nicht anhält.
+  - target: { kind: ScaledObject, name: worker-cpu }
+    patch: |-
+      - op: replace
+        path: /spec/minReplicaCount
+        value: 2
+
+  # --- GPU-Autoscaling über die GPU-Auslastung (DCGM) ------------------------------------------
+  # Zusätzlich zu Queue-Länge und aktiven Leases: Liegt die mittlere GPU-Auslastung der GPU-Worker
+  # über 80 %, kommt ein Worker dazu. Der DCGM-Exporter des GPU Operators ordnet Metriken Pods zu;
+  # je nach ServiceMonitor heißen die Labels "pod"/"namespace" oder "exported_pod"/"exported_namespace".
+  - target: { kind: ScaledObject, name: worker-gpu }
+    patch: |-
+      - op: add
+        path: /spec/triggers/-
+        value:
+          type: prometheus
+          name: gpu-utilization
+          metadata:
+            serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+            query: >-
+              avg(
+                DCGM_FI_DEV_GPU_UTIL{exported_namespace="openvideo", exported_pod=~"worker-gpu-.+"}
+                or DCGM_FI_DEV_GPU_UTIL{namespace="openvideo", pod=~"worker-gpu-.+"}
+              )
+            threshold: "80"
+            activationThreshold: "0"
+            ignoreNullValues: "true"
+      - op: add
+        path: /spec/triggers/-
+        value:
+          type: prometheus
+          name: gpu-memory
+          metadata:
+            serverAddress: http://prometheus-operated.monitoring.svc.cluster.local:9090
+            # Belegter GPU-Speicher in Prozent; über 85 % im Mittel: ein Worker mehr.
+            query: >-
+              100 * avg(
+                (DCGM_FI_DEV_FB_USED{exported_namespace="openvideo", exported_pod=~"worker-gpu-.+"}
+                  / (DCGM_FI_DEV_FB_USED{exported_namespace="openvideo", exported_pod=~"worker-gpu-.+"} + DCGM_FI_DEV_FB_FREE{exported_namespace="openvideo", exported_pod=~"worker-gpu-.+"}))
+                or
+                (DCGM_FI_DEV_FB_USED{namespace="openvideo", pod=~"worker-gpu-.+"}
+                  / (DCGM_FI_DEV_FB_USED{namespace="openvideo", pod=~"worker-gpu-.+"} + DCGM_FI_DEV_FB_FREE{namespace="openvideo", pod=~"worker-gpu-.+"}))
+              )
+            threshold: "85"
+            activationThreshold: "0"
+            ignoreNullValues: "true"

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "openvideo": {
+      "command": "openvideo",
+      "args": ["mcp", "--project", "./examples/product-launch"]
+    }
+  }
+}

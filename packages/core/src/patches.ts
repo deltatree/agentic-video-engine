@@ -4,7 +4,7 @@
  * Jeder Patch ändert nur die genannten Stellen. Alle anderen Bytes der
  * serialisierten IR bleiben gleich. Jede Operation liefert ihre Umkehrung (Undo).
  */
-import { OpenVideoError, validateProject, type Diagnostic, type TimeValue, type ValidateOptions } from '@agentic-video/schema';
+import { OpenVideoError, closest, validateProject, type Diagnostic, type TimeValue, type ValidateOptions } from '@agentic-video/schema';
 import { resolveMarkers, toFrames } from '@agentic-video/timeline';
 import { isRecord } from './guards.js';
 
@@ -121,7 +121,15 @@ function locate(project: Record<string, unknown>, nodeId: string, compositionId:
     if (hit !== undefined) hits.push(hit);
   }
   const [first, second] = hits;
-  if (first === undefined) throw patchError(`Node "${nodeId}" does not exist.`, ['Use scene.tree to list node ids.'], { nodeId });
+  if (first === undefined) {
+    const known = new Set<string>();
+    for (const comp of comps) {
+      const nodes = comp['nodes'];
+      if (Array.isArray(nodes)) collectIds(nodes, known);
+    }
+    const guess = closest(nodeId, [...known]);
+    throw patchError(`Node "${nodeId}" does not exist.`, [...(guess !== undefined ? [`Did you mean "${guess}"?`] : []), 'Use scene.tree or composition.get to list node ids.'], { nodeId, expected: 'an existing node id', received: JSON.stringify(nodeId) });
+  }
   if (second !== undefined) throw patchError(`Node id "${nodeId}" exists in several compositions.`, ['Add compositionId to the patch.'], { nodeId });
   return first;
 }
@@ -223,15 +231,24 @@ function collectIds(list: readonly unknown[], into: Set<string>): void {
 
 function nodesArray(comp: Record<string, unknown>): unknown[] {
   const nodes = comp['nodes'];
-  if (!Array.isArray(nodes)) throw patchError(`Composition "${String(comp['id'])}" has no nodes array.`, []);
+  if (!Array.isArray(nodes)) throw patchError(`Composition "${String(comp['id'])}" has no nodes array.`, ['Set "nodes": [] on the composition with setCompositionProperty.']);
   return nodes;
 }
 
 function containerFor(project: Record<string, unknown>, parentId: string | null, compositionId: string | undefined): { list: unknown[]; composition: Record<string, unknown> } {
+  // Strikt (Story 19.6): nur eine Node-ID oder null; alles andere fällt nicht still auf die oberste Ebene.
+  const raw: unknown = parentId;
+  if (raw !== null && typeof raw !== 'string') {
+    const shown = raw === undefined ? 'undefined (missing)' : JSON.stringify(raw);
+    throw patchError(`"parentId" must be a node id or null, not ${shown}.`, ['Use the id of a group or layer, or null for the top level.'], { path: 'parentId', expected: 'string or null', received: shown });
+  }
   if (parentId === null) {
     const comps = compositions(project);
     const comp = compositionId === undefined ? comps[0] : comps.find((c) => c['id'] === compositionId);
-    if (comp === undefined) throw patchError(compositionId === undefined ? 'The project has no composition.' : `Composition "${compositionId}" does not exist.`, []);
+    if (comp === undefined) {
+      const ids = comps.map((c) => String(c['id']));
+      throw patchError(compositionId === undefined ? 'The project has no composition.' : `Composition "${compositionId}" does not exist.`, compositionId === undefined ? ['Add a composition with composition.create first.'] : [`Use one of: ${ids.join(', ') || '(none)'}.`]);
+    }
     return { list: nodesArray(comp), composition: comp };
   }
   const parent = locate(project, parentId, compositionId);
@@ -260,6 +277,13 @@ function assets(project: Record<string, unknown>): unknown[] {
   const created: unknown[] = [];
   project['assets'] = created;
   return created;
+}
+
+/** Vorschläge für eine unbekannte Asset-ID. */
+function assetHints(list: readonly unknown[], assetId: string): string[] {
+  const ids = list.filter(isRecord).map((a) => String(a['id']));
+  const guess = closest(assetId, ids);
+  return guess !== undefined ? [`Did you mean "${guess}"?`] : [`Declared assets: ${ids.join(', ') || '(none)'}.`];
 }
 
 /** Wendet einen Patch auf `project` (wird verändert) an und liefert seine Umkehrung. */
@@ -356,7 +380,7 @@ function applyOne(project: Record<string, unknown>, patch: Patch): Patch[] {
     case 'replaceAsset': {
       const list = assets(project);
       const asset = list.filter(isRecord).find((a) => a['id'] === patch.assetId);
-      if (asset === undefined) throw patchError(`Asset "${patch.assetId}" does not exist.`, ['Use asset.import to add it.']);
+      if (asset === undefined) throw patchError(`Asset "${patch.assetId}" does not exist.`, [...assetHints(list, patch.assetId), 'Use asset.import to add it.']);
       const before = cloneRecord(asset);
       asset['src'] = patch.src;
       if (patch.type !== undefined) asset['type'] = patch.type;
@@ -384,22 +408,25 @@ function applyOne(project: Record<string, unknown>, patch: Patch): Patch[] {
       const list = assets(project);
       const index = list.findIndex((a) => isRecord(a) && a['id'] === patch.assetId);
       const asset = list[index];
-      if (index < 0 || !isRecord(asset)) throw patchError(`Asset "${patch.assetId}" does not exist.`, []);
+      if (index < 0 || !isRecord(asset)) throw patchError(`Asset "${patch.assetId}" does not exist.`, assetHints(list, patch.assetId));
       list.splice(index, 1);
       return [{ op: 'addAsset', asset }];
     }
     case 'setCompositionProperty': {
       const comp = compositions(project).find((c) => c['id'] === patch.compositionId);
-      if (comp === undefined) throw patchError(`Composition "${patch.compositionId}" does not exist.`, []);
+      if (comp === undefined) {
+        const guess = closest(patch.compositionId, compositions(project).map((c) => String(c['id'])));
+        throw patchError(`Composition "${patch.compositionId}" does not exist.`, [...(guess !== undefined ? [`Did you mean "${guess}"?`] : []), 'Use project.inspect to list compositions.']);
+      }
       const parts = splitPath(patch.property);
-      if (parts[0] === 'nodes') throw patchError('Use addNode, removeNode or moveNode to change nodes.', []);
+      if (parts[0] === 'nodes') throw patchError('Use addNode, removeNode or moveNode to change nodes.', ['{ "op": "addNode", "parentId": null, "node": { "id": "box", "type": "rect", "width": 100, "height": 100 } }']);
       const restore = inversePath(comp, parts);
       setPath(comp, parts, cloneJson(patch.value), patch.keepNull === true);
       return [{ op: 'setCompositionProperty', compositionId: patch.compositionId, property: restore.path, ...restoreFields(restore) }];
     }
     case 'setProjectProperty': {
       const parts = splitPath(patch.property);
-      if (parts[0] === 'compositions' || parts[0] === 'assets') throw patchError(`Use the dedicated operations to change "${parts[0]}".`, []);
+      if (parts[0] === 'compositions' || parts[0] === 'assets') throw patchError(`Use the dedicated operations to change "${parts[0]}".`, [parts[0] === 'assets' ? 'Use addAsset, replaceAsset, removeAsset or asset.import.' : 'Use composition.create, setCompositionProperty and the node patches.']);
       const restore = inversePath(project, parts);
       setPath(project, parts, cloneJson(patch.value), patch.keepNull === true);
       return [{ op: 'setProjectProperty', property: restore.path, ...restoreFields(restore) }];
@@ -435,7 +462,10 @@ export function applyPatches(project: Readonly<Record<string, unknown>>, patches
         inverse.unshift(...applyOne(working, patch).reverse());
       } catch (error) {
         if (error instanceof OpenVideoError) {
-          throw new OpenVideoError({ ...error.diagnostic, problem: `Patch ${String(i + 1)} (${patch.op}): ${error.diagnostic.problem}` });
+          // Pfad mit Index (Story 19.6): `patches[3]`, bei Feldfehlern `patches[3].parentId`.
+          const inner = error.diagnostic.path;
+          const at = `patches[${String(i)}]`;
+          throw new OpenVideoError({ ...error.diagnostic, problem: `Patch ${String(i + 1)} (${patch.op}): ${error.diagnostic.problem}`, path: inner !== undefined ? `${at}.${inner}` : at, details: { ...(error.diagnostic.details ?? {}), patchIndex: i } });
         }
         throw error;
       }

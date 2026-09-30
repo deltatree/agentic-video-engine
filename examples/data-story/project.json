@@ -1,0 +1,96 @@
+{
+  "$schema": "../../packages/schema/openvideo.schema.json",
+  "schemaVersion": "1.0.0",
+  "metadata": {
+    "title": "Data story",
+    "description": "Two chapters of data visualization with captions from an SRT file.",
+    "tags": ["example", "data", "captions"],
+    "createdWith": "examples/data-story"
+  },
+  "settings": {
+    "theme": { "colors": { "primary": "#4F8CFF", "secondary": "#3DDC97", "accent": "#FFC857", "background": "#0E1320", "surface": "#171E30", "text": "#EEF2FF", "muted": "#8C97B2" } }
+  },
+  "assets": [
+    { "id": "narration", "type": "subtitle", "src": "assets/narration.srt", "license": { "name": "CC0-1.0", "attribution": "Written for examples/data-story" } }
+  ],
+  "compositions": [
+    {
+      "id": "main",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": "10s",
+      "background": "#0E1320",
+      "markers": [
+        { "id": "growth", "time": 0, "label": "Chapter 1: growth" },
+        { "id": "sources", "time": "4.5s", "label": "Chapter 2: sources" }
+      ],
+      "tracks": [{ "id": "captions", "kind": "subtitle", "asset": "narration", "language": "en" }],
+      "nodes": [
+        { "id": "grid", "type": "component", "component": "Grid", "props": { "width": 1920, "height": 1080, "style": "dots", "spacing": 48 }, "opacity": 0.35 },
+        {
+          "id": "chapters",
+          "type": "sequence",
+          "between": { "type": "fade", "duration": "0.5s" },
+          "children": [
+            {
+              "id": "growth",
+              "type": "group",
+              "timing": { "duration": "5s" },
+              "children": [
+                { "id": "growth-title", "type": "text", "text": "Weekly active users", "x": 120, "y": 90, "fontSize": 64, "fontWeight": 800, "fill": { "$ref": "theme.colors.text" } },
+                { "id": "growth-sub", "type": "text", "text": "in thousands, per quarter", "x": 120, "y": 172, "fontSize": 32, "fill": { "$ref": "theme.colors.muted" } },
+                {
+                  "id": "growth-chart",
+                  "type": "component",
+                  "component": "LineChart",
+                  "props": {
+                    "series": [
+                      { "name": "2025", "data": [{ "label": "Q1", "value": 42 }, { "label": "Q2", "value": 48 }, { "label": "Q3", "value": 51 }, { "label": "Q4", "value": 55 }] },
+                      { "name": "2026", "data": [{ "label": "Q1", "value": 58 }, { "label": "Q2", "value": 64 }, { "label": "Q3", "value": 70 }, { "label": "Q4", "value": 76 }] }
+                    ],
+                    "area": true,
+                    "width": 1040,
+                    "height": 600,
+                    "duration": "1.6s",
+                    "delay": "0.3s"
+                  },
+                  "x": 240,
+                  "y": 260
+                },
+                { "id": "growth-counter", "type": "component", "component": "Counter", "props": { "from": 0, "to": 38, "prefix": "+", "suffix": " %", "label": "year over year", "fontSize": 120, "duration": "1.5s", "delay": "1.8s" }, "x": 1380, "y": 420 }
+              ]
+            },
+            {
+              "id": "sources",
+              "type": "group",
+              "timing": { "duration": "5.5s" },
+              "children": [
+                { "id": "sources-title", "type": "text", "text": "Where new users come from", "x": 120, "y": 90, "fontSize": 64, "fontWeight": 800, "fill": { "$ref": "theme.colors.text" } },
+                {
+                  "id": "sources-pie",
+                  "type": "component",
+                  "component": "PieChart",
+                  "props": { "data": [{ "label": "Search", "value": 46 }, { "label": "Referral", "value": 27 }, { "label": "Social", "value": 17 }, { "label": "Direct", "value": 10 }], "size": 520, "innerRadius": 0.55, "centerLabel": "100 %", "legend": true, "showPercent": true, "duration": "1.4s" },
+                  "x": 160,
+                  "y": 250
+                },
+                {
+                  "id": "sources-table",
+                  "type": "component",
+                  "component": "Table",
+                  "props": { "columns": ["Source", "Q1", "Q4"], "rows": [["Search", 21, 35], ["Referral", 9, 19], ["Social", 8, 13], ["Direct", 6, 8]], "width": 720, "fontSize": 30, "stagger": "0.15s" },
+                  "x": 1080,
+                  "y": 300,
+                  "timing": { "from": "0.8s" }
+                }
+              ]
+            }
+          ]
+        },
+        { "id": "captions-view", "type": "subtitles", "track": "captions", "fontSize": 44, "style": "word-highlight", "color": "#FFFFFF", "highlightColor": "#FFC857", "box": { "color": "#0E1320CC", "paddingX": 24, "paddingY": 12, "radius": 12 }, "position": "bottom", "safeArea": 0.08 }
+      ]
+    }
+  ],
+  "renderProfiles": [{ "id": "web", "format": "mp4", "codec": "h264", "quality": 80 }]
+}

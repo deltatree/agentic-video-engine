@@ -420,6 +420,25 @@ function semanticChecks(project: Record<string, unknown>, nodes: readonly NodeRe
       out.push(semantic(project, segments, 'OV_THEME_REF', `Theme token "${ref}" is not defined in settings.theme.`, [hint !== undefined ? `{ "$ref": "theme.${group ?? ''}.${hint}" }` : `Define settings.theme.${group ?? ''}.${name}.`]));
     }
   });
+
+  // Farbraum-Abgleich (Story 17.11): Die Pixel kodiert settings.outputColorSpace, das Video-Tag
+  // (color_trc) setzt renderProfile.colorSpace. Weichen sie ab, zeigen Player falsche Helligkeiten.
+  const output = typeof settings['outputColorSpace'] === 'string' ? settings['outputColorSpace'] : 'srgb';
+  records(project['renderProfiles']).forEach((profile, pi) => {
+    const tagged = typeof profile['colorSpace'] === 'string' ? profile['colorSpace'] : 'srgb';
+    if (tagged === output) return;
+    const id = typeof profile['id'] === 'string' ? profile['id'] : String(pi);
+    out.push(
+      semantic(
+        project,
+        profile['colorSpace'] === undefined ? ['renderProfiles', pi] : ['renderProfiles', pi, 'colorSpace'],
+        'OV_COLORSPACE_MISMATCH',
+        `Render profile "${id}" tags the video as "${tagged}", but settings.outputColorSpace encodes the pixels as "${output}".`,
+        [`Set renderProfiles[${String(pi)}].colorSpace to "${output}".`, `Or set settings.outputColorSpace to "${tagged}".`],
+        'warning',
+      ),
+    );
+  });
   return out;
 }
 

@@ -5,9 +5,11 @@
  * Register ab. Frame 471 ist gleich, egal ob Frame 470 vorher ausgewertet wurde.
  */
 import { OpenVideoError, validateValue, Theme as ThemeSchema, Timing as TimingSchema, Transition as TransitionSchema, type ColorSpace, type Diagnostic, type IrNode, type Theme, type Transition } from '@agentic-video/schema';
-import { computeLocalTime, easing, evaluateAnimated, resolveMarkers, toFrames, type AnimationContext } from '@agentic-video/timeline';
+import { computeLocalTime, easing, evaluateAnimated, resolveMarkers, toFrames, type AnimationContext, type TimelineEvent } from '@agentic-video/timeline';
 import type { EvaluatedNode, EvaluatedScene, Reveal } from './contracts.js';
 import { conforms, isRecord } from './guards.js';
+import { contentHash } from './hash.js';
+import { sortByZIndex } from './plan.js';
 import type { ExpandContext, Registry } from './registry.js';
 
 /** Optionen für {@link evaluateScene}. */
@@ -21,6 +23,65 @@ export interface EvaluateOptions {
    * Darüber bricht die Auswertung mit der Diagnose `OV_EVAL_NODE_BUDGET` ab.
    */
   readonly maxNodes?: number;
+  /**
+   * Subframe-Zustände für Motion Blur in {@link EvaluatedScene.motionKey} aufnehmen (Standard `true`).
+   * Auswertungen von Subframes selbst setzen `false`.
+   */
+  readonly motionKey?: boolean;
+}
+
+/**
+ * Subframe-Offsets der Blender-Motion-Blur-Zustände (Verschlusszeit ½ Frame, zentriert).
+ * Muss `DEFAULT_MOTION_OFFSETS` in `@agentic-video/renderer-blender` entsprechen.
+ */
+export const BLENDER_MOTION_OFFSETS: readonly number[] = [-0.25, 0.25];
+
+/** Offsets der Subframes, die eine Node für Motion Blur braucht (leer = keine). */
+function motionOffsets(node: EvaluatedNode): number[] {
+  if (node.type === 'blender' && node.props['motionBlur'] === true) return [...BLENDER_MOTION_OFFSETS];
+  const blur = node.props['motionBlur'];
+  if (node.type === 'layer' && isRecord(blur) && typeof blur['samples'] === 'number' && typeof blur['shutter'] === 'number' && blur['samples'] >= 2) {
+    const samples = blur['samples'];
+    const shutter = blur['shutter'];
+    return Array.from({ length: samples }, (_, i) => (i / (samples - 1) - 0.5) * shutter).filter((o) => o !== 0);
+  }
+  return [];
+}
+
+function stripForMotion(node: EvaluatedNode): unknown {
+  return {
+    id: node.id,
+    type: node.type,
+    props: node.props,
+    children: node.children.map(stripForMotion),
+    mask: node.mask === undefined ? undefined : { ...node.mask, node: stripForMotion(node.mask.node) },
+    reveal: node.reveal,
+    time: node.time.localFrame,
+  };
+}
+
+/**
+ * Hash der Subframe-Zustände aller Motion-Blur-Nodes (Blender `motionBlur: true`, `layer.motionBlur`),
+ * oder `undefined`, wenn die Szene keine hat. Geht in den Frame-Schlüssel ein: Gleiche Zustände am
+ * Frame, aber andere Bewegung zwischen den Frames, ergeben verschiedene Pixel.
+ */
+function motionKeyOf(project: Readonly<Record<string, unknown>>, compositionId: string, frame: number, nodes: readonly EvaluatedNode[], options: EvaluateOptions): string | undefined {
+  const wanted = new Map<string, number[]>();
+  walkEvaluated(nodes, (n) => {
+    const offsets = motionOffsets(n);
+    if (offsets.length > 0) wanted.set(n.id, offsets);
+  });
+  if (wanted.size === 0) return undefined;
+  const offsets = [...new Set([...wanted.values()].flat())].sort((a, b) => a - b);
+  const states = offsets.map((offset) => {
+    const sub = evaluateScene(project, compositionId, frame + offset, { ...options, motionKey: false });
+    const found: unknown[] = [];
+    walkEvaluated(sub.nodes, (n) => {
+      if (wanted.get(n.id)?.includes(offset) === true) found.push(stripForMotion(n));
+    });
+    return { offset, nodes: found };
+  });
+  return contentHash(states);
 }
 
 /** Standard-Knotenbudget pro Auswertung (Schutz vor exponentiellen `composition-ref`-Bäumen). */
@@ -66,6 +127,25 @@ function markerList(comp: Readonly<Record<string, unknown>>): { id: string; time
     .map((m) => ({ id: String(m['id']), time: typeof m['time'] === 'number' ? m['time'] : String(m['time']) }));
 }
 
+/** Benannte Events einer Composition: Marker mit `kind: 'event'`, mit Frame und Daten. */
+function eventList(comp: Readonly<Record<string, unknown>>, markers: ReadonlyMap<string, number>): ReadonlyMap<string, TimelineEvent> {
+  const out = new Map<string, TimelineEvent>();
+  for (const m of records(comp['markers'])) {
+    if (m['kind'] !== 'event' || typeof m['id'] !== 'string') continue;
+    const frame = markers.get(m['id']);
+    if (frame === undefined) continue;
+    const raw = isRecord(m['data']) ? m['data'] : {};
+    const data: Record<string, string | number | boolean> = {};
+    for (const [k, v] of Object.entries(raw)) if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') data[k] = v;
+    out.set(m['id'], { frame, data });
+  }
+  return out;
+}
+
+function colorSpaceOf(value: unknown): ColorSpace | undefined {
+  return value === 'srgb' || value === 'linear' || value === 'rec709' ? value : undefined;
+}
+
 function resolveTheme(theme: Theme | undefined): (ref: string) => unknown {
   return (ref) => {
     const [, group, ...rest] = ref.split('.');
@@ -90,6 +170,8 @@ interface EvalCtx {
   readonly width: number;
   readonly height: number;
   readonly markers: ReadonlyMap<string, number>;
+  /** Benannte Events (Marker mit `kind: 'event'`) in Composition-Frames. */
+  readonly events: ReadonlyMap<string, TimelineEvent>;
   readonly theme: Theme;
   readonly resolveRef: (ref: string) => unknown;
   readonly registry: Registry | undefined;
@@ -215,6 +297,7 @@ function evaluateNode(raw: unknown, parent: Parent, pointer: string, idPrefix: s
     seed: ctx.seed,
     durationFrames: local.durationFrames,
     markers: ctx.markers,
+    events: ctx.events,
     markerOffset: local.startFrame,
     resolveRef: ctx.resolveRef,
   };
@@ -316,6 +399,13 @@ function evaluateNode(raw: unknown, parent: Parent, pointer: string, idPrefix: s
     }
     delete props['composition'];
     outType = 'group';
+  } else if (type === 'sequence') {
+    children = arrangeSequence(raw, id, childParent, ctx)
+      .map(({ node, index }) => evaluateNode(node, childParent, `${pointer}/children/${String(index)}`, idPrefix, ctx))
+      .filter((n): n is EvaluatedNode => n !== undefined);
+    delete props['between'];
+    delete props['transitions'];
+    outType = 'group';
   } else {
     children = records(raw['children'])
       .map((child, i) => evaluateNode(child, childParent, `${pointer}/children/${String(i)}`, idPrefix, ctx))
@@ -334,7 +424,7 @@ function evaluateNode(raw: unknown, parent: Parent, pointer: string, idPrefix: s
     id,
     type: outType,
     props,
-    children,
+    children: sortByZIndex(children),
     ...(mask !== undefined ? { mask } : {}),
     ...(reveal !== undefined ? { reveal } : {}),
     time,
@@ -342,6 +432,100 @@ function evaluateNode(raw: unknown, parent: Parent, pointer: string, idPrefix: s
     pointer,
     ...(source !== undefined ? { source } : {}),
   };
+}
+
+/** Übergänge, bei denen auch der ausgehende Clip animiert (Push); sonst liegt der neue Clip über dem stehenden alten. */
+const PUSH_TRANSITIONS: ReadonlySet<string> = new Set(['slide-left', 'slide-right', 'slide-up', 'slide-down']);
+
+/** Dauer eines Sequenz-Kinds in Frames der Eltern-Zeit, oder `undefined`, wenn sie fehlt. */
+function sequenceChildDuration(child: Readonly<Record<string, unknown>>, timeCtx: { fps: number; markers: ReadonlyMap<string, number> }, ctx: EvalCtx): number | undefined {
+  const timing = isRecord(child['timing']) ? child['timing'] : {};
+  const d = timing['duration'];
+  if (typeof d === 'number' || typeof d === 'string') return toFrames(d, timeCtx);
+  if (child['type'] !== 'composition-ref' || typeof child['composition'] !== 'string') return undefined;
+  const comp = records(ctx.project['compositions']).find((c) => c['id'] === child['composition']);
+  if (comp === undefined) return undefined;
+  const speed = typeof timing['speed'] === 'number' && timing['speed'] > 0 ? timing['speed'] : 1;
+  return (compositionDurationFrames(comp) / Number(comp['fps'])) * ctx.fps / speed;
+}
+
+/**
+ * Ordnet die Kinder einer `sequence` hintereinander an (T9). Zwischen Kind i und i + 1 gilt
+ * `transitions[i] ?? between ?? cut`. Bei einem Übergang der Dauer d beginnt Kind i + 1 d Frames
+ * vor dem Ende von Kind i; es bekommt die `in`-Transition, bei `slide-*` bekommt Kind i die
+ * passende `out`-Transition (Push). Eigene `transition`-Einträge der Kinder gelten, wo kein
+ * Sequenz-Übergang liegt. `timing.from` der Kinder wird durch die Anordnung ersetzt.
+ */
+function arrangeSequence(raw: Readonly<Record<string, unknown>>, id: string, parent: Parent, ctx: EvalCtx): { node: Record<string, unknown>; index: number }[] {
+  const timeCtx = { fps: ctx.fps, markers: shiftedMarkers(ctx.markers, parent.start) };
+  const between = raw['between'];
+  const perGap: readonly unknown[] = Array.isArray(raw['transitions']) ? raw['transitions'] : [];
+  const items: { node: Record<string, unknown>; index: number; duration: number }[] = [];
+  records(raw['children']).forEach((child, index) => {
+    const duration = sequenceChildDuration(child, timeCtx, ctx);
+    const childId = typeof child['id'] === 'string' ? child['id'] : String(index);
+    if (duration === undefined || !(duration > 0)) {
+      ctx.diagnostics.push({
+        code: 'OV_SEQUENCE_DURATION',
+        severity: 'error',
+        errorClass: 'EvaluationError',
+        problem: `Child "${childId}" of sequence "${id}" has no duration; it is skipped.`,
+        nodeId: id,
+        frame: ctx.compositionFrame,
+        suggestions: [`Set timing.duration on "${childId}", e.g. { "timing": { "duration": "3s" } }.`],
+      });
+      return;
+    }
+    if (isRecord(child['timing']) && child['timing']['from'] !== undefined) {
+      ctx.diagnostics.push({
+        code: 'OV_SEQUENCE_FROM_IGNORED',
+        severity: 'warning',
+        errorClass: 'EvaluationError',
+        problem: `Child "${childId}" of sequence "${id}" sets timing.from; the sequence places its children itself.`,
+        nodeId: id,
+        frame: ctx.compositionFrame,
+        suggestions: ['Remove timing.from from children of a sequence; use transitions to control overlaps.'],
+      });
+    }
+    items.push({ node: child, index, duration });
+  });
+  const out: { node: Record<string, unknown>; index: number }[] = [];
+  let start = 0;
+  let incoming: Record<string, unknown> | undefined;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item === undefined) continue;
+    const next = items[i + 1];
+    // transitions[i] liegt zwischen Kind i und i + 1 der IR; übersprungene Kinder verschieben den Index nicht.
+    const gapSpec = perGap[item.index] ?? between;
+    let overlap = 0;
+    let outgoing: Record<string, unknown> | undefined;
+    let nextIn: Record<string, unknown> | undefined;
+    if (next !== undefined && isRecord(gapSpec) && typeof gapSpec['type'] === 'string' && gapSpec['type'] !== 'cut') {
+      const d = gapSpec['duration'];
+      overlap = typeof d === 'number' || typeof d === 'string' ? Math.min(Math.max(0, toFrames(d, timeCtx)), item.duration, next.duration) : 0;
+      if (overlap > 0) {
+        const spec = { type: gapSpec['type'], duration: overlap, ...(typeof gapSpec['ease'] === 'string' ? { ease: gapSpec['ease'] } : {}) };
+        nextIn = spec;
+        if (PUSH_TRANSITIONS.has(gapSpec['type'])) outgoing = spec;
+      }
+    }
+    const own = isRecord(item.node['transition']) ? item.node['transition'] : {};
+    const inSpec = incoming ?? own['in'];
+    const outSpec = outgoing ?? (next === undefined || overlap === 0 ? own['out'] : undefined);
+    const timing = isRecord(item.node['timing']) ? item.node['timing'] : {};
+    out.push({
+      node: {
+        ...item.node,
+        timing: { ...timing, from: start, duration: item.duration },
+        transition: { ...(inSpec !== undefined ? { in: inSpec } : {}), ...(outSpec !== undefined ? { out: outSpec } : {}) },
+      },
+      index: item.index,
+    });
+    start += item.duration - overlap;
+    incoming = nextIn;
+  }
+  return out;
 }
 
 function sourceOf(raw: Readonly<Record<string, unknown>>): EvaluatedNode['source'] {
@@ -427,22 +611,28 @@ function evaluateCompositionRef(compositionId: string, frame: number, pointer: s
     throw error;
   }
   const fps = Number(comp['fps']);
+  const nestedMarkers = resolveMarkers(markerList(comp), fps);
   const nestedCtx: EvalCtx = {
     ...ctx,
     compositionId,
     fps,
     width: Number(comp['width']),
     height: Number(comp['height']),
-    markers: resolveMarkers(markerList(comp), fps),
+    markers: nestedMarkers,
+    events: eventList(comp, nestedMarkers),
     depth: ctx.depth + 1,
   };
   // Zeit der äußeren Node (in Frames der äußeren Composition) → Frames der inneren Composition
   const innerFrame = (frame / ctx.fps) * fps;
   const duration = compositionDurationFrames(comp);
   const parent: Parent = { frame: innerFrame, start: 0, duration };
-  const children = records(comp['nodes'])
-    .map((n, i) => evaluateNode(n, parent, `${pointer}->${compositionId}/nodes/${String(i)}`, `${idPrefix}/`, nestedCtx))
-    .filter((n): n is EvaluatedNode => n !== undefined);
+  const children = [
+    ...sortByZIndex(
+      records(comp['nodes'])
+        .map((n, i) => evaluateNode(n, parent, `${pointer}->${compositionId}/nodes/${String(i)}`, `${idPrefix}/`, nestedCtx))
+        .filter((n): n is EvaluatedNode => n !== undefined),
+    ),
+  ];
   const background = comp['background'];
   if (typeof background === 'string' && background !== 'transparent') {
     children.unshift({
@@ -489,6 +679,7 @@ export function evaluateScene(project: Readonly<Record<string, unknown>>, compos
     width,
     height,
     markers,
+    events: eventList(comp, markers),
     theme,
     resolveRef: resolveTheme(theme),
     registry: options.registry,
@@ -503,7 +694,10 @@ export function evaluateScene(project: Readonly<Record<string, unknown>>, compos
     .map((n, i) => evaluateNode(n, parent, `/compositions/${String(compIndex)}/nodes/${String(i)}`, '', ctx))
     .filter((n): n is EvaluatedNode => n !== undefined);
   const safe = isRecord(comp['safeArea']) ? comp['safeArea'] : {};
-  const colorSpace: ColorSpace = comp['colorSpace'] === 'linear' || comp['colorSpace'] === 'rec709' ? comp['colorSpace'] : 'srgb';
+  const colorSpace: ColorSpace = colorSpaceOf(comp['colorSpace']) ?? colorSpaceOf(settings['workingColorSpace']) ?? 'srgb';
+  const outputColorSpace = colorSpaceOf(settings['outputColorSpace']);
+  const sorted = sortByZIndex(nodes);
+  const motionKey = options.motionKey === false ? undefined : motionKeyOf(project, id, frame, sorted, options);
   return {
     compositionId: id,
     width,
@@ -515,9 +709,11 @@ export function evaluateScene(project: Readonly<Record<string, unknown>>, compos
     durationFrames,
     background: typeof comp['background'] === 'string' ? comp['background'] : 'transparent',
     colorSpace,
+    ...(outputColorSpace !== undefined ? { outputColorSpace } : {}),
     safeArea: { action: num(safe['action'], 0.035), title: num(safe['title'], 0.05) },
-    nodes,
+    nodes: sorted,
     diagnostics,
+    ...(motionKey !== undefined ? { motionKey } : {}),
   };
 }
 

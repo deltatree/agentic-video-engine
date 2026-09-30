@@ -1,37 +1,75 @@
 /**
- * HTTP-Koordinator für Remote- und Kubernetes-Worker (FR-66, FR-91).
+ * HTTP-Koordinator für Remote- und Kubernetes-Worker (FR-66, FR-91, Epic 16).
  *
  * Worker holen Chunks per Pull (`lease`), melden sich per `heartbeat` und geben das
  * Ergebnis mit `complete` oder `fail` ab. Ein Journal (JSON Lines) hält Jobs und
  * Ergebnisse; nach einem Neustart werden offene Chunks wieder vergeben.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
-import { OpenVideoError, isRecord, sha256Hex, type Diagnostic } from '@agentic-video/core';
-import type { ContentStore } from '@agentic-video/cache';
+import { OpenVideoError, isRecord, type Diagnostic } from '@agentic-video/core';
+import { TieredStore, type ContentStore } from '@agentic-video/cache';
 import type { ChunkRequest, ChunkResult } from '@agentic-video/render';
 import { isSafeRelativePath } from './files.js';
+import { digestHex, inputKey, jobFrameDigest, jobFramePrefix, keyDigest } from './keys.js';
 import { isChunkRequest, isChunkResult, isDiagnostic } from './protocol.js';
+
+/** Rollen am Koordinator (Story 16.3): API reicht Jobs ein, Worker rendern, KEDA liest die Queue. */
+export type CoordinatorRole = 'submit' | 'worker' | 'metrics';
+
+/** Getrennte Bearer-Tokens je Rolle. */
+export interface CoordinatorTokens {
+  /** `POST /v1/jobs`, `GET /v1/jobs/<id>`, `DELETE /v1/jobs/<id>`, `GET /v1/queue` (Agent API). */
+  readonly submit?: string;
+  /** `POST /v1/lease|heartbeat|complete|fail` (Worker). */
+  readonly worker?: string;
+  /** Nur `GET /v1/queue` (KEDA). */
+  readonly metrics?: string;
+}
+
+/** Standard-Grenzen des Koordinators (Story 16.4). */
+export const COORDINATOR_LIMITS = {
+  /** Größte Anfrage in Bytes. Große Dateien gehen als Verweis (`inputs/…`) in den Speicher. */
+  maxBodyBytes: 64 * 1024 * 1024,
+  /** Höchstzahl Chunks je Job (1 h bei 60 fps in Chunks zu 30 Frames sind 7200). */
+  maxChunksPerJob: 10_000,
+  /** Höchstzahl gleichzeitig laufender Jobs. */
+  maxActiveJobs: 1000,
+  /** Fertige Jobs bleiben so lange abrufbar (Sekunden). */
+  jobTtlSeconds: 24 * 3600,
+  /** Mindestlänge jedes Tokens. */
+  minTokenLength: 24,
+} as const;
 
 /** Optionen für {@link startCoordinator}. */
 export interface CoordinatorOptions {
   /** TCP-Port (0 = frei wählen). */
   readonly port: number;
-  /** Adresse (Standard `0.0.0.0`). */
+  /** Adresse (Standard `0.0.0.0`). Außerhalb von Loopback ist ein Token Pflicht. */
   readonly host?: string;
   /** Gemeinsamer Speicher (S3 im Cluster); Projekt und Assets liegen hier. */
   readonly store: ContentStore;
   readonly journalDir: string;
-  /** Bearer-Token für alle `/v1`-Endpunkte. */
+  /** Ein Bearer-Token für alle Rollen (lokaler Betrieb). Im Cluster getrennte {@link tokens}. */
   readonly token?: string;
+  /** Getrennte Tokens je Rolle (Story 16.3). */
+  readonly tokens?: CoordinatorTokens;
   /** Dauer einer Lease ohne Heartbeat (Standard 120 s). */
   readonly leaseSeconds?: number;
   /** Versuche je Chunk (Standard 3). */
   readonly maxAttempts?: number;
-  /** Größte Anfrage in Bytes (Standard 512 MiB). */
+  /** Größte Anfrage in Bytes (Standard 64 MiB). */
   readonly maxBodyBytes?: number;
+  /** Höchstzahl Chunks je Job (Standard 10 000). */
+  readonly maxChunksPerJob?: number;
+  /** Höchstzahl laufender Jobs (Standard 1000). */
+  readonly maxActiveJobs?: number;
+  /** Wie lange fertige Jobs abrufbar bleiben, in Sekunden (Standard 24 h). Danach löscht der Koordinator sie samt Frames. */
+  readonly jobTtlSeconds?: number;
+  /** Uhr in Millisekunden (Standard `Date.now`); Tests setzen eine eigene. */
+  readonly now?: () => number;
 }
 
 /** Ein laufender Koordinator. */
@@ -94,6 +132,10 @@ interface Job {
   readonly traceparent?: string;
   readonly chunks: ChunkEntry[];
   readonly diagnostics: Diagnostic[];
+  /** Zeitpunkt, an dem der Job fertig oder gescheitert ist (für die TTL). */
+  finishedAt?: number;
+  /** Vom Einreicher abgebrochen (`DELETE /v1/jobs/<id>`, Story 18.8). */
+  cancelled?: boolean;
 }
 
 /** Prüft, ob ein Wert eine {@link Lease} ist. */
@@ -141,17 +183,28 @@ class HttpError extends Error {
   }
 }
 
+function httpError(status: number, code: string, problem: string, suggestions: readonly string[]): HttpError {
+  return new HttpError(status, { code, severity: 'error', errorClass: 'CoordinatorError', problem, suggestions });
+}
+
 function badRequest(problem: string, suggestion: string): HttpError {
-  return new HttpError(400, { code: 'OV_COORDINATOR_REQUEST', severity: 'error', errorClass: 'CoordinatorError', problem, suggestions: [suggestion] });
+  return httpError(400, 'OV_COORDINATOR_REQUEST', problem, [suggestion]);
+}
+
+function tooLarge(limit: number): HttpError {
+  return httpError(413, 'OV_COORDINATOR_TOO_LARGE', `The request body exceeds ${String(limit)} bytes.`, ['Upload large files to the shared store first and reference them as { "path", "key": "inputs/sha256-<hex>" }.', 'createRemoteChunkRunner does this automatically for files above its inline limit.']);
 }
 
 async function readBody(req: IncomingMessage, limit: number): Promise<unknown> {
+  // Früh ablehnen, bevor etwas gepuffert wird (M2).
+  const declared = Number(req.headers['content-length'] ?? '0');
+  if (Number.isFinite(declared) && declared > limit) throw tooLarge(limit);
   const parts: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     if (!(chunk instanceof Buffer)) continue;
     size += chunk.length;
-    if (size > limit) throw new HttpError(413, { code: 'OV_COORDINATOR_TOO_LARGE', severity: 'error', errorClass: 'CoordinatorError', problem: `The request body exceeds ${String(limit)} bytes.`, suggestions: ['Put large assets into the shared store first.'] });
+    if (size > limit) throw tooLarge(limit);
     parts.push(chunk);
   }
   if (size === 0) return {};
@@ -176,30 +229,149 @@ function tokenMatches(header: string | undefined, token: string): boolean {
 }
 
 /**
- * Startet den HTTP-Koordinator.
- *
- * Endpunkte: `POST /v1/jobs`, `POST /v1/lease`, `POST /v1/heartbeat`, `POST /v1/complete`,
- * `POST /v1/fail`, `GET /v1/jobs/<id>`, `GET /v1/queue`, `GET /metrics` (Prometheus-Text).
+ * Ist `host` eine Loopback-Adresse? Nur dort darf der Koordinator ohne Token laufen (M4).
  *
  * @example
  * ```ts
- * const coordinator = await startCoordinator({ port: 8080, store: storeFromEnv(process.env, '/data'), journalDir: '/data/journal', token: process.env.OPENVIDEO_TOKEN });
+ * isLoopbackAddress('127.0.0.1'); // true
+ * isLoopbackAddress('0.0.0.0'); // false
+ * ```
+ */
+export function isLoopbackAddress(host: string): boolean {
+  return host === 'localhost' || host === '::1' || host === '[::1]' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(host);
+}
+
+/**
+ * Prüft ein Token: mindestens {@link COORDINATOR_LIMITS.minTokenLength} Zeichen, kein Platzhalter
+ * (`REPLACE…`), keine Leerzeichen. Wirft `OV_COORDINATOR_TOKEN_WEAK`.
+ *
+ * @example
+ * ```ts
+ * assertStrongToken('worker', randomBytes(32).toString('hex')); // ok
+ * ```
+ */
+export function assertStrongToken(role: string, token: string): void {
+  const problem =
+    /^REPLACE/iu.test(token) ? 'is still the placeholder from the template' : token.length < COORDINATOR_LIMITS.minTokenLength ? `is shorter than ${String(COORDINATOR_LIMITS.minTokenLength)} characters` : /\s/u.test(token) ? 'contains whitespace' : undefined;
+  if (problem === undefined) return;
+  throw new OpenVideoError({
+    code: 'OV_COORDINATOR_TOKEN_WEAK',
+    errorClass: 'SecurityError',
+    problem: `The ${role} token ${problem}.`,
+    suggestions: ['Generate a token with `openssl rand -hex 32` and put it into the secret (deploy/k8s/overlays/production/secrets.env).'],
+  });
+}
+
+/** Welche Rollen ein Endpunkt annimmt. */
+function rolesFor(method: string | undefined, path: string): readonly CoordinatorRole[] | undefined {
+  if (method === 'GET' && path === '/v1/queue') return ['metrics', 'submit'];
+  if ((method === 'GET' || method === 'DELETE') && path.startsWith('/v1/jobs/')) return ['submit'];
+  if (method === 'POST' && path === '/v1/jobs') return ['submit'];
+  if (method === 'POST' && (path === '/v1/lease' || path === '/v1/heartbeat' || path === '/v1/complete' || path === '/v1/fail')) return ['worker'];
+  return undefined;
+}
+
+/**
+ * Startet den HTTP-Koordinator.
+ *
+ * Endpunkte: `POST /v1/jobs`, `POST /v1/lease`, `POST /v1/heartbeat`, `POST /v1/complete`,
+ * `POST /v1/fail`, `GET /v1/jobs/<id>`, `DELETE /v1/jobs/<id>` (Abbruch), `GET /v1/queue`,
+ * `GET /metrics` (Prometheus-Text).
+ *
+ * Gescheiterte oder abgebrochene Jobs vergeben keine Chunks mehr und zählen nicht zur Queue;
+ * ihre noch offenen Leases verfallen (Heartbeat `410`), die Worker hören auf.
+ *
+ * Sicherheit (Epic 16): getrennte Tokens je Rolle, Pflicht-Token außerhalb von Loopback,
+ * `complete`/`fail` nur mit gültiger Lease, Ergebnis-Frames nur unter `jobs/<jobId>/frames/`,
+ * Body-Limit, Chunk- und Job-Obergrenzen, TTL für fertige Jobs und ein kompaktiertes Journal.
+ *
+ * @example
+ * ```ts
+ * const coordinator = await startCoordinator({
+ *   port: 8080,
+ *   store: storeFromEnv(process.env, '/data'),
+ *   journalDir: '/data/journal',
+ *   tokens: { submit: process.env.OPENVIDEO_SUBMIT_TOKEN, worker: process.env.OPENVIDEO_WORKER_TOKEN, metrics: process.env.OPENVIDEO_METRICS_TOKEN },
+ * });
  * ```
  */
 export async function startCoordinator(options: CoordinatorOptions): Promise<Coordinator> {
   const leaseMs = (options.leaseSeconds ?? 120) * 1000;
   const maxAttempts = options.maxAttempts ?? 3;
-  const maxBody = options.maxBodyBytes ?? 512 * 1024 * 1024;
+  const maxBody = options.maxBodyBytes ?? COORDINATOR_LIMITS.maxBodyBytes;
+  const maxChunks = options.maxChunksPerJob ?? COORDINATOR_LIMITS.maxChunksPerJob;
+  const maxActive = options.maxActiveJobs ?? COORDINATOR_LIMITS.maxActiveJobs;
+  const ttlMs = (options.jobTtlSeconds ?? COORDINATOR_LIMITS.jobTtlSeconds) * 1000;
+  const now = options.now ?? ((): number => Date.now());
+  const host = options.host ?? '0.0.0.0';
+
+  // Tokens prüfen (M1, M4): stark, je Rolle verschieden, Pflicht außerhalb von Loopback.
+  const roleTokens: Record<CoordinatorRole, string[]> = { submit: [], worker: [], metrics: [] };
+  const named: [string, string | undefined][] = [
+    ['shared', options.token],
+    ['submit', options.tokens?.submit],
+    ['worker', options.tokens?.worker],
+    ['metrics', options.tokens?.metrics],
+  ];
+  for (const [name, value] of named) {
+    if (value === undefined) continue;
+    assertStrongToken(name, value);
+    if (name === 'shared') for (const role of ['submit', 'worker', 'metrics'] as const) roleTokens[role].push(value);
+    else if (name === 'submit' || name === 'worker' || name === 'metrics') roleTokens[name].push(value);
+  }
+  const perRole = [options.tokens?.submit, options.tokens?.worker, options.tokens?.metrics].filter((t): t is string => t !== undefined);
+  if (new Set(perRole).size !== perRole.length) {
+    throw new OpenVideoError({ code: 'OV_COORDINATOR_TOKEN_SHARED', errorClass: 'SecurityError', problem: 'Two coordinator roles use the same token; the roles would not be separated.', suggestions: ['Use a different random token for submit, worker and metrics.'] });
+  }
+  const open = named.every(([, value]) => value === undefined);
+  if (open && !isLoopbackAddress(host)) {
+    throw new OpenVideoError({
+      code: 'OV_COORDINATOR_TOKEN_REQUIRED',
+      errorClass: 'SecurityError',
+      problem: `The coordinator would listen on ${host} without a token.`,
+      suggestions: ['Set tokens for submit, worker and metrics (OPENVIDEO_SUBMIT_TOKEN, OPENVIDEO_WORKER_TOKEN, OPENVIDEO_METRICS_TOKEN).', 'Or bind to 127.0.0.1 for local use.'],
+    });
+  }
+
   const jobs = new Map<string, Job>();
   let failedTotal = 0;
   mkdirSync(options.journalDir, { recursive: true });
   const journalPath = join(options.journalDir, 'journal.jsonl');
+  let journalLines = 0;
 
   const journal = (entry: Readonly<Record<string, unknown>>): void => {
     appendFileSync(journalPath, `${JSON.stringify(entry)}\n`);
+    journalLines++;
   };
 
-  const now = (): number => Date.now();
+  const jobState = (job: Job): JobStatus['state'] => (job.cancelled === true || job.chunks.some((c) => c.state === 'failed') ? 'failed' : job.chunks.every((c) => c.state === 'done') ? 'done' : 'running');
+
+  /**
+   * Beendet alle offenen Chunks eines gescheiterten oder abgebrochenen Jobs (Befund M5): keine neuen
+   * Leases, laufende Leases verfallen, nichts zählt mehr zur Queue.
+   */
+  const closeOpenChunks = (job: Job): void => {
+    for (const c of job.chunks) {
+      if (c.state === 'done' || c.state === 'failed') continue;
+      c.state = 'failed';
+      delete c.lease;
+    }
+  };
+
+  const cancelJob = (job: Job, at: number, diagnostic: Diagnostic | undefined): void => {
+    job.cancelled = true;
+    if (diagnostic !== undefined) job.diagnostics.push(diagnostic);
+    closeOpenChunks(job);
+    job.finishedAt ??= at;
+  };
+
+  /** Merkt den Abschluss eines Jobs für die TTL. */
+  const markFinished = (job: Job, at: number, record: boolean): void => {
+    if (jobState(job) === 'failed') closeOpenChunks(job);
+    if (job.finishedAt !== undefined || jobState(job) === 'running') return;
+    job.finishedAt = at;
+    if (record) journal({ e: 'finished', jobId: job.id, at });
+  };
 
   const applyAttempt = (job: Job, index: number, failed: boolean, diagnostic: Diagnostic | undefined): void => {
     const c = job.chunks[index];
@@ -214,7 +386,38 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     c.queuedSince = now();
   };
 
-  // Journal einlesen: offene Chunks stehen danach wieder in der Warteschlange.
+  const restoreJob = (j: Readonly<Record<string, unknown>>): Job | undefined => {
+    const chunks = j['chunks'];
+    const files = j['files'];
+    if (typeof j['id'] !== 'string' || typeof j['projectKey'] !== 'string' || !Array.isArray(chunks) || !Array.isArray(files)) return undefined;
+    const stored = files.filter((f): f is StoredFile => isRecord(f) && typeof f['path'] === 'string' && typeof f['key'] === 'string');
+    const entries: ChunkEntry[] = [];
+    for (const c of chunks) {
+      // Alte Journale: Chunk-Auftrag direkt; Snapshots: { request, state, attempts, result }.
+      if (isChunkRequest(c)) entries.push({ request: c, state: 'queued', attempts: 0, queuedSince: now() });
+      else if (isRecord(c) && isChunkRequest(c['request'])) {
+        const attempts = typeof c['attempts'] === 'number' ? c['attempts'] : 0;
+        const result = c['result'];
+        const entry: ChunkEntry = { request: c['request'], state: 'queued', attempts, queuedSince: now() };
+        if (c['state'] === 'done' && isChunkResult(result)) {
+          entry.state = 'done';
+          entry.result = result;
+        } else if (attempts >= maxAttempts) entry.state = 'failed';
+        entries.push(entry);
+      } else return undefined;
+    }
+    const tp = j['traceparent'];
+    const diagnostics = Array.isArray(j['diagnostics']) ? j['diagnostics'].filter(isDiagnostic) : [];
+    const job: Job = { id: j['id'], projectKey: j['projectKey'], files: stored, ...(typeof tp === 'string' ? { traceparent: tp } : {}), chunks: entries, diagnostics };
+    if (typeof j['finishedAt'] === 'number') job.finishedAt = j['finishedAt'];
+    if (j['cancelled'] === true) {
+      job.cancelled = true;
+      closeOpenChunks(job);
+    }
+    return job;
+  };
+
+  // Journal einlesen: offene Chunks stehen danach wieder in der Warteschlange, vergebene Leases gelten weiter.
   if (existsSync(journalPath)) {
     for (const line of readFileSync(journalPath, 'utf8').split('\n')) {
       if (line.trim() === '') continue;
@@ -227,29 +430,108 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
         continue;
       }
       if (!isRecord(e)) continue;
-      if (e['e'] === 'job' && isRecord(e['job'])) {
-        const j = e['job'];
-        const chunks = j['chunks'];
-        const files = j['files'];
-        if (typeof j['id'] !== 'string' || typeof j['projectKey'] !== 'string' || !Array.isArray(chunks) || !chunks.every(isChunkRequest) || !Array.isArray(files)) continue;
-        const stored = files.filter((f): f is StoredFile => isRecord(f) && typeof f['path'] === 'string' && typeof f['key'] === 'string');
-        const tp = j['traceparent'];
-        jobs.set(j['id'], { id: j['id'], projectKey: j['projectKey'], files: stored, ...(typeof tp === 'string' ? { traceparent: tp } : {}), chunks: chunks.map((request) => ({ request, state: 'queued', attempts: 0, queuedSince: now() })), diagnostics: [] });
+      if ((e['e'] === 'job' || e['e'] === 'snapshot') && isRecord(e['job'])) {
+        const job = restoreJob(e['job']);
+        if (job !== undefined) jobs.set(job.id, job);
+      } else if (e['e'] === 'cancel' && typeof e['jobId'] === 'string' && typeof e['at'] === 'number') {
+        const job = jobs.get(e['jobId']);
+        if (job !== undefined) cancelJob(job, e['at'], isDiagnostic(e['diagnostic']) ? e['diagnostic'] : undefined);
+      } else if (e['e'] === 'finished' && typeof e['jobId'] === 'string' && typeof e['at'] === 'number') {
+        const job = jobs.get(e['jobId']);
+        if (job !== undefined) job.finishedAt = e['at'];
       } else if (typeof e['jobId'] === 'string' && typeof e['index'] === 'number') {
         const job = jobs.get(e['jobId']);
-        if (job === undefined) continue;
+        const c = job?.chunks[e['index']];
+        if (job === undefined || c === undefined) continue;
         if (e['e'] === 'done' && isChunkResult(e['result'])) {
-          const c = job.chunks[e['index']];
-          if (c !== undefined) {
-            c.state = 'done';
-            c.result = e['result'];
-          }
+          c.state = 'done';
+          c.result = e['result'];
+          delete c.lease;
         } else if (e['e'] === 'attempt') {
           applyAttempt(job, e['index'], e['failed'] === true, isDiagnostic(e['diagnostic']) ? e['diagnostic'] : undefined);
+        } else if (e['e'] === 'lease' && typeof e['leaseId'] === 'string' && c.state === 'queued') {
+          // Nach einem Neustart bleibt eine Lease gültig und bekommt eine volle Laufzeit.
+          c.state = 'leased';
+          c.lease = { id: e['leaseId'], worker: typeof e['worker'] === 'string' ? e['worker'] : 'unknown', expires: now() + leaseMs };
         }
       }
     }
   }
+  for (const job of jobs.values()) markFinished(job, now(), false);
+
+  /** Schreibt das Journal als Momentaufnahme neu (atomar per Umbenennen); entfernt abgelaufene Einträge. */
+  const compact = (): void => {
+    const lines: string[] = [];
+    for (const job of jobs.values()) {
+      const snapshot = {
+        id: job.id,
+        projectKey: job.projectKey,
+        files: job.files,
+        ...(job.traceparent !== undefined ? { traceparent: job.traceparent } : {}),
+        chunks: job.chunks.map((c) => ({ request: c.request, state: c.state === 'done' ? 'done' : 'open', attempts: c.attempts, ...(c.result !== undefined ? { result: c.result } : {}) })),
+        diagnostics: job.diagnostics,
+        ...(job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {}),
+        ...(job.cancelled === true ? { cancelled: true } : {}),
+      };
+      lines.push(JSON.stringify({ e: 'snapshot', job: snapshot }));
+      job.chunks.forEach((c, index) => {
+        if (c.lease !== undefined) lines.push(JSON.stringify({ e: 'lease', jobId: job.id, index, leaseId: c.lease.id, worker: c.lease.worker }));
+      });
+    }
+    const tmp = `${journalPath}.tmp`;
+    writeFileSync(tmp, lines.length > 0 ? `${lines.join('\n')}\n` : '');
+    renameSync(tmp, journalPath);
+    journalLines = lines.length;
+  };
+  compact();
+
+  /** Löscht die Frames eines Jobs aus dem gemeinsamen Speicher (auch die entfernte Stufe). */
+  const removeJobData = async (jobId: string): Promise<void> => {
+    const target = options.store instanceof TieredStore ? options.store.remote : options.store;
+    try {
+      for (const entry of await target.list(`jobs/${jobId}/`)) await target.delete(entry.key);
+      if (target !== options.store) for (const entry of await options.store.list(`jobs/${jobId}/`)) await options.store.delete(entry.key);
+    } catch (error) {
+      process.emitWarning(`Could not remove the frames of job ${jobId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  /** Löscht nicht mehr genutzte Eingaben aus dem gemeinsamen Speicher (auch der entfernten Stufe). */
+  const removeInputs = async (keys: readonly string[]): Promise<void> => {
+    const target = options.store instanceof TieredStore ? options.store.remote : options.store;
+    for (const key of keys) {
+      try {
+        await target.delete(key);
+        if (target !== options.store) await options.store.delete(key);
+      } catch (error) {
+        process.emitWarning(`Could not remove input ${key}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  };
+
+  /** Entfernt fertige Jobs nach Ablauf der TTL und kompaktiert das Journal (M2). */
+  const sweep = (): void => {
+    const t = now();
+    const expired: string[] = [];
+    for (const job of jobs.values()) if (job.finishedAt !== undefined && t - job.finishedAt >= ttlMs) expired.push(job.id);
+    const inputsOf = (job: Job): string[] => [job.projectKey, ...job.files.map((f) => f.key)];
+    const dropped: string[] = [];
+    for (const id of expired) {
+      const job = jobs.get(id);
+      jobs.delete(id);
+      if (job !== undefined) dropped.push(...inputsOf(job));
+      void removeJobData(id);
+    }
+    // Eingaben (`inputs/sha256-…`) per Referenzzählung aufräumen (Befund m8): nur, was kein
+    // verbliebener Job mehr nutzt. Der Remote-Runner lädt fehlende Eingaben beim nächsten Job neu hoch.
+    if (dropped.length > 0) {
+      const used = new Set<string>();
+      for (const job of jobs.values()) for (const key of inputsOf(job)) used.add(key);
+      void removeInputs([...new Set(dropped)].filter((key) => !used.has(key)));
+    }
+    // Viele Anhänge seit der letzten Momentaufnahme: ebenfalls kompaktieren.
+    if (expired.length > 0 || journalLines > 10_000) compact();
+  };
 
   const expireLeases = (): void => {
     const t = now();
@@ -259,48 +541,62 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
           const diagnostic: Diagnostic = { code: 'OV_COORDINATOR_LEASE_EXPIRED', severity: 'warning', errorClass: 'CoordinatorError', problem: `Lease of chunk ${String(index)} (worker ${c.lease.worker}) expired.`, suggestions: ['Check the worker logs; the chunk is given to another worker.'] };
           journal({ e: 'attempt', jobId: job.id, index, failed: true, diagnostic });
           applyAttempt(job, index, true, diagnostic);
+          markFinished(job, t, true);
         }
       });
     }
   };
 
-  const findLease = (leaseId: string): { job: Job; index: number } | undefined => {
+  /** Findet den Chunk einer aktuell gültigen Lease (Story 16.2: ohne gültige Lease kein Ergebnis). */
+  const findLease = (leaseId: unknown): { job: Job; index: number; chunk: ChunkEntry } | undefined => {
+    if (typeof leaseId !== 'string' || leaseId === '') return undefined;
     for (const job of jobs.values()) {
-      const index = job.chunks.findIndex((c) => c.lease?.id === leaseId);
-      if (index >= 0) return { job, index };
+      const index = job.chunks.findIndex((c) => c.state === 'leased' && c.lease?.id === leaseId);
+      const chunk = job.chunks[index];
+      if (chunk !== undefined) return { job, index, chunk };
     }
     return undefined;
   };
 
-  /** Findet den Chunk einer Lease; nach einem Neustart auch über `jobId` und `index`. */
-  const locate = (body: Readonly<Record<string, unknown>>): { job: Job; index: number } | undefined => {
-    const leaseId = body['leaseId'];
-    if (typeof leaseId === 'string') {
-      const hit = findLease(leaseId);
-      if (hit !== undefined) return hit;
+  const requireLease = (body: Readonly<Record<string, unknown>>, action: string): { job: Job; index: number; chunk: ChunkEntry } => {
+    expireLeases();
+    const hit = findLease(body['leaseId']);
+    if (hit === undefined) {
+      throw httpError(409, 'OV_COORDINATOR_LEASE_INVALID', `${action} needs the "leaseId" of a current lease; it is unknown, expired or already finished.`, ['Lease a new chunk with POST /v1/lease.', 'Keep the lease alive with POST /v1/heartbeat while rendering.']);
     }
-    const jobId = body['jobId'];
-    const index = body['index'];
-    if (typeof jobId !== 'string' || typeof index !== 'number') return undefined;
-    const job = jobs.get(jobId);
-    return job !== undefined && job.chunks[index] !== undefined ? { job, index } : undefined;
+    return hit;
   };
 
-  const jobState = (job: Job): JobStatus['state'] => (job.chunks.some((c) => c.state === 'failed') ? 'failed' : job.chunks.every((c) => c.state === 'done') ? 'done' : 'running');
+  /** Prüft ein Worker-Ergebnis: passender Bereich und nur Frame-Schlüssel unter `jobs/<jobId>/frames/` (T8). */
+  const checkResult = (job: Job, chunk: ChunkEntry, result: ChunkResult): void => {
+    const count = chunk.request.end - chunk.request.start;
+    if (result.start !== chunk.request.start || result.end !== chunk.request.end || result.keys.length !== count || result.frameHashes.length !== count) {
+      throw httpError(400, 'OV_COORDINATOR_RESULT_INVALID', `The result does not cover frames ${String(chunk.request.start)}–${String(chunk.request.end)} of the leased chunk.`, ['Send the ChunkResult of exactly the leased chunk.']);
+    }
+    const foreign = result.keys.find((key) => jobFrameDigest(job.id, key) === undefined);
+    if (foreign !== undefined) {
+      throw httpError(400, 'OV_COORDINATOR_RESULT_INVALID', `Frame key "${foreign.slice(0, 200)}" is outside ${jobFramePrefix(job.id)}.`, ['Upload each frame to jobs/<jobId>/frames/<sha256 of the bytes> and report those keys.']);
+    }
+  };
 
   const counts = (): QueueStatus => {
     let queued = 0;
     let leased = 0;
     let running = 0;
     for (const job of jobs.values()) {
-      if (jobState(job) === 'running') running++;
+      // Gescheiterte und abgebrochene Jobs zählen nicht (Befund M5): KEDA skaliert sonst für Arbeit, die keiner mehr will.
+      if (jobState(job) !== 'running') continue;
+      running++;
       for (const c of job.chunks) {
         if (c.state === 'queued') queued++;
         if (c.state === 'leased') leased++;
       }
     }
-    return { queueLength: queued, leasesActive: leased, jobsRunning: running };
+    return { queueLength: queued, leasesActive: leased, jobsRunning: running + reserved };
   };
+
+  /** Plätze laufender Einreichungen (Befund m8): vor dem ersten `await` reserviert, damit parallele Submits `maxActiveJobs` einhalten. */
+  let reserved = 0;
 
   const submit = async (body: unknown): Promise<unknown> => {
     if (!isRecord(body) || !isRecord(body['project']) || !Array.isArray(body['chunks']) || !Array.isArray(body['files'])) {
@@ -308,18 +604,44 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     }
     const chunks = body['chunks'];
     if (chunks.length === 0 || !chunks.every(isChunkRequest)) throw badRequest('"chunks" must be a non-empty list of chunk requests.', 'Use the chunks that renderVideo passes to its runner.');
-    const projectBytes = new TextEncoder().encode(JSON.stringify(body['project']));
-    const projectKey = `project/sha256:${sha256Hex(projectBytes)}`;
+    if (chunks.length > maxChunks) {
+      throw httpError(413, 'OV_COORDINATOR_TOO_MANY_CHUNKS', `The job has ${String(chunks.length)} chunks; the limit is ${String(maxChunks)}.`, ['Use larger chunks (chunkSize) or split the render into several jobs.']);
+    }
+    if (counts().jobsRunning >= maxActive) {
+      throw httpError(429, 'OV_COORDINATOR_BUSY', `${String(maxActive)} jobs are already running.`, ['Retry when running jobs have finished.', 'Scale the workers or raise maxActiveJobs.']);
+    }
+    reserved++;
+    try {
+      return await storeJob(body, chunks);
+    } finally {
+      reserved--;
+    }
+  };
+
+  const storeJob = async (body: Readonly<Record<string, unknown>>, chunks: readonly ChunkRequest[]): Promise<unknown> => {
+    const project = body['project'];
+    const listed = body['files'];
+    if (!Array.isArray(listed)) throw badRequest('A job needs "files".', 'Send "files": [].');
+    const projectBytes = new TextEncoder().encode(JSON.stringify(project));
+    const projectKey = inputKey(digestHex(projectBytes));
     await options.store.put(projectKey, projectBytes);
     const files: StoredFile[] = [];
-    for (const f of body['files']) {
-      if (!isRecord(f) || typeof f['path'] !== 'string' || typeof f['data'] !== 'string' || !isSafeRelativePath(f['path'])) {
-        throw badRequest('Each file needs a safe relative "path" and base64 "data".', 'Use paths like "assets/logo.png" without "..".');
+    for (const f of listed) {
+      if (!isRecord(f) || typeof f['path'] !== 'string' || !isSafeRelativePath(f['path'])) {
+        throw badRequest('Each file needs a safe relative "path" and base64 "data" or a store "key".', 'Use paths like "assets/logo.png" without "..".');
       }
-      const bytes = new Uint8Array(Buffer.from(f['data'], 'base64'));
-      const key = `project/sha256:${sha256Hex(bytes)}`;
-      await options.store.put(key, bytes);
-      files.push({ path: f['path'], key });
+      if (typeof f['data'] === 'string') {
+        const bytes = new Uint8Array(Buffer.from(f['data'], 'base64'));
+        const key = inputKey(digestHex(bytes));
+        await options.store.put(key, bytes);
+        files.push({ path: f['path'], key });
+      } else if (typeof f['key'] === 'string' && keyDigest(f['key']) !== undefined && f['key'] === inputKey(keyDigest(f['key']) ?? '')) {
+        // Verweis auf eine vom Aufrufer hochgeladene Datei; Worker prüfen den Hash beim Lesen.
+        if (!(await options.store.has(f['key']))) throw badRequest(`The shared store has no entry "${f['key']}".`, 'Upload the file to the shared store before submitting the job.');
+        files.push({ path: f['path'], key: f['key'] });
+      } else {
+        throw badRequest('Each file needs base64 "data" or a "key" of the form "inputs/sha256-<hex>".', 'Send small files inline and large files as a store reference.');
+      }
     }
     const tp = body['traceparent'];
     const job: Job = { id: randomUUID(), projectKey, files, ...(typeof tp === 'string' ? { traceparent: tp } : {}), chunks: chunks.map((request) => ({ request, state: 'queued', attempts: 0, queuedSince: now() })), diagnostics: [] };
@@ -330,9 +652,10 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
 
   const lease = (body: Readonly<Record<string, unknown>>): Lease | undefined => {
     expireLeases();
-    const worker = typeof body['worker'] === 'string' ? body['worker'] : 'unknown';
+    const worker = typeof body['worker'] === 'string' ? body['worker'].slice(0, 200) : 'unknown';
     let best: { job: Job; index: number; since: number } | undefined;
     for (const job of jobs.values()) {
+      if (jobState(job) !== 'running') continue;
       job.chunks.forEach((c, index) => {
         if (c.state === 'queued' && (best === undefined || c.queuedSince < best.since)) best = { job, index, since: c.queuedSince };
       });
@@ -342,16 +665,27 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     const c = job.chunks[index];
     if (c === undefined) return undefined;
     const leaseId = randomUUID();
+    journal({ e: 'lease', jobId: job.id, index, leaseId, worker });
     c.state = 'leased';
     c.lease = { id: leaseId, worker, expires: now() + leaseMs };
     return { leaseId, jobId: job.id, index, request: c.request, ...(job.traceparent !== undefined ? { traceparent: job.traceparent } : {}), projectKey: job.projectKey, files: job.files, leaseSeconds: leaseMs / 1000 };
+  };
+
+  /** Prüft das Bearer-Token für die Rollen eines Endpunkts (401 ohne passendes Token, 403 bei falscher Rolle). */
+  const authorize = (req: IncomingMessage, roles: readonly CoordinatorRole[]): void => {
+    if (open) return;
+    const header = req.headers.authorization;
+    if (roles.some((role) => roleTokens[role].some((t) => tokenMatches(header, t)))) return;
+    const other = (['submit', 'worker', 'metrics'] as const).some((role) => roleTokens[role].some((t) => tokenMatches(header, t)));
+    if (other) throw httpError(403, 'OV_COORDINATOR_FORBIDDEN', `This token may not use ${req.method ?? '?'} ${req.url ?? ''}; it needs the ${roles.join(' or ')} role.`, ['Use the token of the matching role (submit for the API, worker for workers, metrics for KEDA).']);
+    throw httpError(401, 'OV_COORDINATOR_UNAUTHORIZED', 'The bearer token is missing or wrong.', ['Send "Authorization: Bearer <token>".']);
   };
 
   const route = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://coordinator');
     const path = url.pathname;
     if (req.method === 'GET' && path === '/metrics') {
-      expireLeases();
+      // Nur lesen (Befund m7): abgelaufene Leases räumt der Timer auf, /metrics schreibt kein Journal.
       const q = counts();
       const lines = [
         '# HELP openvideo_queue_length Chunks waiting for a worker.',
@@ -368,18 +702,40 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
       send(res, 200, lines.join('\n'), 'text/plain; version=0.0.4');
       return;
     }
-    if (!path.startsWith('/v1/')) throw new HttpError(404, { code: 'OV_COORDINATOR_NOT_FOUND', severity: 'error', errorClass: 'CoordinatorError', problem: `No endpoint ${path}.`, suggestions: ['Use the /v1 API or /metrics.'] });
-    if (options.token !== undefined && !tokenMatches(req.headers.authorization, options.token)) {
-      throw new HttpError(401, { code: 'OV_COORDINATOR_UNAUTHORIZED', severity: 'error', errorClass: 'CoordinatorError', problem: 'The bearer token is missing or wrong.', suggestions: ['Send "Authorization: Bearer <token>".'] });
+    const roles = rolesFor(req.method, path);
+    if (roles === undefined) {
+      if (path.startsWith('/v1/') && (path === '/v1/jobs' || path === '/v1/lease' || path === '/v1/heartbeat' || path === '/v1/complete' || path === '/v1/fail' || path === '/v1/queue')) {
+        throw httpError(405, 'OV_COORDINATOR_METHOD', `${req.method ?? '?'} is not allowed on ${path}.`, ['See the coordinator API in the scheduler README.']);
+      }
+      throw httpError(404, 'OV_COORDINATOR_NOT_FOUND', `No endpoint ${path}.`, ['Use the /v1 API or /metrics.']);
     }
+    authorize(req, roles);
+    sweep();
     if (req.method === 'GET' && path === '/v1/queue') {
       expireLeases();
       send(res, 200, counts());
       return;
     }
-    if (req.method === 'GET' && path.startsWith('/v1/jobs/')) {
-      const job = jobs.get(decodeURIComponent(path.slice('/v1/jobs/'.length)));
-      if (job === undefined) throw new HttpError(404, { code: 'OV_COORDINATOR_JOB_UNKNOWN', severity: 'error', errorClass: 'CoordinatorError', problem: 'Unknown job.', suggestions: ['Submit the job again with POST /v1/jobs.'] });
+    if (req.method === 'GET' || req.method === 'DELETE') {
+      let id: string;
+      try {
+        id = decodeURIComponent(path.slice('/v1/jobs/'.length));
+      } catch (error) {
+        // Kaputte Prozent-Kodierung ist ein Fehler der Anfrage, kein Serverfehler (Befund m7).
+        throw badRequest(`The job id in ${path.slice(0, 200)} is not valid percent-encoding: ${error instanceof Error ? error.message : String(error)}`, 'Use the jobId from POST /v1/jobs.');
+      }
+      const job = jobs.get(id);
+      if (job === undefined) throw httpError(404, 'OV_COORDINATOR_JOB_UNKNOWN', 'Unknown job.', ['Submit the job again with POST /v1/jobs.', 'Finished jobs are removed after jobTtlSeconds.']);
+      if (req.method === 'DELETE') {
+        if (jobState(job) === 'running') {
+          const at = now();
+          const diagnostic: Diagnostic = { code: 'OV_RENDER_CANCELLED', severity: 'error', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] };
+          journal({ e: 'cancel', jobId: job.id, at, diagnostic });
+          cancelJob(job, at, diagnostic);
+        }
+        send(res, 200, { ok: true, state: jobState(job) });
+        return;
+      }
       expireLeases();
       const status: JobStatus = {
         id: job.id,
@@ -390,7 +746,6 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
       send(res, 200, status);
       return;
     }
-    if (req.method !== 'POST') throw new HttpError(405, { code: 'OV_COORDINATOR_METHOD', severity: 'error', errorClass: 'CoordinatorError', problem: `${req.method ?? '?'} is not allowed on ${path}.`, suggestions: ['Use POST.'] });
     const body = await readBody(req, maxBody);
     if (path === '/v1/jobs') {
       send(res, 201, await submit(body));
@@ -407,64 +762,63 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
       return;
     }
     if (path === '/v1/heartbeat') {
-      const hit = typeof body['leaseId'] === 'string' ? findLease(body['leaseId']) : undefined;
-      const c = hit?.job.chunks[hit.index];
-      if (c?.lease === undefined) {
-        // Lease unbekannt (abgelaufen oder Neustart): der Worker rendert weiter, das Ergebnis zählt trotzdem.
+      // Abgelaufene Leases zuerst verfallen lassen (Befund m7): ein später Heartbeat verlängert sie nicht mehr.
+      expireLeases();
+      const hit = findLease(body['leaseId']);
+      if (hit?.chunk.lease === undefined) {
+        // Lease unbekannt oder abgelaufen: das Ergebnis dieses Workers wird nicht mehr angenommen.
         send(res, 410, { ok: false });
         return;
       }
-      c.lease.expires = now() + leaseMs;
+      hit.chunk.lease.expires = now() + leaseMs;
       send(res, 200, { ok: true, leaseSeconds: leaseMs / 1000 });
       return;
     }
     if (path === '/v1/complete') {
-      const hit = locate(body);
+      const hit = requireLease(body, 'complete');
       const result = body['result'];
-      if (hit === undefined || !isChunkResult(result)) throw badRequest('complete needs a known "leaseId" (or "jobId" and "index") and a valid "result".', 'Send the ChunkResult from renderChunk.');
-      const c = hit.job.chunks[hit.index];
-      if (c !== undefined && c.state !== 'done') {
-        // Chunks sind idempotent: auch ein spätes Ergebnis einer abgelaufenen Lease ist gültig.
-        journal({ e: 'done', jobId: hit.job.id, index: hit.index, result });
-        c.state = 'done';
-        c.result = result;
-        delete c.lease;
-      }
+      if (!isChunkResult(result)) throw badRequest('complete needs a valid "result".', 'Send the ChunkResult from renderChunk.');
+      checkResult(hit.job, hit.chunk, result);
+      journal({ e: 'done', jobId: hit.job.id, index: hit.index, result });
+      hit.chunk.state = 'done';
+      hit.chunk.result = result;
+      delete hit.chunk.lease;
+      markFinished(hit.job, now(), true);
       send(res, 200, { ok: true });
       return;
     }
-    if (path === '/v1/fail') {
-      const hit = locate(body);
-      if (hit === undefined) throw badRequest('fail needs a known "leaseId" (or "jobId" and "index").', 'Send the lease you received.');
-      const c = hit.job.chunks[hit.index];
-      if (c !== undefined && c.state !== 'done') {
-        // `released`: der Worker gibt den Chunk beim Beenden ab; das zählt nicht als Fehlversuch.
-        const failed = body['released'] !== true;
-        const diagnostic = isDiagnostic(body['diagnostic']) ? body['diagnostic'] : undefined;
-        journal({ e: 'attempt', jobId: hit.job.id, index: hit.index, failed, ...(diagnostic !== undefined ? { diagnostic } : {}) });
-        applyAttempt(hit.job, hit.index, failed, diagnostic);
-      }
-      send(res, 200, { ok: true });
-      return;
-    }
-    throw new HttpError(404, { code: 'OV_COORDINATOR_NOT_FOUND', severity: 'error', errorClass: 'CoordinatorError', problem: `No endpoint ${path}.`, suggestions: ['See the coordinator API in the scheduler README.'] });
+    // path === '/v1/fail'
+    const hit = requireLease(body, 'fail');
+    // `released`: der Worker gibt den Chunk beim Beenden ab; das zählt nicht als Fehlversuch.
+    const failed = body['released'] !== true;
+    const diagnostic = isDiagnostic(body['diagnostic']) ? body['diagnostic'] : undefined;
+    journal({ e: 'attempt', jobId: hit.job.id, index: hit.index, failed, ...(diagnostic !== undefined ? { diagnostic } : {}) });
+    applyAttempt(hit.job, hit.index, failed, diagnostic);
+    markFinished(hit.job, now(), true);
+    send(res, 200, { ok: true });
   };
 
   const server = createServer((req, res) => {
     route(req, res).catch((error: unknown) => {
       if (error instanceof HttpError) {
+        // Nach einem abgelehnten, zu großen Body die Verbindung schließen statt weiterzulesen.
+        if (error.status === 413) res.shouldKeepAlive = false;
         send(res, error.status, { diagnostic: error.diagnostic });
+        if (error.status === 413) req.destroy();
         return;
       }
       const diagnostic: Diagnostic = error instanceof OpenVideoError ? error.diagnostic : { code: 'OV_COORDINATOR_INTERNAL', severity: 'error', errorClass: 'CoordinatorError', problem: error instanceof Error ? error.message : String(error), suggestions: ['Check the coordinator logs and the shared store.'] };
       send(res, 500, { diagnostic });
     });
   });
-  const timer = setInterval(expireLeases, 1000);
+  const timer = setInterval(() => {
+    expireLeases();
+    sweep();
+  }, 1000);
   timer.unref();
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(options.port, options.host ?? '0.0.0.0', () => {
+    server.listen(options.port, host, () => {
       server.off('error', reject);
       resolve();
     });

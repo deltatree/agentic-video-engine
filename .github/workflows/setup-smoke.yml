@@ -1,0 +1,80 @@
+# Echte Einrichtung mit `npm run setup` (ADR 0029): Image lokal bauen, Wrapper `openvideo` installieren und
+# eine Rauchprobe über den Wrapper fahren (deploy/test/setup-smoke.sh: doctor, create, validate, render-frame,
+# MCP-Handshake, API mit Token). Ein Job je Laufzeit: docker, podman, kubernetes (kind).
+# Der Image-Build dauert einige Minuten; deshalb nachts, auf Abruf und bei Änderungen am Setup.
+name: Setup smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+  pull_request:
+    paths:
+      - 'scripts/setup.mjs'
+      - 'scripts/setup/**'
+      - 'deploy/docker/**'
+      - 'deploy/k8s/overlays/dev/**'
+      - 'deploy/test/setup-smoke.sh'
+      - '.github/workflows/setup-smoke.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/setup.mjs'
+      - 'scripts/setup/**'
+      - 'deploy/docker/**'
+      - 'deploy/k8s/overlays/dev/**'
+      - 'deploy/test/setup-smoke.sh'
+      - '.github/workflows/setup-smoke.yml'
+
+# Lieferkette (Story 16.6): Rechte nur im Job, Actions per Commit-SHA gepinnt (Tag als Kommentar).
+permissions: {}
+
+concurrency:
+  group: setup-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [docker, podman, kubernetes]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      OPENVIDEO_CONFIG_DIR: ${{ github.workspace }}/../ov-config
+      # Wie deploy/test/kind.sh.
+      KIND_VERSION: v0.33.0
+      KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: kind (SHA-256 geprüft)
+        if: matrix.runtime == 'kubernetes'
+        run: |
+          curl -fsSL -o kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  kind" | sha256sum -c -
+          sudo install -m 0755 kind /usr/local/bin/kind && rm kind
+          kind create cluster --name ov --wait 180s
+      - name: Plan (--dry-run)
+        run: npm run setup -- --runtime ${{ matrix.runtime }} --bin-dir "$RUNNER_TEMP/bin" --dry-run
+      - name: npm run setup -- --runtime ${{ matrix.runtime }}
+        run: npm run setup -- --runtime ${{ matrix.runtime }} --bin-dir "$RUNNER_TEMP/bin"
+      - name: Rauchprobe über den Wrapper
+        run: bash deploy/test/setup-smoke.sh "$RUNNER_TEMP/bin/openvideo" --video
+      - name: Update nimmt die gespeicherte Laufzeit (Build aus dem Cache)
+        run: |
+          npm run setup -- --bin-dir "$RUNNER_TEMP/bin" | tee setup-again.log
+          grep -q "Runtime: ${{ matrix.runtime }} – saved by the last setup" setup-again.log
+      - name: Diagnose bei Fehler
+        if: failure() && matrix.runtime == 'kubernetes'
+        run: |
+          kubectl -n openvideo-local get pods -o wide || true
+          kubectl -n openvideo-local describe pods || true
+          kubectl -n openvideo-local logs deploy/openvideo --tail=100 || true

@@ -177,9 +177,12 @@ export async function runBenchmark(options: BenchmarkOptions): Promise<Benchmark
 
       const times: number[] = [];
       const hashes: string[] = [];
+      // Wie ein Chunk im Video-Render (`renderChunk`): mit Layer-Historie, damit animierte Layer nicht
+      // in den Layer-Cache komprimiert werden (Story 18.3). Der Frame-Cache wird weiter geschrieben.
+      const layerHistory = new Map<string, string>();
       for (let f = 0; f < frames; f++) {
         const start = performance.now();
-        const r = await renderFrame(env, project, { compositionId, frame: f });
+        const r = await renderFrame(env, project, { compositionId, frame: f, layerHistory });
         times.push(performance.now() - start);
         hashes.push(imageHash(r.image));
         collectDiagnostics(diagnostics, r.diagnostics);

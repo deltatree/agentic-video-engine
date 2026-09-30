@@ -8,6 +8,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { OpenVideoError } from '@agentic-video/core';
 import { RESULT_MARK, dockerRunArgs, DEFAULT_LIMITS, runSandboxed, sandboxAvailable, type SandboxRequest } from '@agentic-video/sandbox';
 
@@ -67,7 +68,7 @@ describe('C3: Grenzen', () => {
     expect(e.diagnostic.suggestions.join(' ')).toContain('memoryMb');
   });
 
-  it.skipIf(noDocker)('meldet Exit-Code 125 aus dem Code nicht als fehlendes Docker (braucht Docker)', async () => {
+  it.skipIf(skipUnless(!noDocker, 'Docker fehlt: die Sandbox braucht einen laufenden Docker-Daemon'))('meldet Exit-Code 125 aus dem Code nicht als fehlendes Docker (braucht Docker)', async () => {
     const e = await failure({ code: 'process.exit(125)' });
     expect(e.diagnostic.code).toBe('OV_SANDBOX_CRASH');
   });

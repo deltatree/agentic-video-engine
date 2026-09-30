@@ -1,9 +1,11 @@
-# Rezepte
+# Recipes
 
-Jedes Rezept ist ein kleines, vollständiges Stück IR. Ein Test prüft jeden JSON-Block dieser Datei gegen das Schema.
-Blöcke mit einer Node lassen sich per `addNode` einfügen; Blöcke mit `patches` per `composition.patch`.
+[Deutsche Fassung](recipes.de.md)
 
-## Headline erzeugen und zwischen Frame 20 und 45 einblenden
+Every recipe is a small, complete piece of IR. A test checks every JSON block of this file against the schema.
+Blocks with one node can be inserted with `addNode`; blocks with `patches` with `composition.patch`.
+
+## Create a headline and fade it in between frame 20 and 45
 
 ```json
 { "id": "headline", "type": "text", "text": "The future is programmable.", "fontSize": 92, "fontWeight": 700,
@@ -11,7 +13,7 @@ Blöcke mit einer Node lassen sich per `addNode` einfügen; Blöcke mit `patches
   "opacity": { "$keyframes": [{ "t": 20, "v": 0 }, { "t": 45, "v": 1, "ease": "easeOutCubic" }] } }
 ```
 
-## Headline auf 82 px verkleinern und 40 px nach oben schieben
+## Shrink the headline to 82 px and move it up by 40 px
 
 ```json
 { "patches": [
@@ -20,7 +22,7 @@ Blöcke mit einer Node lassen sich per `addNode` einfügen; Blöcke mit `patches
 ] }
 ```
 
-## Kamera langsam auf das Produkt zufahren
+## Move the camera slowly towards the product
 
 ```json
 { "id": "stage", "type": "scene3d", "width": 1920, "height": 1080, "camera": "cam",
@@ -35,7 +37,7 @@ Blöcke mit einer Node lassen sich per `addNode` einfügen; Blöcke mit `patches
   ] }
 ```
 
-## Ab Sekunde 4 links eine Feature-Liste zeigen
+## Show a feature list on the left from second 4
 
 ```json
 { "id": "features", "type": "group", "x": 120, "y": 320, "timing": { "from": "4s" },
@@ -49,10 +51,10 @@ Blöcke mit einer Node lassen sich per `addNode` einfügen; Blöcke mit `patches
   ] }
 ```
 
-## Punkte mit dem Voiceover synchronisieren
+## Sync points with the voiceover
 
-Marker an den Stellen im Voiceover setzen und Keyframes auf die Marker beziehen.
-Nach einer Sprachsynthese liefert OpenVideo Marker-Vorschläge `voice-<id>-word-<n>`.
+Set markers at the moments in the voiceover and refer to the markers in keyframes.
+After speech synthesis OpenVideo suggests markers `voice-<id>-word-<n>`.
 
 ```json
 { "patches": [
@@ -63,7 +65,7 @@ Nach einer Sprachsynthese liefert OpenVideo Marker-Vorschläge `voice-<id>-word-
 ] }
 ```
 
-## Bei Sekunde 8 zur Diagramm-Szene überblenden
+## Transition to the chart scene at second 8
 
 ```json
 { "id": "chart-scene", "type": "component", "component": "BarChart",
@@ -73,30 +75,30 @@ Nach einer Sprachsynthese liefert OpenVideo Marker-Vorschläge `voice-<id>-word-
   "x": 240, "y": 180 }
 ```
 
-## Code-Tutorial mit Tipp-Animation
+## Code tutorial with typing animation
 
 ```json
 { "id": "code", "type": "component", "component": "CodeEditor", "x": 160, "y": 120,
   "props": { "language": "ts", "code": "const frame = render(composition, assets, f, seed);", "typing": true } }
 ```
 
-## Transparentes Lower Third (mit Alpha exportieren)
+## Transparent lower third (export with alpha)
 
 ```json
 { "id": "lt", "type": "component", "component": "LowerThird", "x": 96, "y": 860,
   "props": { "name": "Ada Lovelace", "role": "Chief Engine Officer" } }
 ```
 
-Render mit Alpha: `openvideo render --format mov --codec prores-4444 --alpha` (Composition ohne `background`).
+Render with alpha: `openvideo render --format mov --codec prores-4444 --alpha` (composition without `background`).
 
-## Wort für Wort hervorgehobene Untertitel
+## Subtitles highlighted word by word
 
 ```json
 { "id": "captions", "type": "subtitles", "track": "subs", "style": "word-highlight",
   "fontSize": 44, "highlightColor": "#FFD23F", "box": { "color": "#000000B0", "paddingX": 18, "paddingY": 10, "radius": 12 } }
 ```
 
-## Farbkorrektur für die ganze Szene
+## Color correction for the whole scene
 
 ```json
 { "id": "graded", "type": "layer",

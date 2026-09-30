@@ -171,6 +171,11 @@ export function Code(): ReactNode {
           </>
         )}
       </div>
+      {state.draftConflict && dirty && (
+        <p className="conflict" role="alert">
+          project.json changed outside the Studio. Save keeps your edits and overwrites that change; Discard loads the new version.
+        </p>
+      )}
       <div className="editor-host" ref={host}>
         {!loaded && <p className="empty">Loading editor…</p>}
       </div>
@@ -226,7 +231,9 @@ export function RenderQueue(): ReactNode {
     ...records(state.project?.['renderProfiles']).map((p) => ({ key: `profile:${str(p['id'], '')}`, label: `Project profile ${str(p['id'], '')} (${str(p['format'], '')})`, operation: 'video.render' as const, input: { profileId: str(p['id'], '') } })),
   ];
   const [key, setKey] = useState('preview');
+  const [useRange, setUseRange] = useState(true);
   const preset = profiles.find((p) => p.key === key) ?? profiles[0];
+  const hasRange = state.inPoint !== undefined || state.outPoint !== undefined;
   return (
     <div className="queue">
       <div className="row-actions">
@@ -245,12 +252,17 @@ export function RenderQueue(): ReactNode {
             ))}
           </select>
         </label>
-        <button type="button" onClick={() => preset !== undefined && void studio.startRender(preset)}>
+        {hasRange && preset?.operation === 'preview.render' && (
+          <label title="Render only the in/out range of the timeline">
+            <input type="checkbox" checked={useRange} onChange={(e) => { setUseRange(e.currentTarget.checked); }} /> Only in/out ({state.inPoint ?? 0}–{state.outPoint ?? '…'})
+          </label>
+        )}
+        <button type="button" onClick={() => preset !== undefined && void studio.startRender(preset, useRange)}>
           Start render
         </button>
       </div>
       {state.jobs.length === 0 ? (
-        <p className="empty">No render jobs in this session.</p>
+        <p className="empty">No render jobs for this project yet.</p>
       ) : (
         <ul className="job-list" aria-label="Render jobs">
           {state.jobs.map((j) => {

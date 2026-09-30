@@ -234,6 +234,18 @@ describe('createEncoder: Formate und Codecs', () => {
     expect(errorCode(() => createEncoder({ output: join(dir, 'x.webm'), format: 'webm', width: W, height: H, fps: FPS, audioPath: wav, audioCodec: 'aac' }))).toBe('OV_ENCODE_AUDIO_UNSUPPORTED');
   });
 
+  it('liest Audio nur als lokale WAV-Datei: Protokoll- und Format-Whitelist (Story 16.5, M3)', async () => {
+    const wav = join(dir, 'wl-tone.wav');
+    execFileSync(locateFfmpeg().ffmpeg, ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', wav]);
+    const ok = await encode({ output: join(dir, 'wl-ok.mp4'), format: 'mp4', audioPath: wav }, frames.slice(0, 2));
+    const at = ok.args.indexOf(wav);
+    expect(ok.args.slice(at - 5, at + 1)).toEqual(['-protocol_whitelist', 'file', '-format_whitelist', 'wav,w64', '-i', wav]);
+    // Eine concat-Liste, die als .wav getarnt eine andere Datei nachlädt, wird abgelehnt.
+    const list = join(dir, 'wl-list.wav');
+    writeFileSync(list, "ffconcat version 1.0\nfile 'wl-tone.wav'\n");
+    await expect(encode({ output: join(dir, 'wl-bad.mp4'), format: 'mp4', audioPath: list }, frames.slice(0, 2))).rejects.toMatchObject({ diagnostic: { errorClass: expect.any(String) } });
+  });
+
   it('prüft Codec, Maße und Frame-Größe', async () => {
     expect(errorCode(() => createEncoder({ output: join(dir, 'x.webm'), format: 'webm', codec: 'h264', width: W, height: H, fps: FPS }))).toBe('OV_ENCODE_CODEC_UNSUPPORTED');
     expect(errorCode(() => createEncoder({ output: join(dir, 'x.mp4'), format: 'mp4', width: 63, height: H, fps: FPS }))).toBe('OV_ENCODE_SIZE');

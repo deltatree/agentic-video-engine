@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { OpenVideoError, validateProject } from '@agentic-video/core';
 import { compileTsx, exportJson, type CompileOptions } from '@agentic-video/compiler';
 import { sandboxAvailable } from '@agentic-video/sandbox';
@@ -84,7 +85,7 @@ describe('compileTsx (trusted-host)', () => {
   });
 });
 
-describe.skipIf(noDocker)('compileTsx (docker, needs Docker)', () => {
+describe.skipIf(skipUnless(!noDocker, 'Docker fehlt: compileTsx im Container braucht einen laufenden Docker-Daemon'))('compileTsx (docker, needs Docker)', () => {
   it('compiles the A4 example in the container', async () => {
     const r = await compileTsx(join(a4Dir, 'auftrag-a4.tsx'), { projectDir: a4Dir });
     expect(r.trusted).toBe(false);

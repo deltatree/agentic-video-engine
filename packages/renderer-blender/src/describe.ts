@@ -20,6 +20,7 @@ import {
   type EvaluatedNode,
 } from '@agentic-video/core';
 import { instanceTransforms } from './instances.js';
+import { blenderParticles } from './particles.js';
 
 /** Sichtbare Höhe einer orthografischen Kamera in Metern bei `zoom: 1` (wie im Three.js-Renderer). */
 export const ORTHOGRAPHIC_VIEW_HEIGHT = 10;
@@ -51,7 +52,7 @@ export interface BlenderMaterialState {
 export interface BlenderObjectState {
   readonly key: string;
   readonly parent: string | null;
-  readonly kind: 'group' | 'mesh' | 'camera' | 'light' | 'model' | 'instances';
+  readonly kind: 'group' | 'mesh' | 'camera' | 'light' | 'model' | 'instances' | 'particles';
   readonly position: Vec3;
   readonly rotation: Vec3;
   readonly scale: Vec3;
@@ -69,6 +70,11 @@ export interface BlenderObjectState {
     readonly material?: BlenderMaterialState;
   };
   readonly instances?: { readonly transforms: readonly { readonly position: Vec3; readonly rotation: Vec3; readonly scale: Vec3 }[] };
+  /**
+   * Lebende Partikel einer `particles3d`-Node (Story 17.5): je Partikel eine unbeleuchtete Kugel
+   * (Durchmesser `size`, Farbe linear). `index` ist über die Zeit stabil. `additive` mischt additiv.
+   */
+  readonly particles?: { readonly additive: boolean; readonly items: readonly { readonly index: number; readonly position: Vec3; readonly size: number; readonly color: Vec3 }[] };
 }
 
 /** Welt: Hintergrund, Umgebungslicht, HDRI, Volumen, Nebel. Farben linear. */
@@ -308,6 +314,16 @@ export function describeScene(node: EvaluatedNode, ctx: DescribeContext): Blende
           instances: { transforms: instanceTransforms(n, n.time.localFrame / ctx.fps, ctx.seed) },
         });
         return;
+      case 'particles3d':
+        objects.push({
+          ...base,
+          kind: 'particles',
+          particles: {
+            additive: n.props['additive'] === true,
+            items: blenderParticles(n, n.time.localFrame / ctx.fps, ctx.fps, ctx.seed).map((p) => ({ index: p.index, position: p.position, size: p.size, color: linearColor(p.color, '#FFFFFF').rgb })),
+          },
+        });
+        return;
       case 'model3d': {
         const assetId = getOptionalString(n, 'asset') ?? '';
         const path = assetPath(ctx.assets, assetId, n.id);
@@ -337,7 +353,7 @@ export function describeScene(node: EvaluatedNode, ctx: DescribeContext): Blende
         return;
       }
       default:
-        // Nicht übertragbare Typen (z. B. particles3d) meldet check() vor dem Render.
+        // Nicht übertragbare Typen meldet check() vor dem Render.
         return;
     }
   };

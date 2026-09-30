@@ -1,0 +1,66 @@
+# npm-Veröffentlichung (Story 22.7, Entscheidung T3): bei einem Versions-Tag v* veröffentlicht der
+# Workflow alle Pakete unter packages/* (ohne "private") mit npm-Provenance-Attestierung.
+# Die Veröffentlichung löst der Maintainer aus, indem er die Root-Version erhöht und den Tag pusht;
+# das Secret NPM_TOKEN (Automation-Token der npm-Organisation @agentic-video) muss gesetzt sein.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# Lieferkette (Story 16.6): Rechte nur im Job, Actions per Commit-SHA gepinnt (Tag als Kommentar).
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: npm
+    permissions:
+      contents: read
+      # npm publish --provenance braucht ein OIDC-Token von GitHub.
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - name: Tag passt zur Root-Version
+        run: node scripts/release-packages.mjs check-tag "${GITHUB_REF_NAME}"
+      - name: Abhängigkeiten
+        run: npm ci
+      - name: Versionen aller Pakete aus der Root-Version
+        # Nach npm ci: das Lockfile bleibt unverändert, veröffentlicht werden die package.json-Dateien.
+        run: |
+          node scripts/release-packages.mjs sync-version
+          node scripts/release-packages.mjs check
+      - name: Build (inklusive Studio im CLI-Paket)
+        run: npm run build
+      - name: Smoke-Test der Tarballs (npm pack → leeres Verzeichnis)
+        run: node scripts/smoke-npx.mjs
+      - name: Veröffentlichen in Abhängigkeitsreihenfolge (Provenance)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
+            echo "The secret NPM_TOKEN is not set; nothing was published." >&2
+            exit 1
+          fi
+          version="$(node -p "require('./package.json').version")"
+          for dir in $(node scripts/release-packages.mjs order); do
+            name="$(node -p "require('./${dir}/package.json').name")"
+            # Wiederholbar: bereits veröffentlichte Versionen überspringen (z. B. nach einem Abbruch).
+            if npm view "${name}@${version}" version > /dev/null 2>&1; then
+              echo "skip ${name}@${version} (already published)"
+              continue
+            fi
+            npm publish --workspace "${dir}" --provenance --access public
+          done

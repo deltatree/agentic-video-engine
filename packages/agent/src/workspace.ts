@@ -14,8 +14,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { lstat, mkdir, readFile, readdir, readlink, realpath, rename, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { basename, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { OpenVideoError, isRecord } from '@agentic-video/core';
 
 /** Inhalt von `openvideo.json`. */
@@ -163,9 +163,47 @@ export class Workspace {
     return join(this.root, 'projects', id);
   }
 
-  /** Prüft, ob ein Projekt existiert. */
+  /** Prüft, ob ein Projekt existiert (`openvideo.json` oder, bei geöffneten Ordnern, `project.json`). */
   exists(id: string): boolean {
-    return existsSync(join(this.projectDir(id), 'openvideo.json'));
+    const dir = this.projectDir(id);
+    return existsSync(join(dir, 'openvideo.json')) || existsSync(join(dir, 'project.json'));
+  }
+
+  /**
+   * Bindet einen bestehenden Projektordner per Symlink als Projekt ein (`project.open`, Story 19.4).
+   * Ist der Ordner schon eingebunden, kommt dieselbe ID zurück. Die ID folgt dem Ordnernamen
+   * (bei Kollision mit `-2`, `-3` …). Die Prüfung erlaubter Wurzeln übernimmt der Aufrufer.
+   *
+   * @example
+   * ```ts
+   * const id = await ws.link('/work/launch'); // 'launch'
+   * ```
+   */
+  async link(dir: string, preferredId?: string): Promise<string> {
+    const base = (preferredId ?? basename(dir)).toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+/gu, '').slice(0, 58).replace(/-+$/gu, '') || 'project';
+    await mkdir(join(this.root, 'projects'), { recursive: true });
+    for (let i = 1; ; i++) {
+      const id = i === 1 ? base : `${base}-${String(i)}`;
+      const path = this.projectDir(id);
+      let current: string | undefined;
+      try {
+        const info = await lstat(path);
+        current = info.isSymbolicLink() ? await readlink(path) : '';
+      } catch (error) {
+        if (!hasCode(error, 'ENOENT')) throw error;
+      }
+      if (current === undefined) {
+        try {
+          await symlink(dir, path, 'dir');
+          return id;
+        } catch (error) {
+          // Gleichzeitiger Aufruf hat die ID belegt: nächste versuchen.
+          if (hasCode(error, 'EEXIST')) continue;
+          throw error;
+        }
+      }
+      if (current === dir) return id;
+    }
   }
 
   /**

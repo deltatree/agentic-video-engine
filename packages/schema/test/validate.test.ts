@@ -173,6 +173,19 @@ describe('validateProject', () => {
     expect(result.diagnostics.find((d) => d.code === 'OV_THEME_REF')?.suggestions[0]).toBe('{ "$ref": "theme.colors.primary" }');
   });
 
+  it('warnt, wenn renderProfile.colorSpace und settings.outputColorSpace abweichen (Story 17.11)', () => {
+    const mismatch = validateProject(project([], { settings: { outputColorSpace: 'rec709' }, renderProfiles: [{ id: 'web', format: 'mp4', colorSpace: 'srgb' }, { id: 'tv', format: 'mp4', colorSpace: 'rec709' }, { id: 'plain', format: 'mp4' }] }));
+    expect(mismatch.ok).toBe(true);
+    const warnings = mismatch.diagnostics.filter((d) => d.code === 'OV_COLORSPACE_MISMATCH');
+    expect(warnings.map((d) => [d.severity, d.pointer])).toEqual([
+      ['warning', '/renderProfiles/0/colorSpace'],
+      ['warning', '/renderProfiles/2'],
+    ]);
+    expect(warnings[0]?.suggestions[0]).toBe('Set renderProfiles[0].colorSpace to "rec709".');
+    const match = validateProject(project([], { renderProfiles: [{ id: 'web', format: 'mp4', colorSpace: 'srgb' }, { id: 'plain', format: 'mp4' }] }));
+    expect(match.diagnostics.map((d) => d.code)).not.toContain('OV_COLORSPACE_MISMATCH');
+  });
+
   it('meldet inkompatible Schema-Versionen', () => {
     const result = validateProject({ ...project([]), schemaVersion: '2.0.0' });
     expect(result.diagnostics[0]?.code).toBe('OV_SCHEMA_VERSION');

@@ -44,13 +44,14 @@ spec:
           command: [node, /app/deploy/s3-bucket.mjs]
           envFrom:
             - configMapRef: { name: openvideo-config }
+          # Nur dieser Init-Container bekommt die Admin-Identität (Bucket anlegen).
           env:
             - name: OPENVIDEO_S3_ACCESS_KEY_ID
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-access-key-id }
+                secretKeyRef: { name: openvideo-secrets, key: s3-admin-access-key-id }
             - name: OPENVIDEO_S3_SECRET_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-secret-access-key }
+                secretKeyRef: { name: openvideo-secrets, key: s3-admin-secret-access-key }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -74,18 +75,19 @@ spec:
             # Video-Renders gehen als Chunks an die CPU-Queue des Koordinators; die Worker skalieren darüber.
             - name: OPENVIDEO_COORDINATOR_URL
               value: http://coordinator:8080
-            - name: OPENVIDEO_WORKER_TOKEN
+            # Rolle "submit" am Koordinator (Story 16.3); das Worker-Token bekommt die API nicht.
+            - name: OPENVIDEO_SUBMIT_TOKEN
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: worker-token }
+                secretKeyRef: { name: openvideo-secrets, key: submit-token }
             # Erlaubte Host-Header (Service-Namen). Ingress-Namen im Overlay ergänzen.
             - name: OPENVIDEO_ALLOWED_HOSTS
               value: api,api.openvideo,api.openvideo.svc,api.openvideo.svc.cluster.local
             - name: OPENVIDEO_S3_ACCESS_KEY_ID
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-access-key-id }
+                secretKeyRef: { name: openvideo-secrets, key: s3-api-access-key-id }
             - name: OPENVIDEO_S3_SECRET_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-secret-access-key }
+                secretKeyRef: { name: openvideo-secrets, key: s3-api-secret-access-key }
           ports:
             - { name: http, containerPort: 7788 }
           securityContext:

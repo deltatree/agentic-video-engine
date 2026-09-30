@@ -1,6 +1,7 @@
 /**
  * Erzeugt das veröffentlichte JSON Schema der IR (FR-3) aus der TypeBox-Definition.
  */
+import { NODE_EXAMPLES } from './examples.js';
 import { NODE_ARRAY_MARK, NODE_MARK, NODE_SCHEMAS } from './nodes.js';
 import { ANIMATABLE_MARK } from './primitives.js';
 import { Project } from './project.js';
@@ -100,6 +101,12 @@ export function buildJsonSchema(): Record<string, Json> {
   const shared: Record<string, Json> = {};
   dedupe(roots, shared);
   const { __root: dedupedRoot, ...dedupedNodes } = roots;
+  // Beispiel je Node-Typ (Story 19.7) erst nach dem Ausgliedern, damit es nicht in `$defs` wandert.
+  for (const [type, example] of Object.entries(NODE_EXAMPLES)) {
+    const key = `Node_${type.replace(/-/gu, '_')}`;
+    const def = dedupedNodes[key];
+    if (typeof def === 'object' && def !== null && !Array.isArray(def)) dedupedNodes[key] = { ...def, examples: [transform(example)] };
+  }
   const defs: Record<string, Json> = {
     ...shared,
     ...dedupedNodes,

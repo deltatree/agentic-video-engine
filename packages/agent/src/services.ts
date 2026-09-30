@@ -41,7 +41,11 @@ export interface ImportedAsset {
 
 /** Asset-Dienste (Paket `assets`). */
 export interface AssetService {
-  import(projectDir: string, input: { readonly path?: string; readonly url?: string; readonly base64?: string; readonly fileName?: string; readonly id?: string; readonly type?: string }): Promise<ImportedAsset>;
+  /**
+   * Importiert eine Datei ins Projekt. Mit `project` nutzt der Dienst die Asset Loader der Plugins
+   * aus `settings.plugins` (Story 21.1), wie beim Rendern.
+   */
+  import(projectDir: string, input: { readonly path?: string; readonly url?: string; readonly base64?: string; readonly fileName?: string; readonly id?: string; readonly type?: string }, project?: Readonly<Record<string, unknown>>): Promise<ImportedAsset>;
   inspect(projectDir: string, project: Readonly<Record<string, unknown>>, assetId: string): Promise<Readonly<Record<string, unknown>>>;
 }
 
@@ -72,6 +76,16 @@ export interface AgentServices {
   readonly sources?: SourceService;
   /** Paralleles Chunk-Rendering (Scheduler); ohne Angabe rendert der Prozess selbst. */
   readonly chunkRunner?: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => ChunkRunner;
+  /**
+   * Wurzelordner, unter denen `project.open` bestehende Projektordner öffnen darf
+   * (`openvideo serve|mcp --project <dir>`, `OPENVIDEO_PROJECT_ROOTS`). Ohne Angabe ist `project.open` aus.
+   */
+  readonly projectRoots?: readonly string[];
+  /**
+   * Projektordner, die der Host selbst eingebunden hat (z. B. `openvideo dev <dir>`). Eingebundene
+   * Projekte (Symlinks im Workspace) sind nur erreichbar, solange ihr Ziel in `projectRoots` oder hier liegt.
+   */
+  readonly hostProjectDirs?: readonly string[];
   /** Benchmarks (Paket `benchmarks`). */
   readonly benchmark?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
 }

@@ -1,13 +1,24 @@
 /**
- * Cache-Ebenen mit Statistik (A23, FR-68).
+ * Cache-Ebenen mit Statistik (A23, FR-68, ADR 0021).
+ *
+ * Genutzte Ebenen: `asset` (Assets und Metadaten), `compiled` (Compiler-Output), `frame`,
+ * `layer`, `audio` (Mischung, Stimmen, Transkripte) und `encoding` (fertige Ausgabedateien).
+ * `font`, `geometry` und `shader` gibt es nicht mehr: Fonts sind Assets, Geometrie und
+ * Shader leben im Browser-Prozess (ADR 0021).
  */
 import { OpenVideoError } from '@agentic-video/core';
 import { FileStore, TieredStore, type ContentStore, type StoreEntry } from './store.js';
 import { S3Store } from './s3.js';
 
-/** Die Cache-Ebenen aus Auftrag A23. */
-export const CACHE_TIERS = ['asset', 'font', 'composition', 'frame', 'layer', 'geometry', 'shader', 'audio', 'encoding'] as const;
+/** Die genutzten Cache-Ebenen (A23, ADR 0021). */
+export const CACHE_TIERS = ['asset', 'compiled', 'frame', 'layer', 'audio', 'encoding'] as const;
 export type CacheTierName = (typeof CACHE_TIERS)[number];
+
+/**
+ * Beobachter eines Cache-Zugriffs: `hit` oder `miss` einer Leseoperation (`get`, `getOrCreate`).
+ * `has` ist eine Probe und zählt nicht.
+ */
+export type CacheAccessListener = (tier: CacheTierName, outcome: 'hit' | 'miss') => void;
 
 /** Zähler einer Cache-Ebene. */
 export interface TierStats {
@@ -50,18 +61,20 @@ export interface Cache {
    * Bei einem gestuften Speicher zählt und löscht nur die lokale Stufe (außer `deleteRemote`).
    */
   prune(maxBytes: number): Promise<number>;
+  /**
+   * Meldet jeden Treffer und Fehlgriff an `listener` (z. B. an die Telemetrie, Story 21.2).
+   * Liefert eine Funktion zum Abmelden. Fehler im Beobachter erreichen den Aufrufer nicht.
+   */
+  observe(listener: CacheAccessListener): () => void;
 }
 
 /** Baut ein Objekt mit einem Wert je Cache-Ebene. */
 export function perTier<T>(f: (tier: CacheTierName) => T): Record<CacheTierName, T> {
   return {
     asset: f('asset'),
-    font: f('font'),
-    composition: f('composition'),
+    compiled: f('compiled'),
     frame: f('frame'),
     layer: f('layer'),
-    geometry: f('geometry'),
-    shader: f('shader'),
     audio: f('audio'),
     encoding: f('encoding'),
   };
@@ -84,6 +97,18 @@ export function createCache(store: ContentStore): Cache {
   const counters = perTier(() => emptyStats());
   const tiers = new Map<CacheTierName, CacheTier>();
   const pending = new Map<string, Promise<Uint8Array>>();
+  const listeners = new Set<CacheAccessListener>();
+  const notify = (tier: CacheTierName, outcome: 'hit' | 'miss'): void => {
+    for (const l of listeners) {
+      try {
+        l(tier, outcome);
+      } catch (error) {
+        // Ein fehlerhafter Beobachter (Telemetrie) darf keinen Render abbrechen; er wird abgemeldet.
+        if (!(error instanceof Error)) throw error;
+        listeners.delete(l);
+      }
+    }
+  };
   // Aufräumen wirkt auf die lokale Stufe; der gemeinsame Speicher gehört allen Rechnern.
   const housekeeping = store instanceof TieredStore && !store.deletesRemote ? store.local : store;
   const makeTier = (name: CacheTierName): CacheTier => {
@@ -93,10 +118,13 @@ export function createCache(store: ContentStore): Cache {
       name,
       async get(key) {
         const v = await store.get(k(key));
-        if (v === undefined) c.misses++;
-        else {
+        if (v === undefined) {
+          c.misses++;
+          notify(name, 'miss');
+        } else {
           c.hits++;
           c.bytesRead += v.length;
+          notify(name, 'hit');
         }
         return v;
       },
@@ -182,6 +210,12 @@ export function createCache(store: ContentStore): Cache {
         removed++;
       }
       return removed;
+    },
+    observe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }

@@ -1,0 +1,1086 @@
+{
+  "date": "2026-09-30",
+  "note": "Vorher/Nachher für Epic 18 auf einer anderen Maschine als baseline.json (4 Kerne, geteilt mit anderen Agenten). Nur relativ vergleichbar; baseline.json bleibt unverändert.",
+  "machine": {
+    "cpu": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+    "cores": 4,
+    "memoryGb": 16,
+    "platform": "linux-x64",
+    "gpu": null,
+    "node": "v22.22.2"
+  },
+  "command": "openvideo-bench --resolution 1080p30,4k30 --frames 5 --json (jede Messung in eigenem Prozess)",
+  "benchmarks": [
+    {
+      "scenario": "3d-heavy",
+      "resolution": "1080p30",
+      "before": {
+        "scenario": "3d-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 0.634,
+        "frameMs": {
+          "mean": 1576.4,
+          "p50": 1581.8,
+          "p95": 1877.8
+        },
+        "startupMs": 3728,
+        "cpuPercent": 115,
+        "peakRssMb": 1821,
+        "encodingFramesPerSecond": 4.54,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:722d33d9045899da900af678bc42e9c5aacf7e168e26c78fa63159e82487609e",
+          "sha256:e366ec7dc52879aa74fb1ddb77a6f9f6940e22873b8fec54091a26524da65c18",
+          "sha256:5b210166a2d31d6ebfc64516216fe8f45b58bbbe7bf5ce08676f78ef6e46632b",
+          "sha256:e6f01dfd33f2d5e2a3966f8c4c862647bfa2728f762a97dbfbbf28b08daa1c51",
+          "sha256:2c1b51f5c551336064f8a05009783c31011cbd0437aad1c441e3ad142f4620c3"
+        ]
+      },
+      "after": {
+        "scenario": "3d-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 0.591,
+        "frameMs": {
+          "mean": 1692.9,
+          "p50": 1677.1,
+          "p95": 1838.7
+        },
+        "startupMs": 5925,
+        "cpuPercent": 91,
+        "peakRssMb": 1837,
+        "encodingFramesPerSecond": 5.39,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:722d33d9045899da900af678bc42e9c5aacf7e168e26c78fa63159e82487609e",
+          "sha256:e366ec7dc52879aa74fb1ddb77a6f9f6940e22873b8fec54091a26524da65c18",
+          "sha256:5b210166a2d31d6ebfc64516216fe8f45b58bbbe7bf5ce08676f78ef6e46632b",
+          "sha256:e6f01dfd33f2d5e2a3966f8c4c862647bfa2728f762a97dbfbbf28b08daa1c51",
+          "sha256:2c1b51f5c551336064f8a05009783c31011cbd0437aad1c441e3ad142f4620c3"
+        ]
+      },
+      "speedup": 0.93,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "3d-heavy",
+      "resolution": "4k30",
+      "before": {
+        "scenario": "3d-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.193,
+        "frameMs": {
+          "mean": 5180.8,
+          "p50": 4404,
+          "p95": 7461
+        },
+        "startupMs": 6290,
+        "cpuPercent": 137,
+        "peakRssMb": 3689,
+        "encodingFramesPerSecond": 1.77,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:7e98f2b6d9cf2ad022a4f179481458ef704f42f977285361636a4d56a9bce06e",
+          "sha256:d6dd7892b900aab013f3dbc279aa5740f20ce688d59c7669f9066fd494b4c44d",
+          "sha256:359cda2480d8855da3f9cd6bec35a0028c053804e7b444dbef8cc162fad639e2",
+          "sha256:b3d412016c8f3cdfa4134036c73a1141e2c84428fb511b6395dad6ae12a056a1",
+          "sha256:e0243f3b22966c0c925e255cce1c02dd74eb935458626bda9acae903aab55309"
+        ]
+      },
+      "after": {
+        "scenario": "3d-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.172,
+        "frameMs": {
+          "mean": 5811.7,
+          "p50": 6325.8,
+          "p95": 8207.6
+        },
+        "startupMs": 7328,
+        "cpuPercent": 129,
+        "peakRssMb": 3636,
+        "encodingFramesPerSecond": 2.63,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:7e98f2b6d9cf2ad022a4f179481458ef704f42f977285361636a4d56a9bce06e",
+          "sha256:d6dd7892b900aab013f3dbc279aa5740f20ce688d59c7669f9066fd494b4c44d",
+          "sha256:359cda2480d8855da3f9cd6bec35a0028c053804e7b444dbef8cc162fad639e2",
+          "sha256:b3d412016c8f3cdfa4134036c73a1141e2c84428fb511b6395dad6ae12a056a1",
+          "sha256:e0243f3b22966c0c925e255cce1c02dd74eb935458626bda9acae903aab55309"
+        ]
+      },
+      "speedup": 0.89,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "audio-heavy",
+      "resolution": "1080p30",
+      "before": {
+        "scenario": "audio-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 14.527,
+        "frameMs": {
+          "mean": 68.8,
+          "p50": 67.7,
+          "p95": 84
+        },
+        "startupMs": 738,
+        "cpuPercent": 154,
+        "peakRssMb": 508,
+        "encodingFramesPerSecond": 7.58,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:c96bd2761e820e79a20011bf2159e8a8311404bf45a79a14b0784ecea69b190b",
+          "sha256:d75971f09c066a878cba7a1122657b33cfa63c491f906e3676edc6489651a629",
+          "sha256:589c03c97c80e33799e725c08588bd435a5bd041460f51d75d887a03411cc504",
+          "sha256:19fab2a13e8a72201a37c991707f8ad73336083f726ee127ea1497739524d98e",
+          "sha256:95e11eebff31d4bb137d148ca9c5d0814d7a7ce7b9714815d3d7471c4c5c1c68"
+        ]
+      },
+      "after": {
+        "scenario": "audio-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 19.541,
+        "frameMs": {
+          "mean": 51.2,
+          "p50": 48.7,
+          "p95": 78.7
+        },
+        "startupMs": 825,
+        "cpuPercent": 148,
+        "peakRssMb": 480,
+        "encodingFramesPerSecond": 15.62,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:c96bd2761e820e79a20011bf2159e8a8311404bf45a79a14b0784ecea69b190b",
+          "sha256:d75971f09c066a878cba7a1122657b33cfa63c491f906e3676edc6489651a629",
+          "sha256:589c03c97c80e33799e725c08588bd435a5bd041460f51d75d887a03411cc504",
+          "sha256:19fab2a13e8a72201a37c991707f8ad73336083f726ee127ea1497739524d98e",
+          "sha256:95e11eebff31d4bb137d148ca9c5d0814d7a7ce7b9714815d3d7471c4c5c1c68"
+        ]
+      },
+      "speedup": 1.35,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "audio-heavy",
+      "resolution": "4k30",
+      "before": {
+        "scenario": "audio-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 2.907,
+        "frameMs": {
+          "mean": 344,
+          "p50": 301.2,
+          "p95": 525.1
+        },
+        "startupMs": 1390,
+        "cpuPercent": 135,
+        "peakRssMb": 1089,
+        "encodingFramesPerSecond": 3.1,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:68e2e8ba96c9d5a797ffd72c5efdb562331b3ef43dc6fa2bbbd8db1005e85098",
+          "sha256:fbdcec96cc7271b732b1e2e406c610fd965a26b353fdcd936bf67f26a888c81e",
+          "sha256:65e9e23539a4ca90a0cfc137f6f3547c1b0ae3a35ae7822ca9d5e5c51ec87e83",
+          "sha256:57dc11bae5f3d769eed55bc61cf3e610a345030d4534206db2873c0b67a46007",
+          "sha256:255fea1427898c2f3c4fe2a011b6c6ab3a35886ea1f59d3deee595751a8dd585"
+        ]
+      },
+      "after": {
+        "scenario": "audio-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 7.669,
+        "frameMs": {
+          "mean": 130.4,
+          "p50": 137.8,
+          "p95": 146.5
+        },
+        "startupMs": 820,
+        "cpuPercent": 166,
+        "peakRssMb": 1162,
+        "encodingFramesPerSecond": 3.53,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:68e2e8ba96c9d5a797ffd72c5efdb562331b3ef43dc6fa2bbbd8db1005e85098",
+          "sha256:fbdcec96cc7271b732b1e2e406c610fd965a26b353fdcd936bf67f26a888c81e",
+          "sha256:65e9e23539a4ca90a0cfc137f6f3547c1b0ae3a35ae7822ca9d5e5c51ec87e83",
+          "sha256:57dc11bae5f3d769eed55bc61cf3e610a345030d4534206db2873c0b67a46007",
+          "sha256:255fea1427898c2f3c4fe2a011b6c6ab3a35886ea1f59d3deee595751a8dd585"
+        ]
+      },
+      "speedup": 2.64,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "image-heavy",
+      "resolution": "1080p30",
+      "before": {
+        "scenario": "image-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 1.116,
+        "frameMs": {
+          "mean": 896,
+          "p50": 916.4,
+          "p95": 1137.5
+        },
+        "startupMs": 1507,
+        "cpuPercent": 93,
+        "peakRssMb": 514,
+        "encodingFramesPerSecond": 2.54,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:dc77bff4ec545f708919c722ec7fa2d46e24f373946bd971fb6da5ef470a2011",
+          "sha256:b882d6a6edc58a7f05eb7a989eb7a4c34e54de0aed277e158d47d1729afa479f",
+          "sha256:763abde0e63bec3cab81c91430336e6c4de7eaf7bd9039b553c53d9ae0169a1c",
+          "sha256:36be81586d5ee0ab070e32f179d12080a8e7aac7fcf115d7449c8a7f35153d25",
+          "sha256:74d5a9495aa540f0185097afff4efe91696df74be2619b15f1a960dd779a64fa"
+        ]
+      },
+      "after": {
+        "scenario": "image-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 1.536,
+        "frameMs": {
+          "mean": 651.1,
+          "p50": 629.2,
+          "p95": 814.9
+        },
+        "startupMs": 1534,
+        "cpuPercent": 90,
+        "peakRssMb": 528,
+        "encodingFramesPerSecond": 4.42,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:dc77bff4ec545f708919c722ec7fa2d46e24f373946bd971fb6da5ef470a2011",
+          "sha256:b882d6a6edc58a7f05eb7a989eb7a4c34e54de0aed277e158d47d1729afa479f",
+          "sha256:763abde0e63bec3cab81c91430336e6c4de7eaf7bd9039b553c53d9ae0169a1c",
+          "sha256:36be81586d5ee0ab070e32f179d12080a8e7aac7fcf115d7449c8a7f35153d25",
+          "sha256:74d5a9495aa540f0185097afff4efe91696df74be2619b15f1a960dd779a64fa"
+        ]
+      },
+      "speedup": 1.38,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "image-heavy",
+      "resolution": "4k30",
+      "before": {
+        "scenario": "image-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.581,
+        "frameMs": {
+          "mean": 1722.2,
+          "p50": 1687.9,
+          "p95": 1793.4
+        },
+        "startupMs": 2116,
+        "cpuPercent": 153,
+        "peakRssMb": 1008,
+        "encodingFramesPerSecond": 1.24,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:4221781b4158707bf621774cae0bf8d36260167e7acf1e49d0cdcc8521d5cfd2",
+          "sha256:7daa0113b38edc6c5fb00999acf7210d8117aa57ab804e07a08c65053c8273a5",
+          "sha256:d2ad28779bc3ced989ac0e4feb2d893a897bbd2055e10b39748766173c19c091",
+          "sha256:363ba64265b9f3ff6be1bac59674aa8ae528a8e2ab5ca8cf40c2a63087b877cf",
+          "sha256:e1f1df40096799f41c3b00bbe68d34e432aef537d7b5378b1d0571ba581a4bc7"
+        ]
+      },
+      "after": {
+        "scenario": "image-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.683,
+        "frameMs": {
+          "mean": 1463.2,
+          "p50": 1459.6,
+          "p95": 1682.6
+        },
+        "startupMs": 2009,
+        "cpuPercent": 153,
+        "peakRssMb": 1074,
+        "encodingFramesPerSecond": 1.82,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:4221781b4158707bf621774cae0bf8d36260167e7acf1e49d0cdcc8521d5cfd2",
+          "sha256:7daa0113b38edc6c5fb00999acf7210d8117aa57ab804e07a08c65053c8273a5",
+          "sha256:d2ad28779bc3ced989ac0e4feb2d893a897bbd2055e10b39748766173c19c091",
+          "sha256:363ba64265b9f3ff6be1bac59674aa8ae528a8e2ab5ca8cf40c2a63087b877cf",
+          "sha256:e1f1df40096799f41c3b00bbe68d34e432aef537d7b5378b1d0571ba581a4bc7"
+        ]
+      },
+      "speedup": 1.18,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "1080p30",
+      "before": {
+        "scenario": "mixed",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 0.419,
+        "frameMs": {
+          "mean": 2389.2,
+          "p50": 2428.8,
+          "p95": 2978.1
+        },
+        "startupMs": 6947,
+        "cpuPercent": 98,
+        "peakRssMb": 1768,
+        "encodingFramesPerSecond": 3.53,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:87aff429f3481ba3ee7d254903c91a11ef88a20f8edc36c7cf5fff3438f6978d",
+          "sha256:cf2012a1604372afad52ea401a20520481a3a688d7d3892c98aa088f403dd103",
+          "sha256:67c26f9122f4a8f981fc434f841882f348730afdaa64b630c8e1dd441392c6b5",
+          "sha256:6a936cf9c062eaa8c89cacc6ee3b7573c62499da3fd80f02f8b3ae27f0f7b6c9",
+          "sha256:43ea31cc05f47e55c311cd6510c524b6f3859aca219151405294725211af4df8"
+        ]
+      },
+      "after": {
+        "scenario": "mixed",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 0.737,
+        "frameMs": {
+          "mean": 1356.3,
+          "p50": 1319.2,
+          "p95": 1481.7
+        },
+        "startupMs": 4932,
+        "cpuPercent": 124,
+        "peakRssMb": 1829,
+        "encodingFramesPerSecond": 9.89,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:87aff429f3481ba3ee7d254903c91a11ef88a20f8edc36c7cf5fff3438f6978d",
+          "sha256:cf2012a1604372afad52ea401a20520481a3a688d7d3892c98aa088f403dd103",
+          "sha256:67c26f9122f4a8f981fc434f841882f348730afdaa64b630c8e1dd441392c6b5",
+          "sha256:6a936cf9c062eaa8c89cacc6ee3b7573c62499da3fd80f02f8b3ae27f0f7b6c9",
+          "sha256:43ea31cc05f47e55c311cd6510c524b6f3859aca219151405294725211af4df8"
+        ]
+      },
+      "speedup": 1.76,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "4k30",
+      "before": {
+        "scenario": "mixed",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.169,
+        "frameMs": {
+          "mean": 5901.1,
+          "p50": 5863.7,
+          "p95": 6380.2
+        },
+        "startupMs": 8395,
+        "cpuPercent": 147,
+        "peakRssMb": 3346,
+        "encodingFramesPerSecond": 2.24,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:9e918bfce9c0ef9aa585e85f887398ca6b9730c984d3dbdd5e8a71d021a000b6",
+          "sha256:a0f12f1647702ac28c436f821a5a5e744aa5751dde68ab9ccc5599820444137e",
+          "sha256:25c0cf4c6ea4d3a4b0b9c80f1374af3fce0134fd037f3f30c18be6c69b30881a",
+          "sha256:e20756248054fdb45ace6ab3ba98e723871093cc449bbe5c4a4df23db5512520",
+          "sha256:7f15c9fa9dcba3d4747c05352632fa8c7340c706402e79f0b642c6eac2f0ecb3"
+        ]
+      },
+      "after": {
+        "scenario": "mixed",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.227,
+        "frameMs": {
+          "mean": 4414.2,
+          "p50": 4233,
+          "p95": 4802.8
+        },
+        "startupMs": 8757,
+        "cpuPercent": 140,
+        "peakRssMb": 3440,
+        "encodingFramesPerSecond": 2.94,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:9e918bfce9c0ef9aa585e85f887398ca6b9730c984d3dbdd5e8a71d021a000b6",
+          "sha256:a0f12f1647702ac28c436f821a5a5e744aa5751dde68ab9ccc5599820444137e",
+          "sha256:25c0cf4c6ea4d3a4b0b9c80f1374af3fce0134fd037f3f30c18be6c69b30881a",
+          "sha256:e20756248054fdb45ace6ab3ba98e723871093cc449bbe5c4a4df23db5512520",
+          "sha256:7f15c9fa9dcba3d4747c05352632fa8c7340c706402e79f0b642c6eac2f0ecb3"
+        ]
+      },
+      "speedup": 1.34,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "text-heavy",
+      "resolution": "1080p30",
+      "before": {
+        "scenario": "text-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 1.81,
+        "frameMs": {
+          "mean": 552.4,
+          "p50": 553.1,
+          "p95": 701.9
+        },
+        "startupMs": 1833,
+        "cpuPercent": 85,
+        "peakRssMb": 629,
+        "encodingFramesPerSecond": 2.57,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:e83dc3b123bc7c7dd88b384164ca5040db33fa44b7acda2348240cc5465adf41",
+          "sha256:94561ff69a3b53928fdb9e75c21d8a16a45e4c46366fe6644f66405ac7dd3758",
+          "sha256:d2caf75973d26ee7fc711842b1e64251cc243cee7735ff4f737eeaa3db5de839",
+          "sha256:9d2871dc01d7e7e59203857c04e482201335f49a6e415b07806ccda9ae40bcd1",
+          "sha256:da46381e7b25471c62dd39b489f9c1ab049490739336bda95ec5769d45098d34"
+        ]
+      },
+      "after": {
+        "scenario": "text-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 2.744,
+        "frameMs": {
+          "mean": 364.5,
+          "p50": 337.1,
+          "p95": 542.1
+        },
+        "startupMs": 1294,
+        "cpuPercent": 82,
+        "peakRssMb": 605,
+        "encodingFramesPerSecond": 2.28,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:e83dc3b123bc7c7dd88b384164ca5040db33fa44b7acda2348240cc5465adf41",
+          "sha256:94561ff69a3b53928fdb9e75c21d8a16a45e4c46366fe6644f66405ac7dd3758",
+          "sha256:d2caf75973d26ee7fc711842b1e64251cc243cee7735ff4f737eeaa3db5de839",
+          "sha256:9d2871dc01d7e7e59203857c04e482201335f49a6e415b07806ccda9ae40bcd1",
+          "sha256:da46381e7b25471c62dd39b489f9c1ab049490739336bda95ec5769d45098d34"
+        ]
+      },
+      "speedup": 1.52,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "text-heavy",
+      "resolution": "4k30",
+      "before": {
+        "scenario": "text-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.785,
+        "frameMs": {
+          "mean": 1274.6,
+          "p50": 1258.3,
+          "p95": 1393.8
+        },
+        "startupMs": 1219,
+        "cpuPercent": 143,
+        "peakRssMb": 1159,
+        "encodingFramesPerSecond": 2.01,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:8bc737a7924021d52663d6ddd4e4c985485c7b7bfcce689b3f9c13d2247efc3a",
+          "sha256:f0a05fbe3aa69f4a0a7225932770cee41830e01c24396ccda7838d6458932e79",
+          "sha256:329898e39db7ebdd4049c4889a0c5c975c8ce20161cd5470968350cb4bca1235",
+          "sha256:2cb73099102cfe773e2616b15097328b4edfa76a7de7d8ad5f651d283e4851c2",
+          "sha256:467f648ea9afe394a8ddcd27abd706f86677f32bcb8d380f353592d4d4a66a95"
+        ]
+      },
+      "after": {
+        "scenario": "text-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.997,
+        "frameMs": {
+          "mean": 1002.5,
+          "p50": 998.9,
+          "p95": 1065.2
+        },
+        "startupMs": 884,
+        "cpuPercent": 155,
+        "peakRssMb": 1234,
+        "encodingFramesPerSecond": 2.65,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:8bc737a7924021d52663d6ddd4e4c985485c7b7bfcce689b3f9c13d2247efc3a",
+          "sha256:f0a05fbe3aa69f4a0a7225932770cee41830e01c24396ccda7838d6458932e79",
+          "sha256:329898e39db7ebdd4049c4889a0c5c975c8ce20161cd5470968350cb4bca1235",
+          "sha256:2cb73099102cfe773e2616b15097328b4edfa76a7de7d8ad5f651d283e4851c2",
+          "sha256:467f648ea9afe394a8ddcd27abd706f86677f32bcb8d380f353592d4d4a66a95"
+        ]
+      },
+      "speedup": 1.27,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "vector-heavy",
+      "resolution": "1080p30",
+      "before": {
+        "scenario": "vector-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 2.121,
+        "frameMs": {
+          "mean": 471.6,
+          "p50": 508.1,
+          "p95": 566.5
+        },
+        "startupMs": 1826,
+        "cpuPercent": 82,
+        "peakRssMb": 510,
+        "encodingFramesPerSecond": 3.68,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:127db6bce2c8271b0b5c06d4a9af4f21d06b6b3cc55bf8d2ca78fddb60f52ea5",
+          "sha256:dd961d3969aa240c4d0cb38e415e4ff80f56efe1cceb55056f03effeff2019e1",
+          "sha256:4fb79f34404115442be139af6d954001ad6e2c8661b9488d7bb4cd293b00c7ff",
+          "sha256:2b03c87f19f8a9c06a6a0c2bdf583615680c51b1cfa84bfdd003ca51d9526bec",
+          "sha256:2d83064f65f75e6e40de20fac2491370543d2c9f976035de0e5d792daf3cf0fb"
+        ]
+      },
+      "after": {
+        "scenario": "vector-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 2.923,
+        "frameMs": {
+          "mean": 342.2,
+          "p50": 365,
+          "p95": 477.1
+        },
+        "startupMs": 1380,
+        "cpuPercent": 79,
+        "peakRssMb": 490,
+        "encodingFramesPerSecond": 3.15,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:127db6bce2c8271b0b5c06d4a9af4f21d06b6b3cc55bf8d2ca78fddb60f52ea5",
+          "sha256:dd961d3969aa240c4d0cb38e415e4ff80f56efe1cceb55056f03effeff2019e1",
+          "sha256:4fb79f34404115442be139af6d954001ad6e2c8661b9488d7bb4cd293b00c7ff",
+          "sha256:2b03c87f19f8a9c06a6a0c2bdf583615680c51b1cfa84bfdd003ca51d9526bec",
+          "sha256:2d83064f65f75e6e40de20fac2491370543d2c9f976035de0e5d792daf3cf0fb"
+        ]
+      },
+      "speedup": 1.38,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "vector-heavy",
+      "resolution": "4k30",
+      "before": {
+        "scenario": "vector-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 1.663,
+        "frameMs": {
+          "mean": 601.4,
+          "p50": 581,
+          "p95": 717
+        },
+        "startupMs": 1126,
+        "cpuPercent": 174,
+        "peakRssMb": 1036,
+        "encodingFramesPerSecond": 2.46,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:aabc7c4395ea1eca2d96d73805928869e625f62d028d6341cb17f6f6d79d1321",
+          "sha256:59f67b82edbc18e808235577bf7db620467c2efd91873b99c177ec1729b8856e",
+          "sha256:64ca47ebc23d14909cae6209ff7137eaeda99707403d535f67cb7d1611f4dc96",
+          "sha256:7a35a630d6ac157dbbb671e96d23e9710dff78522742c17f27a4b947d0e8bdb6",
+          "sha256:ae97953ab64bcfb43fa01e00497b22af34497d5de3721a98f460dd5d9086d836"
+        ]
+      },
+      "after": {
+        "scenario": "vector-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 2.522,
+        "frameMs": {
+          "mean": 396.5,
+          "p50": 391.2,
+          "p95": 513.1
+        },
+        "startupMs": 1150,
+        "cpuPercent": 151,
+        "peakRssMb": 1036,
+        "encodingFramesPerSecond": 1.86,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:aabc7c4395ea1eca2d96d73805928869e625f62d028d6341cb17f6f6d79d1321",
+          "sha256:59f67b82edbc18e808235577bf7db620467c2efd91873b99c177ec1729b8856e",
+          "sha256:64ca47ebc23d14909cae6209ff7137eaeda99707403d535f67cb7d1611f4dc96",
+          "sha256:7a35a630d6ac157dbbb671e96d23e9710dff78522742c17f27a4b947d0e8bdb6",
+          "sha256:ae97953ab64bcfb43fa01e00497b22af34497d5de3721a98f460dd5d9086d836"
+        ]
+      },
+      "speedup": 1.52,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "video-heavy",
+      "resolution": "1080p30",
+      "before": {
+        "scenario": "video-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 0.72,
+        "frameMs": {
+          "mean": 1388.3,
+          "p50": 1215.4,
+          "p95": 2213.3
+        },
+        "startupMs": 3467,
+        "cpuPercent": 95,
+        "peakRssMb": 879,
+        "encodingFramesPerSecond": 3.93,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:de3c435f1f289b115629a107a7b2ef3fbb1bb0bb0ef6a6d8549e83780e4ad73e",
+          "sha256:81220569718a1797b7d80b1c48864411569a3f4dc48eb93330dbeb331e59e0a9",
+          "sha256:e7a49ec44fc25fdb134f3188060e66cde320805d0d2d8b2f259cfc34311c266c",
+          "sha256:8fd0f73f94e40523910dceb80ff774984afe6392d25162c3991f240d2423064c",
+          "sha256:6e3fbe2028be4a432725b5e7cfcdb7acc15d2899a52ba4d86984cdf6f15fad08"
+        ]
+      },
+      "after": {
+        "scenario": "video-heavy",
+        "resolution": "1080p30",
+        "frames": 5,
+        "framesPerSecond": 1.04,
+        "frameMs": {
+          "mean": 961.9,
+          "p50": 936,
+          "p95": 1357.7
+        },
+        "startupMs": 2628,
+        "cpuPercent": 128,
+        "peakRssMb": 830,
+        "encodingFramesPerSecond": 7.42,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:de3c435f1f289b115629a107a7b2ef3fbb1bb0bb0ef6a6d8549e83780e4ad73e",
+          "sha256:81220569718a1797b7d80b1c48864411569a3f4dc48eb93330dbeb331e59e0a9",
+          "sha256:e7a49ec44fc25fdb134f3188060e66cde320805d0d2d8b2f259cfc34311c266c",
+          "sha256:8fd0f73f94e40523910dceb80ff774984afe6392d25162c3991f240d2423064c",
+          "sha256:6e3fbe2028be4a432725b5e7cfcdb7acc15d2899a52ba4d86984cdf6f15fad08"
+        ]
+      },
+      "speedup": 1.44,
+      "frameHashesEqual": true
+    },
+    {
+      "scenario": "video-heavy",
+      "resolution": "4k30",
+      "before": {
+        "scenario": "video-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.643,
+        "frameMs": {
+          "mean": 1554.3,
+          "p50": 1547.5,
+          "p95": 1669.6
+        },
+        "startupMs": 2541,
+        "cpuPercent": 149,
+        "peakRssMb": 1369,
+        "encodingFramesPerSecond": 1.86,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:4e0afccc88e6d2b4f04b4064d79ac031f5dfcbe13778a39e89e7a74011076b16",
+          "sha256:ee45f42b9728415e042aa50e9af280687452431f29fec74dd394524d52513430",
+          "sha256:67191dc663bde20e92b61c05e40b1d277efcb60cf11a21ee3ad635012bf287a5",
+          "sha256:bca5e2f6c5b61e34ea176f238e7e0b98a08becd1a0637116a21493b012b11b45",
+          "sha256:59241debf0c7ea178df5fa4e53e1c9f82c9f0b54d10baecf1370ac354913975f"
+        ]
+      },
+      "after": {
+        "scenario": "video-heavy",
+        "resolution": "4k30",
+        "frames": 5,
+        "framesPerSecond": 0.72,
+        "frameMs": {
+          "mean": 1389.8,
+          "p50": 1282.4,
+          "p95": 1713
+        },
+        "startupMs": 2803,
+        "cpuPercent": 141,
+        "peakRssMb": 1296,
+        "encodingFramesPerSecond": 2.89,
+        "deterministic": true,
+        "frameHashes": [
+          "sha256:4e0afccc88e6d2b4f04b4064d79ac031f5dfcbe13778a39e89e7a74011076b16",
+          "sha256:ee45f42b9728415e042aa50e9af280687452431f29fec74dd394524d52513430",
+          "sha256:67191dc663bde20e92b61c05e40b1d277efcb60cf11a21ee3ad635012bf287a5",
+          "sha256:bca5e2f6c5b61e34ea176f238e7e0b98a08becd1a0637116a21493b012b11b45",
+          "sha256:59241debf0c7ea178df5fa4e53e1c9f82c9f0b54d10baecf1370ac354913975f"
+        ]
+      },
+      "speedup": 1.12,
+      "frameHashesEqual": true
+    }
+  ],
+  "beforeSequential": [
+    {
+      "scenario": "text-heavy",
+      "resolution": "1080p30",
+      "framesPerSecond": 3.336
+    },
+    {
+      "scenario": "text-heavy",
+      "resolution": "4k30",
+      "framesPerSecond": 0.906
+    },
+    {
+      "scenario": "vector-heavy",
+      "resolution": "1080p30",
+      "framesPerSecond": 4.857
+    },
+    {
+      "scenario": "vector-heavy",
+      "resolution": "4k30",
+      "framesPerSecond": 1.915
+    },
+    {
+      "scenario": "image-heavy",
+      "resolution": "1080p30",
+      "framesPerSecond": 2.134
+    },
+    {
+      "scenario": "image-heavy",
+      "resolution": "4k30",
+      "framesPerSecond": 0.587
+    },
+    {
+      "scenario": "video-heavy",
+      "resolution": "1080p30",
+      "framesPerSecond": 1.362
+    },
+    {
+      "scenario": "video-heavy",
+      "resolution": "4k30",
+      "framesPerSecond": 0.626
+    },
+    {
+      "scenario": "3d-heavy",
+      "resolution": "1080p30",
+      "framesPerSecond": 0.965
+    },
+    {
+      "scenario": "3d-heavy",
+      "resolution": "4k30",
+      "framesPerSecond": 0.181
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "1080p30",
+      "framesPerSecond": 0.648
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "4k30",
+      "framesPerSecond": 0.131
+    },
+    {
+      "scenario": "audio-heavy",
+      "resolution": "1080p30",
+      "framesPerSecond": 13.891
+    },
+    {
+      "scenario": "audio-heavy",
+      "resolution": "4k30",
+      "framesPerSecond": 3.146
+    }
+  ],
+  "videoRender": [
+    {
+      "scenario": "vector-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 0,
+      "wallSeconds": 53.45,
+      "fps": 3.37,
+      "stages": {
+        "renderFrames": 44.415835947,
+        "ffmpeg": 8.996122800999999
+      },
+      "encoder": [
+        "4"
+      ],
+      "first": "127db6bce2c8",
+      "last": "0a389f4cc2ff",
+      "chunkHashes": [
+        "a9d3eee7",
+        "099e0d78",
+        "7c7ec0dd"
+      ]
+    },
+    {
+      "scenario": "vector-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 3,
+      "wallSeconds": 26.29,
+      "fps": 6.85,
+      "stages": {
+        "renderFrames": 12.623379814,
+        "ffmpeg": 4.877780710999983
+      },
+      "encoder": [
+        "2"
+      ],
+      "first": "127db6bce2c8",
+      "last": "0a389f4cc2ff",
+      "chunkHashes": [
+        "a9d3eee7",
+        "099e0d78",
+        "7c7ec0dd"
+      ]
+    },
+    {
+      "scenario": "vector-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 0,
+      "wallSeconds": 33.2,
+      "fps": 5.42,
+      "stages": {
+        "renderFrames": 32.039028406999996,
+        "ffmpeg": 4.115622447999989
+      },
+      "encoder": [
+        "3"
+      ],
+      "first": "127db6bce2c8",
+      "last": "0a389f4cc2ff",
+      "chunkHashes": [
+        "a9d3eee7",
+        "099e0d78",
+        "7c7ec0dd"
+      ]
+    },
+    {
+      "scenario": "vector-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 4,
+      "wallSeconds": 48.42,
+      "fps": 3.72,
+      "stages": {
+        "renderFrames": 30.725073777,
+        "ffmpeg": 17.619799933
+      },
+      "encoder": [
+        "4"
+      ],
+      "first": "127db6bce2c8",
+      "last": "0a389f4cc2ff",
+      "chunkHashes": [
+        "a9d3eee7",
+        "099e0d78",
+        "7c7ec0dd"
+      ]
+    },
+    {
+      "scenario": "text-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 0,
+      "wallSeconds": 93.57,
+      "fps": 1.92,
+      "stages": {
+        "renderFrames": 78.01062628899999,
+        "ffmpeg": 15.548301378999996
+      },
+      "encoder": [
+        "4"
+      ],
+      "first": "e83dc3b123bc",
+      "last": "f347f621d97b",
+      "chunkHashes": [
+        "2b45ce57",
+        "0a0c40ab",
+        "9a894bf2"
+      ]
+    },
+    {
+      "scenario": "text-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 3,
+      "wallSeconds": 66.85,
+      "fps": 2.69,
+      "stages": {
+        "renderFrames": 47.974299765000005,
+        "ffmpeg": 7.560397678000004
+      },
+      "encoder": [
+        "2"
+      ],
+      "first": "e83dc3b123bc",
+      "last": "f347f621d97b",
+      "chunkHashes": [
+        "2b45ce57",
+        "0a0c40ab",
+        "9a894bf2"
+      ]
+    },
+    {
+      "scenario": "text-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 0,
+      "wallSeconds": 85.7,
+      "fps": 2.1,
+      "stages": {
+        "renderFrames": 84.351989508,
+        "ffmpeg": 6.8530172729999075
+      },
+      "encoder": [
+        "3"
+      ],
+      "first": "e83dc3b123bc",
+      "last": "f347f621d97b",
+      "chunkHashes": [
+        "2b45ce57",
+        "0a0c40ab",
+        "9a894bf2"
+      ]
+    },
+    {
+      "scenario": "text-heavy",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 4,
+      "wallSeconds": 94.36,
+      "fps": 1.91,
+      "stages": {
+        "renderFrames": 75.794281005,
+        "ffmpeg": 18.541767016000012
+      },
+      "encoder": [
+        "4"
+      ],
+      "first": "e83dc3b123bc",
+      "last": "f347f621d97b",
+      "chunkHashes": [
+        "2b45ce57",
+        "0a0c40ab",
+        "9a894bf2"
+      ]
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 0,
+      "wallSeconds": 380.91,
+      "fps": 0.47,
+      "stages": {
+        "renderFrames": 367.26064653699996,
+        "ffmpeg": 13.639202376000002
+      },
+      "encoder": [
+        "4"
+      ],
+      "first": "87aff429f348",
+      "last": "e3d8b3d69b79",
+      "chunkHashes": [
+        "a4cf492e",
+        "43ee0cbd",
+        "af5d5cfe"
+      ]
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 3,
+      "wallSeconds": 200.59,
+      "fps": 0.9,
+      "stages": {
+        "renderFrames": 175.324694211,
+        "ffmpeg": 6.945656084000481
+      },
+      "encoder": [
+        "2"
+      ],
+      "first": "87aff429f348",
+      "last": "e3d8b3d69b79",
+      "chunkHashes": [
+        "a4cf492e",
+        "43ee0cbd",
+        "af5d5cfe"
+      ]
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 0,
+      "wallSeconds": 235.06,
+      "fps": 0.77,
+      "stages": {
+        "renderFrames": 234.019093636,
+        "ffmpeg": 3.519475635000047
+      },
+      "encoder": [
+        "3"
+      ],
+      "first": "87aff429f348",
+      "last": "e3d8b3d69b79",
+      "chunkHashes": [
+        "a4cf492e",
+        "43ee0cbd",
+        "af5d5cfe"
+      ]
+    },
+    {
+      "scenario": "mixed",
+      "resolution": "1080p30",
+      "frames": 180,
+      "workers": 4,
+      "wallSeconds": 216.92,
+      "fps": 0.83,
+      "stages": {
+        "renderFrames": 204.065384208,
+        "ffmpeg": 12.840831050999986
+      },
+      "encoder": [
+        "4"
+      ],
+      "first": "87aff429f348",
+      "last": "e3d8b3d69b79",
+      "chunkHashes": [
+        "a4cf492e",
+        "43ee0cbd",
+        "af5d5cfe"
+      ]
+    }
+  ],
+  "dodShort": {
+    "skipped": true,
+    "reason": "examples/dod/run.mjs --short lief nicht vorher/nachher: Die Maschine war durch parallele Agenten (auch ein DoD-Lauf im Repo) mit Load 8–14 bei 4 Kernen belegt. Ersatz: videoRender (renderVideo Ende-zu-Ende, 180 Frames 1080p30, vorher/nachher abwechselnd)."
+  },
+  "videoRenderNote": "workers 0 = im Prozess (vorheriger Standard), >0 = Prozess-Worker; vorher Encoder nach dem Rendern mit 4 Threads, nachher parallel mit freien Kernen."
+}

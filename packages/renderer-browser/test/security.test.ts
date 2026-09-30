@@ -2,11 +2,21 @@
  * Regressionstests für die Befunde D1–D5 (Review 2026-09-28, Gruppe D).
  */
 import { execFileSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { chromium } from 'playwright-core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { OpenVideoError, type EvaluatedNode, type RgbaImage } from '@agentic-video/core';
-import { CHROMIUM_ARGS, createBrowserHost, type BrowserHost } from '../src/host.js';
+import { CHROMIUM_ARGS, CHROMIUM_GRAPHICS_ARGS, chromiumEnv, createBrowserHost, type BrowserHost } from '../src/host.js';
 import { startHostServer } from '../src/server.js';
-import { buildRuntime, memoryAssets, node, pixel, testFonts } from './helpers.js';
+import { buildRuntime, chromiumProcesses, memoryAssets, node, osSandboxAvailable, pixel, testFonts } from './helpers.js';
+
+/** HTML-Skripte laufen nur mit OS-Sandbox (Story 16.1); Skript-Tests brauchen sie. */
+const sandbox = await osSandboxAvailable();
+const SANDBOX_REASON = 'OS-Sandbox für Chromium fehlt (unprivilegierte User-Namespaces): kernel.apparmor_restrict_unprivileged_userns=0 setzen';
+const NEEDS_SANDBOX = ' (braucht OS-Sandbox für Skripte)';
 
 const W = 80;
 const H = 40;
@@ -38,7 +48,7 @@ let open: BrowserHost;
 beforeAll(async () => {
   buildRuntime();
   locked = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H });
-  open = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
+  open = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: sandbox });
 });
 
 afterAll(async () => {
@@ -55,7 +65,7 @@ describe('D1: HTML-Skripte nur mit allowHtmlScripts', () => {
   }
 
   for (const name of ['img onerror', 'svg onload', 'javascript:-URL', 'iframe srcdoc']) {
-    it(`mit allowHtmlScripts läuft das Skript: ${name}`, async () => {
+    it.skipIf(skipUnless(sandbox, SANDBOX_REASON))(`mit allowHtmlScripts läuft das Skript: ${name}${NEEDS_SANDBOX}`, async () => {
       const variant = SCRIPT_VARIANTS[name];
       if (variant === undefined) throw new Error(`missing variant ${name}`);
       const image = await render(open, html(`d1-open-${name}`, variant.html, variant.css));
@@ -63,7 +73,7 @@ describe('D1: HTML-Skripte nur mit allowHtmlScripts', () => {
     });
   }
 
-  it('css kann das <style> auch mit allowHtmlScripts nicht verlassen', async () => {
+  it.skipIf(skipUnless(sandbox, SANDBOX_REASON))(`css kann das <style> auch mit allowHtmlScripts nicht verlassen${NEEDS_SANDBOX}`, async () => {
     const variant = SCRIPT_VARIANTS['css-Ausbruch'];
     const image = await render(open, html('d1-css-open', variant?.html ?? '', variant?.css));
     expect(pixel(image, W / 2, H / 2)).not.toEqual(RED);
@@ -77,7 +87,7 @@ describe('D1: HTML-Skripte nur mit allowHtmlScripts', () => {
 });
 
 describe('D2: Token und Frame-IDs', () => {
-  it('Layer-Dokumente sehen kein Token in URL oder baseURI', async () => {
+  it.skipIf(skipUnless(sandbox, SANDBOX_REASON))(`Layer-Dokumente sehen kein Token in URL oder baseURI${NEEDS_SANDBOX}`, async () => {
     const probe = html('d2-token', `<div id=o style="width:100%;height:100%"></div><script>
       const seen = [location.href, document.baseURI, parent.location.href, top.location.href, document.referrer].join(' ');
       o.style.background = /[0-9a-f]{32}/.test(seen) ? '#f00' : '#0f0';
@@ -111,7 +121,7 @@ describe('D3: Netz und OS-Sandbox', () => {
     expect(CHROMIUM_ARGS.some((a) => a.startsWith('--proxy-server='))).toBe(true);
   });
 
-  it('WebRTC ist in Layer-Dokumenten nicht vorhanden', async () => {
+  it.skipIf(skipUnless(sandbox, SANDBOX_REASON))(`WebRTC ist in Layer-Dokumenten nicht vorhanden${NEEDS_SANDBOX}`, async () => {
     const probe = html('d3-rtc', `<div id=o style="width:100%;height:100%"></div><script>
       const f = document.createElement('iframe'); document.body.append(f);
       const names = ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCSessionDescription', 'RTCIceCandidate'];
@@ -155,7 +165,7 @@ describe('D4: Seiten-Cache', () => {
     }
   });
 
-  it('nach einem Timeout rendert die nächste Anfrage auf einer neuen Seite', async () => {
+  it.skipIf(skipUnless(sandbox, SANDBOX_REASON))(`nach einem Timeout rendert die nächste Anfrage auf einer neuen Seite${NEEDS_SANDBOX}`, async () => {
     const host = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, timeoutMs: 1500, allowHtmlScripts: true });
     try {
       const hang = html('d4-hang', '<script>openvideo.onFrame(() => { for (;;) {} })</script>');
@@ -169,7 +179,7 @@ describe('D4: Seiten-Cache', () => {
 });
 
 describe('D5: Virtuelle Uhr', () => {
-  it('meldet das Timer-Limit als Diagnose statt still abzubrechen', async () => {
+  it.skipIf(skipUnless(sandbox, SANDBOX_REASON))(`meldet das Timer-Limit als Diagnose statt still abzubrechen${NEEDS_SANDBOX}`, async () => {
     const loop = html('d5-loop', '<script>function f() { setTimeout(f, 0); } f();</script>');
     const error: unknown = await render(open, loop).then(() => undefined, (e: unknown) => e);
     expect(error).toBeInstanceOf(OpenVideoError);
@@ -182,7 +192,7 @@ describe('D5: Virtuelle Uhr', () => {
     expect(error instanceof OpenVideoError ? error.diagnostic.code : '').toBe('OV_BROWSER_PAYLOAD');
   });
 
-  it('document.timeline.currentTime und Event.timeStamp folgen der virtuellen Uhr', async () => {
+  it.skipIf(skipUnless(sandbox, SANDBOX_REASON))(`document.timeline.currentTime und Event.timeStamp folgen der virtuellen Uhr${NEEDS_SANDBOX}`, async () => {
     const probe = (frame: number) =>
       html('d5-timeline', `<div id=o style="width:100%;height:100%"></div><script>
         openvideo.onFrame(() => {
@@ -192,5 +202,66 @@ describe('D5: Virtuelle Uhr', () => {
       </script>`, '', frame);
     expect(pixel(await render(open, probe(0)), W / 2, H / 2)).toEqual(GREEN);
     expect(pixel(await render(open, probe(30)), W / 2, H / 2)).toEqual(GREEN);
+  });
+});
+
+/**
+ * Chromium-Wrapper, der ohne `--no-sandbox` nicht startet: so fehlt die OS-Sandbox in jeder Umgebung
+ * reproduzierbar (auch in CI, wo sie sonst verfügbar ist).
+ */
+function noSandboxChromium(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'ov-nosandbox-'));
+  const path = join(dir, 'chromium');
+  const real = process.env['OPENVIDEO_CHROMIUM'] ?? chromium.executablePath();
+  writeFileSync(path, `#!/bin/sh\nfor a in "$@"; do [ "$a" = "--no-sandbox" ] && exec ${JSON.stringify(real)} "$@"; done\necho "No usable sandbox (test wrapper)." >&2\nexit 1\n`);
+  chmodSync(path, 0o755);
+  return path;
+}
+
+describe('Story 16.1: Skripte nur mit OS-Sandbox, Grafik-Schalter nur bei Bedarf, minimale Umgebung', () => {
+  it('bricht mit OV_BROWSER_NO_OS_SANDBOX ab, wenn Skripte verlangt sind und die OS-Sandbox fehlt', async () => {
+    const error: unknown = await createBrowserHost({ executablePath: noSandboxChromium(), assets: memoryAssets({}), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true }).then(
+      async (host) => {
+        await host.close();
+        return undefined;
+      },
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(OpenVideoError);
+    expect(error instanceof OpenVideoError ? error.diagnostic.code : '').toBe('OV_BROWSER_NO_OS_SANDBOX');
+  });
+
+  it('ohne Skripte startet der Host ohne OS-Sandbox und meldet eine Warnung', async () => {
+    const host = await createBrowserHost({ executablePath: noSandboxChromium(), assets: memoryAssets({}), fonts: testFonts(), width: W, height: H });
+    try {
+      expect(host.osSandbox).toBe(false);
+      expect(host.diagnostics.map((d) => [d.code, d.severity])).toEqual([['OV_BROWSER_NO_OS_SANDBOX', 'warning']]);
+      const image = await render(host, html('s161-static', '<div style="width:100%;height:100%;background:#0f0"></div>'));
+      expect(pixel(image, W / 2, H / 2)).toEqual(GREEN);
+    } finally {
+      await host.close();
+    }
+  });
+
+  it('startet Chromium für HTML ohne --enable-unsafe-swiftshader/--enable-unsafe-webgpu', async () => {
+    expect(CHROMIUM_ARGS.some((a) => CHROMIUM_GRAPHICS_ARGS.includes(a))).toBe(false);
+    await render(locked, html('s161-flags', '<p>x</p>'));
+    const running = chromiumProcesses();
+    expect(running.length).toBeGreaterThan(0);
+    for (const p of running) for (const flag of CHROMIUM_GRAPHICS_ARGS) expect(p.args).not.toContain(flag);
+  });
+
+  it('Chromium erbt keine Geheimnisse aus der Umgebung (N1)', async () => {
+    expect(chromiumEnv({ PATH: '/usr/bin', HOME: '/home/x', OPENVIDEO_WORKER_TOKEN: 'secret', AWS_SECRET_ACCESS_KEY: 'k' })).toEqual({ PATH: '/usr/bin', HOME: '/home/x' });
+    process.env['OPENVIDEO_TEST_SECRET'] = 'must-not-leak';
+    const host = await createBrowserHost({ assets: memoryAssets({}), fonts: testFonts(), width: W, height: H });
+    try {
+      const running = chromiumProcesses();
+      expect(running.length).toBeGreaterThan(0);
+      for (const p of running) expect(p.env).not.toContain('OPENVIDEO_TEST_SECRET');
+    } finally {
+      delete process.env['OPENVIDEO_TEST_SECRET'];
+      await host.close();
+    }
   });
 });

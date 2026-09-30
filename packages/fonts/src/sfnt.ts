@@ -1,8 +1,10 @@
 /**
  * Kleiner Parser für OpenType/TrueType-Dateien (sfnt).
  * Er liest nur, was OpenVideo braucht: Namen, Gewicht, Stil und variable Achsen.
+ * WOFF, WOFF2 und Sammlungen wandelt `toSfnt` (woff.ts) vorher um.
  */
 import { OpenVideoError } from '@agentic-video/core';
+import { toSfnt } from './woff.js';
 
 /** Eine variable Achse aus der Tabelle `fvar`. */
 export interface FontAxis {
@@ -107,21 +109,23 @@ function readAxes(view: DataView, table: TableRecord): FontAxis[] {
 }
 
 /**
- * Liest Familie, Gewicht, Stil und variable Achsen aus einer TTF- oder OTF-Datei.
- * Wirft `OV_FONT_INVALID`, wenn die Datei keine lesbare Einzelschrift ist.
+ * Liest Familie, Gewicht, Stil und variable Achsen aus einer Schriftdatei: TTF, OTF, WOFF, WOFF2
+ * oder eine Schrift aus einer Sammlung (TTC/OTC, WOFF2-Sammlung; `faceIndex`, Standard 0).
+ * Wirft `OV_FONT_INVALID`, wenn die Datei keine lesbare Schrift ist, und `OV_FONT_FACE_INDEX`,
+ * wenn es die Schrift `faceIndex` nicht gibt.
  *
  * @example
  * ```ts
  * const info = parseFontInfo(readFileSync('Inter.ttf'));
  * info.axes; // [{ tag: 'wght', min: 100, default: 400, max: 900 }, …]
+ * parseFontInfo(readFileSync('Family.ttc'), 1).subfamily; // 'Bold'
  * ```
  */
-export function parseFontInfo(bytes: Uint8Array): FontInfo {
-  if (bytes.byteLength < 12) throw invalid('Font file is too small to be a TrueType or OpenType font.', 'Provide a .ttf or .otf file.');
+export function parseFontInfo(input: Uint8Array, faceIndex = 0): FontInfo {
+  if (input.byteLength < 12) throw invalid('Font file is too small to be a font.', 'Provide a .ttf, .otf, .ttc, .woff or .woff2 file.');
+  const bytes = toSfnt(input, faceIndex);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const signature = tag(view, 0);
-  if (signature === 'wOFF' || signature === 'wOF2') throw invalid('WOFF and WOFF2 fonts are not supported.', 'Convert the font to .ttf or .otf, e.g. with `fonttools ttLib.woff2 decompress`.');
-  if (signature === 'ttcf') throw invalid('Font collections (.ttc) are not supported.', 'Extract the wanted face into a single .ttf or .otf file.');
   if (view.getUint32(0) !== 0x00010000 && signature !== 'OTTO' && signature !== 'true') {
     throw invalid('File is not a TrueType or OpenType font.', 'Provide a .ttf or .otf file.');
   }

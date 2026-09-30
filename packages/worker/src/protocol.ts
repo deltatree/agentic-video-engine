@@ -1,7 +1,7 @@
 /**
  * Worker-Protokoll über stdio: `[u32 Länge][JSON]`, optional gefolgt von Binärdaten.
  *
- * Nachrichten: `init`, `chunk`, `frame`, `result`, `error`, `log`, `shutdown`.
+ * Nachrichten: `init`, `chunk`, `cancel`, `frame`, `result`, `error`, `log`, `shutdown`.
  * Die Implementierung liegt in `@agentic-video/scheduler`, weil beide Seiten sie brauchen
  * und `worker` von `scheduler` abhängt (AD-14). Dieses Modul ist die Worker-Sicht darauf.
  *
@@ -19,6 +19,7 @@ export {
   isChunkResult,
   isDiagnostic,
   MAX_HEADER_BYTES,
+  type CancelMessage,
   type ChunkMessage,
   type ErrorMessage,
   type FrameMessage,

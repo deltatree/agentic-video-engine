@@ -1,0 +1,5 @@
+{
+  "name": "data-story",
+  "entry": "project.json",
+  "outDir": "out"
+}

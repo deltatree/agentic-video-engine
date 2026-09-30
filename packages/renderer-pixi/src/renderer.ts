@@ -6,22 +6,35 @@ import 'pixi.js/advanced-blend-modes';
 import { OpenVideoError } from '@agentic-video/core';
 import { Container, RenderTexture, Texture, autoDetectRenderer, type Renderer } from 'pixi.js';
 import { buildNode, type BuildContext, type PixiLayerInput } from './build.js';
+import { registerHueBlend } from './hue-blend.js';
+
+// `hue` fehlt in PixiJS; der eigene Blend-Filter wird vor dem ersten Renderer registriert.
+registerHueBlend();
+
+function assetLoadError(url: string, reason: string, cause?: unknown): OpenVideoError {
+  return new OpenVideoError({
+    code: 'OV_PIXI_ASSET_LOAD',
+    errorClass: 'PixiRendererError',
+    problem: `Could not load the image at "${url}" (${reason}).`,
+    details: { url, reason },
+    ...(cause !== undefined ? { cause } : {}),
+    suggestions: ['Check that the asset id exists and was imported (`openvideo assets list`).', 'Check that the host serves the asset under this URL.'],
+  });
+}
 
 async function loadTexture(url: string, nearest: boolean): Promise<Texture> {
+  let res: Response;
+  try {
+    res = await fetch(url);
+  } catch (error) {
+    throw assetLoadError(url, 'network error', error);
+  }
+  if (!res.ok) throw assetLoadError(url, `HTTP ${String(res.status)}`);
   let bitmap: ImageBitmap;
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
     bitmap = await createImageBitmap(await res.blob(), { premultiplyAlpha: 'premultiply', colorSpaceConversion: 'none' });
   } catch (error) {
-    throw new OpenVideoError({
-      code: 'OV_PIXI_ASSET_LOAD',
-      errorClass: 'PixiRendererError',
-      problem: `Could not load the image at "${url}".`,
-      details: { url },
-      cause: error,
-      suggestions: ['Check that the asset id exists and was imported.', 'Check that the host serves the asset under this URL.'],
-    });
+    throw assetLoadError(url, 'the image could not be decoded', error);
   }
   const texture = Texture.from(bitmap);
   texture.source.scaleMode = nearest ? 'nearest' : 'linear';

@@ -33,6 +33,11 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
 2. Umgebungsvariable `OPENVIDEO_CHROMIUM`.
 3. `chromium.executablePath()` aus `playwright-core`.
 
+Im Cache-Schlüssel (`versions().chromium`) steht ohne eigenen Pfad die zu playwright-core gehörende Version
+(`expectedChromiumVersion`, Schlüssel unverändert). Mit eigenem Pfad liest `chromiumVersionFor` einmal je Pfad die
+tatsächliche Version aus `<chrome> --version`, ohne Chromium zu starten; nennt das Programm keine, gilt ein
+Fingerabdruck der Programmdatei (`custom-<hash>`).
+
 ## Vertrag für HTML-Inhalte
 
 - Jede `html`-Node läuft in einem eigenen iframe (`srcdoc`). Styles wirken nur in dieser Node.
@@ -54,7 +59,7 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
 
 - CSS-Variablen auf `:root`: `--ov-time` (Sekunden), `--ov-frame`, `--ov-progress` (ohne Einheit).
 - CSS- und Web-Animationen werden pausiert und auf die lokale Zeit gesetzt.
-- `<script>` läuft nur in der Sandbox (ADR 0008); `check()` meldet dazu `OV_HTML_SCRIPT` als Info.
+- `<script>` läuft nur ausdrücklich erlaubt (`--trusted` oder `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) und nur mit OS-Sandbox (ADR 0008, Story 16.1); `check()` meldet dazu `OV_HTML_SCRIPT` als Info.
 - Skripte laufen nur mit der Host-Option `allowHtmlScripts: true`. Standard ist `false`.
   Dann hat das iframe `sandbox="allow-same-origin"` und die CSP `script-src 'none'`.
   Es laufen keine `<script>`-Elemente, Event-Handler, `javascript:`-URLs und verschachtelten iframes.
@@ -68,5 +73,32 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
   Das Token steht nicht in der URL der Seite.
 - Frame-Uploads haben zufällige IDs (`crypto.randomUUID`).
 - Chromium löst keine Hostnamen auf, nutzt einen toten Proxy (außer für `127.0.0.1`) und kennt kein WebRTC.
-- Chromium startet mit OS-Sandbox. Klappt das nicht, läuft es ohne und `host.diagnostics` meldet `OV_BROWSER_NO_OS_SANDBOX`.
+- Chromium startet mit OS-Sandbox. Klappt das nicht und sind Skripte verlangt (`allowHtmlScripts: true`),
+  bricht der Host mit dem Fehler `OV_BROWSER_NO_OS_SANDBOX` ab: Skripte laufen nie ohne OS-Sandbox.
+  Ohne Skripte läuft Chromium dann ohne Sandbox weiter, und `host.diagnostics` meldet `OV_BROWSER_NO_OS_SANDBOX` als Warnung.
+  `probeOsSandbox()` prüft vorab, ob die Sandbox verfügbar ist (nicht als root, User Namespaces nötig).
+- `--enable-unsafe-swiftshader` und `--enable-unsafe-webgpu` (`CHROMIUM_GRAPHICS_ARGS`) setzt der Host erst,
+  wenn der erste `three`- oder `pixi`-Layer kommt; dafür startet er Chromium einmal neu. HTML rastert mit
+  und ohne diese Schalter pixelgleich.
+- Chromium erbt nur eine minimale Umgebung (`chromiumEnv`: `PATH`, `HOME`, `TMPDIR`, Locale, Fontconfig …),
+  keine Tokens und keine S3-Schlüssel. Im GPU-Modus kommen nur die Variablen der Treiber dazu (`chromiumGpuEnv`).
 - Höchstens `maxPages` Seiten (Standard 4) bleiben offen. Nach einem Absturz startet Chromium bei der nächsten Anfrage neu.
+
+## GPU-Modus und Grafik-Probe (T5, ADR 0019)
+
+- Standard ist SwiftShader (CPU, bitgleich). `OPENVIDEO_BROWSER_GPU=1` bzw. Option `gpu: true` startet Chromium mit
+  nativem ANGLE (`CHROMIUM_NATIVE_GPU_ARGS`: `--use-angle=default --ignore-gpu-blocklist --enable-gpu`). HTML rastert
+  weiter auf der CPU. Die Browser-Backends tragen dann `browser-gpu: native` in `versions()` (Cache-Schlüssel);
+  im Standardmodus fehlt der Eintrag.
+- `host.graphics()` bzw. `lazy.prepareGraphics()` prüft auf der Render-Seite WebGL2 (`MAX_TEXTURE_SIZE`) und WebGPU
+  per Mini-Render auf dem Pfad von Three.js (`readPageGraphics` mit `probeWebGPU` aus `@agentic-video/renderer-three`:
+  Gerät, Textur, Ansicht mit dem Deskriptor von Three.js inklusive `swizzle`, Render-Pass, Rücklesen). Ein Adapter mit
+  unvollständiger API zählt als `unavailable`; `backend: 'auto'` nutzt dann WebGL2. Mit `graphicsCache` (z. B. Cache-Ebene
+  `layer`) liegt das Ergebnis je Chromium-Version, Schaltern und Modus (im GPU-Modus zusätzlich `hostGpu`) im Speicher;
+  ein Treffer startet kein Chromium. Danach trägt das `three`-Backend `three-webgpu` (`available`/`unavailable`) und `three-max-texture`
+  in `versions()`: So steht die WebGPU/WebGL2-Wahl von `backend: 'auto'` (Regel: `threeBackendFor`) und die
+  Texturverkleinerung im Cache-Schlüssel.
+- `lazy.runtimeVersions()` liefert nach dem Start die tatsächliche Chromium-Version (`browser.version()`); vorher gilt
+  im Schlüssel die zu playwright-core gehörende Version (`expectedChromiumVersion`).
+- Gemeinsame Proben für `openvideo doctor`, Manifest und Telemetrie: `probeBrowserGraphics` (Chromium, WebGL2,
+  WebGPU auf einer Probe-Seite) und `probeHostGpu` (`nvidia-smi`, sonst `/dev/dri`).

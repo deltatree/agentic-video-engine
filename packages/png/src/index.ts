@@ -14,8 +14,8 @@
  * const back = decodePng(bytes);
  * ```
  */
-import { deflate, deflateSync, inflateSync, constants } from 'node:zlib';
-import { OpenVideoError, type RgbaImage } from '@agentic-video/core';
+import { deflate, deflateSync, inflate, inflateSync, constants } from 'node:zlib';
+import { OpenVideoError, premultiplyInPlace, unpremultiplyInto, type RgbaImage } from '@agentic-video/core';
 
 const SIGNATURE = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -39,42 +39,30 @@ function pngError(problem: string): OpenVideoError {
   return new OpenVideoError({ code: 'OV_PNG_INVALID', errorClass: 'ImageError', problem, suggestions: ['Re-export the image as 8-bit RGBA PNG.'] });
 }
 
-/** Wandelt vormultipliziertes RGBA in gerades RGBA um (neuer Puffer). */
+/**
+ * Wandelt vormultipliziertes RGBA in gerades RGBA um (neuer Puffer). Rechnet mit der
+ * gemeinsamen Pixel-Hilfe aus `@agentic-video/core` (Story 18.9).
+ *
+ * @example
+ * ```ts
+ * unpremultiply(new Uint8Array([100, 50, 25, 128])); // [199, 100, 50, 128]
+ * ```
+ */
 export function unpremultiply(data: Uint8Array): Uint8Array {
-  const out = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3] ?? 0;
-    if (a === 255) {
-      out[i] = data[i] ?? 0;
-      out[i + 1] = data[i + 1] ?? 0;
-      out[i + 2] = data[i + 2] ?? 0;
-    } else if (a > 0) {
-      out[i] = Math.min(255, Math.round(((data[i] ?? 0) * 255) / a));
-      out[i + 1] = Math.min(255, Math.round(((data[i + 1] ?? 0) * 255) / a));
-      out[i + 2] = Math.min(255, Math.round(((data[i + 2] ?? 0) * 255) / a));
-    }
-    out[i + 3] = a;
-  }
-  return out;
+  return unpremultiplyInto(data, new Uint8Array(data.length));
 }
 
-/** Wandelt gerades RGBA in vormultipliziertes RGBA um (neuer Puffer). */
+/**
+ * Wandelt gerades RGBA in vormultipliziertes RGBA um (neuer Puffer). Für eigene Puffer ohne
+ * Kopie: `premultiplyInPlace` aus `@agentic-video/core`.
+ *
+ * @example
+ * ```ts
+ * premultiply(new Uint8Array([200, 100, 50, 128])); // [100, 50, 25, 128]
+ * ```
+ */
 export function premultiply(data: Uint8Array): Uint8Array {
-  const out = new Uint8Array(data.length);
-  for (let i = 0; i < data.length; i += 4) {
-    const a = data[i + 3] ?? 0;
-    if (a === 255) {
-      out[i] = data[i] ?? 0;
-      out[i + 1] = data[i + 1] ?? 0;
-      out[i + 2] = data[i + 2] ?? 0;
-    } else if (a > 0) {
-      out[i] = Math.round(((data[i] ?? 0) * a) / 255);
-      out[i + 1] = Math.round(((data[i + 1] ?? 0) * a) / 255);
-      out[i + 2] = Math.round(((data[i + 2] ?? 0) * a) / 255);
-    }
-    out[i + 3] = a;
-  }
-  return out;
+  return premultiplyInPlace(new Uint8Array(data));
 }
 
 function chunk(type: string, data: Uint8Array): Uint8Array {
@@ -196,6 +184,7 @@ export function decodePng(bytes: Uint8Array): RgbaImage {
   const channels = colorType === 0 ? 1 : colorType === 2 ? 3 : colorType === 3 ? 1 : colorType === 4 ? 2 : colorType === 6 ? 4 : 0;
   if (channels === 0 || (bitDepth !== 8 && bitDepth !== 16 && !(colorType === 3 && bitDepth <= 8))) throw pngError(`Unsupported PNG format (color type ${String(colorType)}, bit depth ${String(bitDepth)}).`);
   const inflated = inflateSync(concat(idat));
+  if (colorType === 6 && bitDepth === 8) return { width, height, data: premultiplyInPlace(unfilterRgba8(inflated, width, height)) };
   const bitsPerPixel = channels * bitDepth;
   const bpp = Math.max(1, bitsPerPixel >> 3);
   const stride = Math.ceil((width * bitsPerPixel) / 8);
@@ -258,7 +247,54 @@ export function decodePng(bytes: Uint8Array): RgbaImage {
     }
     prev.set(cur);
   }
-  return { width, height, data: premultiply(out) };
+  return { width, height, data: premultiplyInPlace(out) };
+}
+
+/**
+ * Schneller Pfad für 8-Bit-RGBA (Story 18.4, Chromium-Screenshots): Zeilenfilter direkt in den
+ * Ausgabepuffer rückgängig machen (vorige Zeile = Ausgabe der Zeile darüber), ohne Kopien je Zeile.
+ * Ergebnis gleich dem allgemeinen Pfad.
+ */
+function unfilterRgba8(inflated: Uint8Array, width: number, height: number): Uint8Array {
+  const stride = width * 4;
+  const out = new Uint8Array(stride * height);
+  if (inflated.length < (stride + 1) * height) throw pngError('PNG image data is truncated.');
+  for (let y = 0; y < height; y++) {
+    const src = y * (stride + 1) + 1;
+    const filter = inflated[src - 1] ?? 0;
+    const row = y * stride;
+    const up = row - stride;
+    switch (filter) {
+      case 0:
+        out.set(inflated.subarray(src, src + stride), row);
+        break;
+      case 1:
+        for (let x = 0; x < stride; x++) out[row + x] = ((inflated[src + x] ?? 0) + (x >= 4 ? (out[row + x - 4] ?? 0) : 0)) & 0xff;
+        break;
+      case 2:
+        if (y === 0) out.set(inflated.subarray(src, src + stride), row);
+        else for (let x = 0; x < stride; x++) out[row + x] = ((inflated[src + x] ?? 0) + (out[up + x] ?? 0)) & 0xff;
+        break;
+      case 3:
+        for (let x = 0; x < stride; x++) {
+          const a = x >= 4 ? (out[row + x - 4] ?? 0) : 0;
+          const b = y > 0 ? (out[up + x] ?? 0) : 0;
+          out[row + x] = ((inflated[src + x] ?? 0) + ((a + b) >> 1)) & 0xff;
+        }
+        break;
+      case 4:
+        for (let x = 0; x < stride; x++) {
+          const a = x >= 4 ? (out[row + x - 4] ?? 0) : 0;
+          const b = y > 0 ? (out[up + x] ?? 0) : 0;
+          const c = x >= 4 && y > 0 ? (out[up + x - 4] ?? 0) : 0;
+          out[row + x] = ((inflated[src + x] ?? 0) + paeth(a, b, c)) & 0xff;
+        }
+        break;
+      default:
+        throw pngError(`Invalid PNG filter ${String(filter)}.`);
+    }
+  }
+  return out;
 }
 
 const RAW_MAGIC = 'OVRF';
@@ -327,6 +363,54 @@ export async function encodeRawFrameAsync(image: RgbaImage, level = 1): Promise<
     view.setUint32(16 + 4 * i, b.byteLength);
   });
   return concat([header, ...bodies]);
+}
+
+function inflateAsync(data: Uint8Array): Promise<Uint8Array> {
+  return new Promise((resolvePromise, reject) => {
+    inflate(data, (error, body) => {
+      if (error !== null) {
+        reject(pngError(`Decompressing a raw frame failed: ${error.message}`));
+        return;
+      }
+      resolvePromise(new Uint8Array(body.buffer, body.byteOffset, body.byteLength));
+    });
+  });
+}
+
+/**
+ * Wie {@link decodeRawFrame}, aber das Entpacken läuft im Thread-Pool von Node (Story 18.6):
+ * bei `OVRC` alle Abschnitte gleichzeitig, der Haupt-Thread bleibt frei (z. B. für den Encoder).
+ *
+ * @example
+ * ```ts
+ * const frame = await decodeRawFrameAsync(bytes);
+ * ```
+ */
+export async function decodeRawFrameAsync(bytes: Uint8Array): Promise<RgbaImage> {
+  const magic = String.fromCharCode(bytes[0] ?? 0, bytes[1] ?? 0, bytes[2] ?? 0, bytes[3] ?? 0);
+  if (magic !== RAW_MAGIC && magic !== RAW_CHUNKED_MAGIC) throw pngError('Not an OpenVideo raw frame.');
+  if (bytes.length < 12) throw pngError('Raw frame is truncated.');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const width = view.getUint32(4);
+  const height = view.getUint32(8);
+  let parts: Uint8Array[];
+  if (magic === RAW_MAGIC) parts = [await inflateAsync(bytes.subarray(12))];
+  else {
+    const count = bytes.length >= 16 ? view.getUint32(12) : 0;
+    let offset = 16 + 4 * count;
+    if (count === 0 || offset > bytes.length) throw pngError('Raw frame is truncated.');
+    const slices: Uint8Array[] = [];
+    for (let i = 0; i < count; i++) {
+      const length = view.getUint32(16 + 4 * i);
+      if (offset + length > bytes.length) throw pngError('Raw frame is truncated.');
+      slices.push(bytes.subarray(offset, offset + length));
+      offset += length;
+    }
+    parts = await Promise.all(slices.map(inflateAsync));
+  }
+  const data = parts.length === 1 ? (parts[0] ?? new Uint8Array()) : concat(parts);
+  if (data.length !== width * height * 4) throw pngError('Raw frame is truncated.');
+  return { width, height, data };
 }
 
 /** Dekodiert {@link encodeRawFrame} (`OVRF`) und {@link encodeRawFrameAsync} (`OVRC`). */

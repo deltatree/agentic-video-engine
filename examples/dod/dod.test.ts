@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = join(here, 'out', 'short-test');
@@ -34,11 +35,15 @@ function isReport(value: unknown): value is Report {
 
 describe('Definition of Done (Auftrag Abschnitt 50), kurze Variante', () => {
   // Ohne gebaute Pakete kann der Agent-Server nicht starten: benannter Grund statt stiller Auslassung.
-  it.skipIf(!built)('erzeugt, prüft, ändert, rendert und reproduziert ein Video mit allen 21 Bestandteilen (braucht `npm run build`)', () => {
+  it.skipIf(skipUnless(built, 'Pakete nicht gebaut: zuerst `npm run build` ausführen'))('erzeugt, prüft, ändert, rendert und reproduziert ein Video mit allen 21 Bestandteilen (braucht `npm run build`)', () => {
     const r = spawnSync(process.execPath, [join(here, 'run.mjs'), '--short', '--out', out], { encoding: 'utf8', env: { ...process.env, PATH: toolPath() }, timeout: 29 * 60_000 });
     const reportFile = join(out, 'dod-report.json');
     expect(existsSync(reportFile), `run.mjs schrieb keinen Bericht.\n${r.stdout}\n${r.stderr}`).toBe(true);
     const parsed: unknown = JSON.parse(readFileSync(reportFile, 'utf8'));
+    // Bricht run.mjs ab, fehlt ein Teil des Berichts: dann zuerst den Grund nennen, nicht nur „falsche Form“.
+    if (typeof parsed === 'object' && parsed !== null && 'error' in parsed && typeof parsed.error === 'string') {
+      throw new Error(`run.mjs brach ab: ${parsed.error}`);
+    }
     if (!isReport(parsed)) throw new Error(`dod-report.json hat nicht die erwartete Form:\n${JSON.stringify(parsed).slice(0, 2000)}`);
     const report = parsed;
     expect(report.error, r.stdout).toBeUndefined();

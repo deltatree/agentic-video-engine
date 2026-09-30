@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -80,7 +81,7 @@ describe('Docker-Worker (Story 10.2)', () => {
   });
 
   // Braucht Docker und das Basis-Image node:22-bookworm-slim.
-  it.skipIf(!baseReady)(
+  it.skipIf(skipUnless(baseReady, 'Docker oder das Basis-Image node:22-bookworm-slim fehlt: `docker pull node:22-bookworm-slim`'))(
     'rendert in Containern ohne Netz mit denselben Frame-Hashes',
     async () => {
       const dir = tempProjectDir('ov-docker-');

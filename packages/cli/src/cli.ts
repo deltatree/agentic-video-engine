@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { isLoopbackHost, startAgentServer, type AgentServices } from '@agentic-video/agent';
+import { OPERATIONS, isLoopbackHost, startAgentServer, type AgentServices, type InvocationResult } from '@agentic-video/agent';
 import { createCache, storeFromEnv, CACHE_TIERS, type CacheTierName } from '@agentic-video/cache';
 import {
   CLI_NAME,
@@ -29,12 +29,18 @@ import {
   type Diagnostic,
 } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
+import { defaultWorkerCount } from '@agentic-video/scheduler';
 import { createTemplateCatalog } from '@agentic-video/templates';
-import { checkProject, createNodeEnvironment, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
+import { buildFrameManifest, cacheMaxBytesFromEnv, checkProject, createNodeEnvironment, describeScene, encoderThreadsFor, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
+import { cannotOpenReason, openBrowser } from './browser.js';
 import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
-import { createLocalServices, htmlScriptsAllowed, processRunner, type LocalServices } from './services.js';
+import { createLocalServices, dockerRunner, dockerSettingsFromEnv, htmlScriptsAllowed, processRunner, renderIsolationFromEnv, workersFromEnv, type LocalServices, type RenderIsolation } from './services.js';
 import { createSourceService } from './sources.js';
+import { LEGACY_CACHE_TIERS, cacheTierByName, clearCache } from './cache-clear.js';
+import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
+import { watchPollMsFromEnv, watchProject, type WatchEvent } from './watch.js';
+import { stdinClosed } from './stdin.js';
 
 /** Ein- und Ausgabe der CLI (für Tests austauschbar). */
 export interface CliIo {
@@ -44,6 +50,10 @@ export interface CliIo {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Beendet `serve`, `dev` und `studio`, sobald das Versprechen erfüllt ist (Tests); sonst SIGINT/SIGTERM. */
   readonly stop?: Promise<void>;
+  /** Öffnet eine URL im Browser (Tests ersetzen das); liefert bei Fehlern den Grund. */
+  readonly openUrl?: (url: string) => Promise<string | undefined>;
+  /** Plattform für `--open` (Tests); Standard `process.platform`. */
+  readonly platform?: NodeJS.Platform;
 }
 
 class UsageError extends Error {}
@@ -55,29 +65,44 @@ Usage: ${CLI_NAME} <command> [options]
 Commands:
   create <dir>          Create a project (--tsx for TypeScript/JSX, --template <name>)
   templates             List the project templates
-  dev [dir]             Studio with live preview for a project
+  dev [dir]             Studio with live preview; watches src/** and project.json, opens the browser (--no-open)
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
-  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>)
-  render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
+  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>, default by cores and memory;
+                        --isolation docker renders chunks in containers: --image <worker image> --gpus all|1|device=0)
+  render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe; --manifest writes <out>.manifest.json)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
+  op <name>             Run any Agent API operation, same as HTTP/MCP (--input <json|@file>; op --list)
+  patch [path]          Apply semantic patches (--input <json|@file> with a patch list; --dry-run)
+  contact-sheet [path]  Render several frames into one image (--frames 0,2s,4s | --count 8 --out sheet.png; --manifest writes <out>.manifest.json)
+  import <file> [path]  Import SVG, Lottie, glTF, HTML, anime/motion-canvas JSON (--format --id-prefix)
   doctor                Check the environment and suggest fixes
   benchmark             Run reproducible benchmarks (--scenario --resolution --frames --compare)
-  cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9)
+  cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9; clear also removes retired tiers)
   fonts [list|check] [path]   List or check fonts
   assets <list|import|inspect> [path]   Manage assets
-  serve                 Start the Agent API (HTTP) with the Studio
-  mcp                   Start the MCP server on stdio
+  serve                 Start the Agent API (HTTP) with the Studio (--project <dir> opens a project)
+  mcp                   Start the MCP server on stdio (--project <dir> opens a project)
   migrate <file>        Upgrade an older project file (--write)
   worker                Start a render worker (--stdio or --coordinator <url>)
-  coordinator           Start the render coordinator for remote workers (--port --journal)
+  coordinator           Start the render coordinator for remote workers (--port --journal; role tokens OPENVIDEO_SUBMIT_TOKEN, OPENVIDEO_WORKER_TOKEN, OPENVIDEO_METRICS_TOKEN)
 
 Server options (serve, dev, studio):
   --host <addr>          Bind address (default 127.0.0.1; others need a token)
   --port <n>             Port (default 7788)
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
-  --workers <n>          Render videos with n local worker processes
+  --trust-proxy          Trust X-Forwarded-Proto from any peer, e.g. behind a TLS proxy on another host
+                         (or OPENVIDEO_TRUST_PROXY=1; default: only from loopback)
+  --workers <n>          Render videos with n local worker processes (default by cores and memory; 1 = in process)
+  --isolation <mode>     Where video chunks render: process (default) or docker (OPENVIDEO_RENDER_ISOLATION;
+                         image OPENVIDEO_WORKER_IMAGE / --image, GPU quota OPENVIDEO_WORKER_GPUS / --gpus)
+  --open / --no-open     Open the Studio in the browser (default on for dev/studio, off for serve)
+
+Project and workspace (serve, mcp, op):
+  --project <dir>        Open this project folder (project.open may open folders inside it)
+  --workspace <dir>      Workspace folder (or OPENVIDEO_WORKSPACE; default .openvideo-workspace)
+  OPENVIDEO_PROJECT_ROOTS  Comma-separated folders that project.open may open
 
 Global options:
   --json      Machine-readable output
@@ -118,6 +143,19 @@ function studioDir(env: Readonly<Record<string, string | undefined>>): string | 
   return candidates.find((c): c is string => c !== undefined && existsSync(join(c, 'index.html')));
 }
 
+/**
+ * Sicherheits-Header der Studio-Dateien (Story 16.7, N3): kein Einbetten in fremde Seiten
+ * (`frame-ancestors 'none'`), kein Referer, Skripte nur von der eigenen Origin. Monaco braucht
+ * Inline-Styles, Worker aus `blob:` und Bilder aus `data:`.
+ */
+export const STUDIO_HEADERS: Readonly<Record<string, string>> = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'x-frame-options': 'DENY',
+  'content-security-policy':
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+};
+
 const MIME: Readonly<Record<string, string>> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.wasm': 'application/wasm' };
 
 interface ServeOptions {
@@ -128,15 +166,38 @@ interface ServeOptions {
   readonly projectId?: string;
   /** Token im Studio-Link ausgeben (dev/studio mit erzeugtem Token). */
   readonly showToken?: boolean;
+  /** Studio im Browser öffnen (Story 20.1). */
+  readonly open?: boolean;
+  /** `X-Forwarded-Proto` jeder Gegenstelle vertrauen (`--trust-proxy`, `OPENVIDEO_TRUST_PROXY=1`). */
+  readonly trustProxy?: boolean;
+  /** Dateien zusätzlich abfragen (`OPENVIDEO_WATCH_POLL_MS`, Bind-Mounts ohne inotify, ADR 0029). */
+  readonly watchPollMs?: number | undefined;
+  /** Projektordner beobachten und TSX neu kompilieren (`openvideo dev`). */
+  readonly watch?: { readonly dir: string; readonly entry: string; readonly sources: SourceServiceOf };
+}
+
+type SourceServiceOf = ReturnType<typeof createSourceService>;
+
+/**
+ * Meldung des Datei-Watchers für das Terminal. Gültige JSON-Änderungen und Kompilate ohne neue IR bleiben
+ * still: Jede Studio-Änderung schreibt `project.json`, das Terminal soll dabei nicht mitlaufen.
+ */
+function watchMessage(event: WatchEvent): string {
+  if (event.kind === 'compiled') return event.changed ? `Recompiled after ${event.file} changed; the Studio reloads.\n` : '';
+  if (event.kind === 'changed') return '';
+  return `${event.file}: ${event.diagnostics.filter((d) => d.severity === 'error').map((d) => formatDiagnostic(d)).join('\n\n')}\n`;
 }
 
 async function serveServices(services: AgentServices, io: CliIo, options: ServeOptions): Promise<void> {
   const studio = studioDir(io.env);
+  const watchPollMs = options.watchPollMs ?? watchPollMsFromEnv(io.env);
   const server = await startAgentServer({
     services,
     port: options.port,
     host: options.host,
     allowedHosts: options.allowedHosts,
+    trustProxy: options.trustProxy === true,
+    ...(watchPollMs !== undefined ? { watchPollMs } : {}),
     ...(options.token !== undefined ? { token: options.token } : {}),
     fallback: async (req, res) => {
       if (studio === undefined || req.method !== 'GET') return false;
@@ -144,7 +205,7 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
       const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
       const file = resolve(studio, rel);
       if (!file.startsWith(studio + sep) || !existsSync(file)) return false;
-      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'x-content-type-options': 'nosniff' });
+      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', ...STUDIO_HEADERS });
       res.end(await readFile(file));
       return true;
     },
@@ -152,12 +213,31 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
   const query = new URLSearchParams(options.projectId !== undefined ? { project: options.projectId } : {}).toString();
   // Das Token steht im Fragment: Der Browser sendet es nie an einen Server, auch nicht im Referer.
   const fragment = options.showToken === true && options.token !== undefined ? `#token=${encodeURIComponent(options.token)}` : '';
-  const link = `${server.url}/${query !== '' ? `?${query}` : ''}${fragment}`;
-  io.stdout(`${PRODUCT_NAME} API: ${server.url}/v1/operations\n`);
+  const base = publicBaseUrl(server.url, io.env);
+  const link = `${base}/${query !== '' ? `?${query}` : ''}${fragment}`;
+  io.stdout(`${PRODUCT_NAME} API: ${base}/v1/operations\n`);
   if (options.showToken === true && options.token !== undefined) io.stdout(`API token (send as "Authorization: Bearer <token>"): token=${options.token}\n`);
   io.stdout(studio !== undefined ? `${PRODUCT_NAME} Studio: ${link}\n` : 'Studio files not found (build apps/studio or set OPENVIDEO_STUDIO_DIR).\n');
+  const watcher =
+    options.watch !== undefined
+      ? watchProject({
+          ...options.watch,
+          ...(watchPollMs !== undefined ? { pollMs: watchPollMs } : {}),
+          onEvent: (event) => {
+            const text = watchMessage(event);
+            if (text !== '') (event.kind === 'error' ? io.stderr : io.stdout)(text);
+          },
+        })
+      : undefined;
+  if (watcher !== undefined) io.stdout(`Watching ${options.watch?.entry === 'project.json' ? 'project.json' : 'src/** and project.json'} for changes.\n`);
+  if (options.open === true && studio !== undefined) {
+    const reason = io.openUrl !== undefined ? undefined : cannotOpenReason(io.platform ?? process.platform, io.env);
+    const problem = reason !== undefined ? `not opened: ${reason}` : await (io.openUrl ?? ((u: string) => openBrowser(u, io.platform ?? process.platform)))(link);
+    if (problem !== undefined) io.stderr(`Browser ${problem.startsWith('not opened') ? problem : `not opened: ${problem}`}. Open the Studio link above.\n`);
+  }
   await new Promise<void>((resolveStop) => {
     const stop = () => {
+      watcher?.close();
       void server.close().then(resolveStop);
     };
     if (io.stop !== undefined) void io.stop.then(stop);
@@ -166,6 +246,53 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
       process.once('SIGTERM', stop);
     }
   });
+}
+
+/**
+ * Adresse für die ausgegebenen Links von `serve`, `dev` und `studio`. Im Container bindet der Server an
+ * `0.0.0.0`, erreichbar ist er vom Host aber über die veröffentlichte Loopback-Adresse: Der Wrapper aus
+ * `npm run setup` setzt dafür `OPENVIDEO_PUBLIC_URL` (z. B. `http://127.0.0.1:7788`, ADR 0029).
+ * Ungültige Werte (kein http/https, Pfad oder Query) werden ignoriert.
+ *
+ * @example
+ * ```ts
+ * publicBaseUrl('http://0.0.0.0:7788', { OPENVIDEO_PUBLIC_URL: 'http://127.0.0.1:7788' }); // 'http://127.0.0.1:7788'
+ * publicBaseUrl('http://127.0.0.1:7788', {}); // 'http://127.0.0.1:7788'
+ * ```
+ */
+export function publicBaseUrl(serverUrl: string, env: Readonly<Record<string, string | undefined>>): string {
+  const given = env['OPENVIDEO_PUBLIC_URL'];
+  if (given === undefined || given === '') return serverUrl;
+  try {
+    const u = new URL(given);
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || (u.pathname !== '/' && u.pathname !== '') || u.search !== '' || u.hash !== '' || u.username !== '' || u.password !== '') return serverUrl;
+    return `${u.protocol}//${u.host}`;
+  } catch (error) {
+    if (error instanceof TypeError) return serverUrl;
+    throw error;
+  }
+}
+
+/** Cache-Obergrenze aus `OPENVIDEO_CACHE_MAX_BYTES` als Render-Option (Story 18.9). */
+function cacheBudget(env: Readonly<Record<string, string | undefined>>): { cacheMaxBytes?: number } {
+  const max = cacheMaxBytesFromEnv(env);
+  return max !== undefined ? { cacheMaxBytes: max } : {};
+}
+
+/**
+ * Proxy-Vertrauen für `serve`, `dev` und `studio`: `--trust-proxy` oder `OPENVIDEO_TRUST_PROXY`
+ * (`1`/`true`/`yes`). Dann zählt `X-Forwarded-Proto` jeder Gegenstelle (z. B. TLS-Proxy auf einem
+ * anderen Rechner) für die Studio-Origin; sonst nur von Loopback.
+ *
+ * @example
+ * ```ts
+ * trustProxyOf(undefined, { OPENVIDEO_TRUST_PROXY: '1' }); // true
+ * ```
+ */
+export function trustProxyOf(flag: boolean | undefined, env: Readonly<Record<string, string | undefined>>): boolean {
+  if (flag === true) return true;
+  const raw = env['OPENVIDEO_TRUST_PROXY']?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
 /** Erlaubte Host-Namen aus `--allowed-host` und `OPENVIDEO_ALLOWED_HOSTS` (kommagetrennt). */
@@ -235,10 +362,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         host: { type: 'string' },
         token: { type: 'string' },
         'allowed-host': { type: 'string', multiple: true },
+        'trust-proxy': { type: 'boolean' },
         workspace: { type: 'string' },
         write: { type: 'boolean' },
         id: { type: 'string' },
         open: { type: 'boolean' },
+        'no-open': { type: 'boolean' },
         offline: { type: 'boolean' },
         stdio: { type: 'boolean' },
         coordinator: { type: 'string' },
@@ -246,6 +375,16 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         scenario: { type: 'string' },
         resolution: { type: 'string' },
         frames: { type: 'string' },
+        input: { type: 'string', short: 'i' },
+        project: { type: 'string', short: 'p' },
+        list: { type: 'boolean' },
+        'dry-run': { type: 'boolean' },
+        'id-prefix': { type: 'string' },
+        count: { type: 'string' },
+        isolation: { type: 'string' },
+        image: { type: 'string' },
+        gpus: { type: 'string' },
+        manifest: { type: 'boolean' },
       },
     });
   } catch (error) {
@@ -268,7 +407,13 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     return command === undefined && values.help !== true ? 2 : 0;
   }
   const target = resolve(io.cwd, rest[0] ?? '.');
-  const sources = createSourceService({ trusted });
+  const sources = createSourceService({ trusted, env: io.env });
+  // Dienste mit Telemetrie: Die Ebene `compiled` der Quellen meldet an dieselbe Telemetrie (ADR 0021).
+  const localServices = async (options: Parameters<typeof createLocalServices>[0]): Promise<LocalServices> => {
+    const services = await createLocalServices(options);
+    sources.useTelemetry(services.telemetry);
+    return services;
+  };
   const isolation = trusted ? 'trusted' : 'container';
   const offline = values.offline === true ? { offline: true } : {};
   const withEnv = async <T>(fn: (loaded: Awaited<ReturnType<typeof loadProject>>, env: Awaited<ReturnType<typeof createNodeEnvironment>>) => Promise<T>): Promise<T> => {
@@ -281,9 +426,23 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       await env.dispose();
     }
   };
+  const isolationValue = values.isolation;
+  if (isolationValue !== undefined && isolationValue !== 'process' && isolationValue !== 'docker') {
+    io.stderr(`--isolation must be "process" or "docker".\n\n${HELP}\n`);
+    return 2;
+  }
+  // Render-Isolation (Story 21.3): Flag vor OPENVIDEO_RENDER_ISOLATION; Docker-Einstellungen aus --image/--gpus und Umgebung.
+  const renderIsolationOption = (): { renderIsolation?: RenderIsolation; docker?: { image?: string; gpus?: string } } => {
+    const mode: RenderIsolation | undefined = isolationValue ?? renderIsolationFromEnv(io.env);
+    return {
+      ...(mode !== undefined ? { renderIsolation: mode } : {}),
+      ...(values.image !== undefined || values.gpus !== undefined ? { docker: { ...(values.image !== undefined ? { image: values.image } : {}), ...(values.gpus !== undefined ? { gpus: values.gpus } : {}) } } : {}),
+    };
+  };
   try {
     const serverWorkers = num(values.workers, 'workers');
-    const workersOption = serverWorkers !== undefined && serverWorkers > 1 ? { workers: Math.floor(serverWorkers) } : {};
+    // `--workers 1` rendert im Server-Prozess; ohne Angabe gilt die Standardzahl (Story 18.7).
+    const workersOption = serverWorkers !== undefined && serverWorkers >= 1 ? { workers: Math.floor(serverWorkers) } : {};
     switch (command) {
       case 'create': {
         if (rest[0] === undefined) throw new UsageError('Usage: openvideo create <dir> [--tsx] [--template <name>]');
@@ -328,15 +487,31 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'coordinator': {
         const { startCoordinator } = await import('@agentic-video/scheduler');
-        const token = values.token ?? io.env['OPENVIDEO_WORKER_TOKEN'];
+        // Rollen-Tokens wie in scheduler/src/coordinator.ts (Story 16.3): submit (API), worker, metrics (KEDA).
+        // `--token` ist ein gemeinsames Token für alle Rollen (nur lokaler Betrieb).
+        const nonEmpty = (v: string | undefined): string | undefined => (v !== undefined && v !== '' ? v : undefined);
+        const shared = nonEmpty(values.token);
+        const submitToken = nonEmpty(io.env['OPENVIDEO_SUBMIT_TOKEN']);
+        const workerToken = nonEmpty(io.env['OPENVIDEO_WORKER_TOKEN']);
+        const metricsToken = nonEmpty(io.env['OPENVIDEO_METRICS_TOKEN']);
+        const tokens = {
+          ...(submitToken !== undefined ? { submit: submitToken } : {}),
+          ...(workerToken !== undefined ? { worker: workerToken } : {}),
+          ...(metricsToken !== undefined ? { metrics: metricsToken } : {}),
+        };
         const host = values.host ?? '127.0.0.1';
         const port = num(values.port, 'port') ?? 8080;
-        if ((token === undefined || token === '') && !isLoopbackHost(host)) {
-          throw new OpenVideoError({ code: 'OV_API_TOKEN_REQUIRED', errorClass: 'SecurityError', problem: `The coordinator would listen on ${host} without a token.`, suggestions: ['Set OPENVIDEO_WORKER_TOKEN or pass --token <secret>.', 'Or bind to 127.0.0.1 for local use.'] });
+        if (shared === undefined && Object.keys(tokens).length === 0 && !isLoopbackHost(host)) {
+          throw new OpenVideoError({
+            code: 'OV_API_TOKEN_REQUIRED',
+            errorClass: 'SecurityError',
+            problem: `The coordinator would listen on ${host} without a token.`,
+            suggestions: ['Set OPENVIDEO_SUBMIT_TOKEN, OPENVIDEO_WORKER_TOKEN and OPENVIDEO_METRICS_TOKEN (one random token per role).', 'Or pass --token <secret> for a single shared token (local use).', 'Or bind to 127.0.0.1 for local use.'],
+          });
         }
         const workspaceDir = resolve(io.cwd, values.workspace ?? '.');
         const store = storeFromEnv(io.env, workspaceDir);
-        const coordinator = await startCoordinator({ port, host, store, journalDir: resolve(io.cwd, values.journal ?? join(workspaceDir, '.openvideo', 'journal')), ...(token !== undefined && token !== '' ? { token } : {}) });
+        const coordinator = await startCoordinator({ port, host, store, journalDir: resolve(io.cwd, values.journal ?? join(workspaceDir, '.openvideo', 'journal')), ...(shared !== undefined ? { token: shared } : {}), ...(Object.keys(tokens).length > 0 ? { tokens } : {}) });
         out({ url: coordinator.url, store: store.name }, `${PRODUCT_NAME} coordinator: ${coordinator.url} (store ${store.name})`);
         await new Promise<void>((resolveStop) => {
           const stop = () => {
@@ -369,8 +544,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           const file = resolve(io.cwd, values.out ?? join(loaded.dir, 'out', `frame-${String(frame)}.png`));
           await mkdir(dirname(file), { recursive: true });
           await writeFile(file, encodePng(r.image));
+          // Kurzmanifest (Story 21.5): Eingabe-Hashes, Pixel-Hash, genutzte Backends, Grafik, Chromium, GPU.
+          const manifestFile = values.manifest === true ? `${file}.manifest.json` : undefined;
+          if (manifestFile !== undefined) await writeFile(manifestFile, `${JSON.stringify(await buildFrameManifest(env, loaded.project, [{ frame, ...r }], num(values.scale, 'scale') ?? 1), null, 2)}\n`);
           if (!json) printDiagnostics(io, r.diagnostics.filter((d) => d.severity !== 'info'));
-          out({ file, frame, key: r.key, cached: r.cached, width: r.image.width, height: r.image.height, diagnostics: r.diagnostics, timings: r.timings }, `Wrote ${file} (${String(r.image.width)}×${String(r.image.height)}, frame ${String(frame)}${r.cached ? ', cached' : ''}).`);
+          out({ file, frame, key: r.key, cached: r.cached, width: r.image.width, height: r.image.height, diagnostics: r.diagnostics, timings: r.timings, ...(manifestFile !== undefined ? { manifest: manifestFile } : {}) }, `Wrote ${file} (${String(r.image.width)}×${String(r.image.height)}, frame ${String(frame)}${r.cached ? ', cached' : ''}).${manifestFile !== undefined ? `\nManifest: ${manifestFile}` : ''}`);
           return r.diagnostics.some((d) => d.severity === 'error') ? 1 : 0;
         });
       }
@@ -403,10 +581,21 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           const outPath = resolve(io.cwd, values.out ?? join(loaded.dir, 'out', `${String(comp['id'])}${ext}`));
           const range = values.start !== undefined || values.end !== undefined ? { start: values.start !== undefined ? frameOf(loaded.project, values.composition, values.start) : 0, end: values.end !== undefined ? frameOf(loaded.project, values.composition, values.end) : compositionDurationFrames(comp) } : undefined;
           let last = '';
-          const workers = num(values.workers, 'workers');
-          const runChunks = workers !== undefined && workers > 1 ? processRunner(env, loaded.project, workers, trusted) : undefined;
+          // Standard: mehrere Worker-Prozesse nach Kernen und Speicher (Story 18.7); `--workers 1` rendert im Prozess.
+          const workers = Math.max(1, Math.floor(num(values.workers, 'workers') ?? workersFromEnv(io.env) ?? defaultWorkerCount()));
+          // `--isolation docker` (Story 21.3): Chunks in Containern, optional mit GPU-Quota (`--gpus`).
+          const isolationChoice = renderIsolationOption();
+          const runChunks =
+            isolationChoice.renderIsolation === 'docker'
+              ? dockerRunner(env, loaded.project, workers, dockerSettingsFromEnv(io.env, isolationChoice.docker ?? {}))
+              : workers > 1
+                ? processRunner(env, loaded.project, workers, trusted)
+                : undefined;
           const r = await renderVideo(env, loaded.project, {
-            ...(runChunks !== undefined ? { runChunks } : {}),
+            ...(runChunks !== undefined ? { runChunks, localRenderProcesses: isolationChoice.renderIsolation === 'docker' ? 0 : workers } : {}),
+            // Encoder-Threads nach freien Kernen (Story 18.6) und Cache-Budget (Story 18.9) aus der Umgebung des Aufrufs.
+            encoderThreads: encoderThreadsFor(workers, io.env),
+            ...cacheBudget(io.env),
             ...(values.composition !== undefined ? { compositionId: values.composition } : {}),
             outPath,
             profile,
@@ -433,6 +622,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           if (values.frame !== undefined) {
             const { evaluateScene, computeBounds } = await import('@agentic-video/core');
             const frame = frameOf(loaded.project, values.composition, values.frame);
+            await env.prepare?.(loaded.project);
             const scene = evaluateScene(loaded.project, values.composition, frame, { registry: env.registry });
             const bounds = computeBounds(scene, env.measurer);
             out({ frame, tree: sceneTree(scene, bounds) }, describeScene(scene, bounds));
@@ -444,8 +634,71 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           return 0;
         });
       }
+      case 'op':
+      case 'patch':
+      case 'contact-sheet':
+      case 'import': {
+        if (command === 'op' && values.list === true) {
+          const ops = [...OPERATIONS.values()];
+          out(ops.map((o) => ({ name: o.name, summary: o.summary, job: o.job === true, example: o.example.input })), ops.map((o) => `${o.name.padEnd(24)} ${o.summary}`).join('\n'));
+          return 0;
+        }
+        // Projektkontext: --project, sonst bei Kurzbefehlen der Pfad, bei `op` der aktuelle Ordner, falls er ein Projekt ist.
+        const importFile = command === 'import' ? rest[0] : undefined;
+        const pathArg = command === 'op' ? undefined : command === 'import' ? rest[1] : rest[0];
+        const projectArg = values.project ?? (command === 'op' ? (values.workspace === undefined && isProjectDir(io.cwd) ? '.' : undefined) : (pathArg ?? '.'));
+        const context = await projectContext({ project: projectArg, workspace: values.workspace, cwd: io.cwd, env: io.env });
+        const base = await localServices({ workspaceDir: context.workspaceDir, isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline, ...renderIsolationOption() });
+        const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
+        try {
+          const projectId = await context.link(services);
+          let name: string;
+          let input: unknown;
+          if (command === 'op') {
+            if (rest[0] === undefined) throw new UsageError('Usage: openvideo op <operation> [--input <json|@file>] [--project <dir>]  (openvideo op --list)');
+            name = rest[0];
+            input = withDefaults(name, await parseInputArg(values.input, io.cwd), projectId);
+          } else if (command === 'patch') {
+            if (values.input === undefined) throw new UsageError('Usage: openvideo patch [path] --input <json|@file>  (a patch list, or { "patches": [...] })');
+            const raw = await parseInputArg(values.input, io.cwd);
+            name = 'composition.patch';
+            input = withDefaults(name, { ...(Array.isArray(raw) ? { patches: raw } : isRecord(raw) ? raw : {}), ...(values['dry-run'] === true ? { dryRun: true } : {}) }, projectId);
+          } else if (command === 'contact-sheet') {
+            const count = num(values.count, 'count');
+            name = 'preview.contactSheet';
+            input = withDefaults(name, { ...(values.frames !== undefined ? { frames: values.frames.split(',').map((f) => (/^[0-9]+$/u.test(f.trim()) ? Number(f.trim()) : f.trim())) } : {}), ...(count !== undefined ? { count } : {}), ...(values.composition !== undefined ? { compositionId: values.composition } : {}) }, projectId);
+          } else {
+            if (importFile === undefined) throw new UsageError('Usage: openvideo import <file> [path] [--format svg|lottie|gltf|html|anime|motion-canvas] [--id-prefix logo] [--dry-run]');
+            name = 'project.import';
+            const parts = await importInput(resolve(io.cwd, importFile), context.projectDir ?? io.cwd, { format: values.format, idPrefix: values['id-prefix'] });
+            input = withDefaults(name, { ...parts, ...(values['dry-run'] === true ? { dryRun: true } : {}), ...(values.composition !== undefined ? { compositionId: values.composition } : {}) }, projectId);
+          }
+          const r: InvocationResult = await runOperation(services, name, input);
+          if (!r.ok) throw new OpenVideoError(r.error);
+          const result = r.result;
+          // Kontaktbogen: auf Wunsch an einen eigenen Ort kopieren.
+          if (command === 'contact-sheet' && values.out !== undefined && isRecord(result) && isRecord(result['image']) && typeof result['image']['file'] === 'string') {
+            const target = resolve(io.cwd, values.out);
+            await mkdir(dirname(target), { recursive: true });
+            await writeFile(target, await readFile(result['image']['file']));
+            result['image'] = { ...result['image'], file: target };
+          }
+          // Kurzmanifest des Kontaktbogens (Story 21.5) neben das Bild schreiben.
+          if (command === 'contact-sheet' && values.manifest === true && isRecord(result) && isRecord(result['manifest']) && isRecord(result['image']) && typeof result['image']['file'] === 'string') {
+            const manifestFile = `${result['image']['file']}.manifest.json`;
+            await writeFile(manifestFile, `${JSON.stringify(result['manifest'], null, 2)}\n`);
+            result['manifestFile'] = manifestFile;
+          }
+          const diagnostics = isRecord(result) && Array.isArray(result['diagnostics']) ? result['diagnostics'].filter((d): d is Diagnostic => isRecord(d) && typeof d['code'] === 'string' && typeof d['problem'] === 'string') : [];
+          if (!json && command !== 'op') printDiagnostics(io, diagnostics.filter((d) => d.severity !== 'info'));
+          io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+          return resultFailed(result) ? 1 : 0;
+        } finally {
+          await services.dispose();
+        }
+      }
       case 'doctor': {
-        const checks = await runDoctor({ projectDir: io.cwd });
+        const checks = await runDoctor({ projectDir: io.cwd, runtimeInfo: io.env['OPENVIDEO_RUNTIME_INFO'] });
         const failed = checks.filter((c) => c.status === 'fail').length;
         out({ ok: failed === 0, checks }, checks.map((c) => `${c.status === 'ok' ? '✓' : c.status === 'warn' ? '!' : '✗'} ${c.name.padEnd(18)} ${c.detail}${c.fix !== undefined ? `\n    → ${c.fix}` : ''}`).join('\n'));
         return failed === 0 ? 0 : 1;
@@ -454,16 +707,20 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const sub = rest[0] ?? 'stats';
         const projectDir = resolve(io.cwd, rest[1] ?? '.');
         const cache = createCache(storeFromEnv(io.env, projectDir));
-        const tier = values.tier !== undefined ? CACHE_TIERS.find((t): t is CacheTierName => t === values.tier) : undefined;
-        if (values.tier !== undefined && tier === undefined) throw new UsageError(`Unknown tier "${values.tier}". Use: ${CACHE_TIERS.join(', ')}.`);
+        // Alte Ebenen (font, geometry, shader, composition) nur für `clear` (ADR 0021).
+        const named = values.tier !== undefined ? cacheTierByName(values.tier) : undefined;
+        const tier = CACHE_TIERS.find((t): t is CacheTierName => t === named);
+        if (values.tier !== undefined && (named === undefined || (tier === undefined && sub !== 'clear'))) {
+          throw new UsageError(`Unknown tier "${values.tier}". Use: ${CACHE_TIERS.join(', ')}${sub === 'clear' ? ` (clear also accepts the retired tiers ${LEGACY_CACHE_TIERS.join(', ')})` : ''}.`);
+        }
         if (sub === 'stats') {
           const usage = await cache.usage();
           out(usage, CACHE_TIERS.map((t) => `${t.padEnd(12)} ${String(usage[t].entries).padStart(7)} entries ${(usage[t].bytes / 1e6).toFixed(1).padStart(10)} MB`).join('\n'));
           return 0;
         }
         if (sub === 'clear') {
-          const removed = await cache.clear(tier);
-          out({ removed }, `Removed ${String(removed)} entries.`);
+          const r = await clearCache(cache, named);
+          out(r, `Removed ${String(r.removed)} entries${r.legacyRemoved > 0 ? ` (${String(r.legacyRemoved)} from retired tiers ${LEGACY_CACHE_TIERS.join(', ')})` : ''}.`);
           return 0;
         }
         if (sub === 'prune') {
@@ -497,7 +754,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       case 'assets': {
         const sub = rest[0] ?? 'list';
         const projectPath = resolve(io.cwd, sub === 'import' || sub === 'inspect' ? (rest[2] ?? '.') : (rest[1] ?? '.'));
-        const services = await createLocalServices({ workspaceDir: join(projectPath, '.openvideo', 'workspace'), isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline });
+        const services = await localServices({ workspaceDir: join(projectPath, '.openvideo', 'workspace'), isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline });
         try {
           const loaded = await loadProject(projectPath, { sources });
           if (sub === 'import') {
@@ -534,26 +791,42 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return r.diagnostics.some((d) => d.severity === 'error') ? 1 : 0;
       }
       case 'serve': {
-        const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
-        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env) });
+        const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
+        const base = await localServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() });
+        const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
+        const projectId = await context.link(services);
+        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env), trustProxy: trustProxyOf(values['trust-proxy'], io.env), ...(projectId !== undefined ? { projectId } : {}), open: values.open === true && values['no-open'] !== true });
       }
       case 'dev':
       case 'studio': {
         const loaded = await loadProject(target, { sources });
         const { workspaceDir, projectId } = await singleProjectWorkspace(loaded.dir);
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
+        // Der eingebundene Projektordner bleibt nur für diesen Host erreichbar (Review M3).
+        const services: LocalServices = { ...(await localServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() })), hostProjectDirs: [loaded.dir] };
         // dev/studio schützen die API immer mit einem Token; ohne Vorgabe ein zufälliges (B1).
         const given = values.token ?? io.env['OPENVIDEO_API_TOKEN'];
         const token = given !== undefined && given !== '' ? given : randomBytes(32).toString('base64url');
-        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token, allowedHosts: allowedHostsOf(values['allowed-host'], io.env), projectId, showToken: true });
+        // Story 20.1: Watcher auf src/** und project.json; der Browser öffnet sich, außer mit --no-open.
+        return await runServer(services, io, {
+          port: num(values.port, 'port') ?? 7788,
+          host: values.host ?? '127.0.0.1',
+          token,
+          allowedHosts: allowedHostsOf(values['allowed-host'], io.env),
+          trustProxy: trustProxyOf(values['trust-proxy'], io.env),
+          projectId,
+          showToken: true,
+          open: values['no-open'] !== true,
+          watch: { dir: loaded.dir, entry: loaded.entry, sources },
+        });
       }
       case 'mcp': {
-        const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
+        const base = await localServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption(), telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
+        const projectId = await context.link(services);
         const { serveStdio } = await import('@agentic-video/mcp');
-        await serveStdio(services);
-        await new Promise<void>((r) => process.stdin.once('close', r));
+        await serveStdio(services, projectId !== undefined ? { projectId } : {});
+        await stdinClosed(process.stdin);
         await services.dispose();
         return 0;
       }

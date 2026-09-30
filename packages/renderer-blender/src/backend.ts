@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   OpenVideoError,
+  minimalChildEnv,
   evaluateScene,
   walkEvaluated,
   type BackendCheck,
@@ -30,6 +31,16 @@ import { placeImage, renderSize } from './place.js';
 /** Pfad des mitgelieferten Python-Skripts. */
 export const BLENDER_SCRIPT_PATH: string = fileURLToPath(new URL('../python/openvideo_blender.py', import.meta.url));
 
+/**
+ * Fähigkeit eines Backends, Motion Blur aus Nachbar-Subframes zu rechnen (Story 17.5): Der Frame-Render
+ * wertet für Nodes mit `motionBlur: true` die Szene an den Offsets {@link DEFAULT_MOTION_OFFSETS} aus und
+ * übergibt die Zustände als `motionStates` ({@link BlenderLayerRequest}).
+ */
+export const MOTION_STATES_CAPABILITY = 'motion-states';
+
+/** Standard-Offsets der Subframes in Frames: Verschlusszeit ½ Frame, zentriert. */
+export const DEFAULT_MOTION_OFFSETS: readonly number[] = [-0.25, 0.25];
+
 /** Fähigkeiten des Blender-Backends. */
 export const BLENDER_CAPABILITIES: readonly string[] = [
   'blender.cycles',
@@ -44,6 +55,8 @@ export const BLENDER_CAPABILITIES: readonly string[] = [
   'blender.obj',
   'blender.hdri',
   'blender.transparent',
+  'blender.particles',
+  MOTION_STATES_CAPABILITY,
 ];
 
 /** Standard-Timeout je Frame (inklusive Start von Blender beim ersten Frame). */
@@ -127,11 +140,11 @@ export function evaluateMotionStates(
   compositionId: string | undefined,
   frame: number,
   nodeIds: readonly string[],
-  offsets: readonly number[] = [-0.25, 0.25],
+  offsets: readonly number[] = DEFAULT_MOTION_OFFSETS,
   options: EvaluateOptions = {},
 ): MotionState[] {
   return offsets.map((offset) => {
-    const scene = evaluateScene(project, compositionId, frame + offset, options);
+    const scene = evaluateScene(project, compositionId, frame + offset, { ...options, motionKey: false });
     const found = new Map<string, EvaluatedNode>();
     walkEvaluated(scene.nodes, (n) => {
       if (nodeIds.includes(n.id)) found.set(n.id, n);
@@ -144,6 +157,24 @@ interface RunResult {
   readonly frames: number;
 }
 
+
+/** Variablen, die Blender zusätzlich zu `CHILD_ENV_NAMES` (core) erbt (N1). */
+const BLENDER_ENV_NAMES: readonly string[] = ['DISPLAY', 'OCIO'];
+/** Präfixe für Blender, GPU-Treiber und Mesa (z. B. `BLENDER_USER_SCRIPTS`, `CUDA_VISIBLE_DEVICES`). */
+const BLENDER_ENV_PREFIXES: readonly string[] = ['BLENDER_', 'CUDA_', 'NVIDIA_', '__GLX_', '__EGL_', 'MESA_', 'EGL_', 'LIBGL_', 'VK_', 'OMP_'];
+
+/**
+ * Minimale Umgebung für den Blender-Prozess (N1, Story 16.5): nur Laufzeit-, Grafik- und
+ * Blender-Variablen. Tokens und S3-Schlüssel (`OPENVIDEO_*`, `AWS_*`) bleiben draußen.
+ *
+ * @example
+ * ```ts
+ * blenderEnv({ PATH: '/usr/bin', OPENVIDEO_WORKER_TOKEN: 'secret', CUDA_VISIBLE_DEVICES: '0' }); // { PATH: '/usr/bin', CUDA_VISIBLE_DEVICES: '0' }
+ * ```
+ */
+export function blenderEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  return minimalChildEnv(source, { names: BLENDER_ENV_NAMES, prefixes: BLENDER_ENV_PREFIXES });
+}
 /**
  * Erzeugt das Blender-Backend. Blender wird erst beim ersten Render gesucht; `versions()` ist ohne Blender leer;
  * `check()` braucht kein Blender.
@@ -176,6 +207,8 @@ export function createBlenderBackend(options: BlenderBackendOptions): BlenderBac
       launches++;
       const child = spawn(path, ['-b', '--factory-startup', '-noaudio', '--python-exit-code', '1', '--python', BLENDER_SCRIPT_PATH, '--', jobPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Minimale Umgebung (N1): keine Tokens oder S3-Schlüssel an Blender und seine Python-Skripte.
+        env: blenderEnv(process.env),
       });
       running.add(child);
       const stderr: string[] = [];

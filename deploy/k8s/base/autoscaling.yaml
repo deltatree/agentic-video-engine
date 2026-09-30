@@ -7,6 +7,7 @@
 # worker-cpu skaliert zusätzlich über die CPU-Last (HPA-Metrik "cpu").
 #
 # Die URLs nennen den Namespace "openvideo", weil KEDA im eigenen Namespace läuft.
+# KEDA nutzt das Token der Rolle "metrics": es darf nur GET /v1/queue (Story 16.3).
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
@@ -15,7 +16,7 @@ spec:
   secretTargetRef:
     - parameter: token
       name: openvideo-secrets
-      key: worker-token
+      key: metrics-token
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject

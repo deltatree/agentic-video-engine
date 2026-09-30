@@ -20,3 +20,4 @@ export * from './words.js';
 export * from './voice.js';
 export * from './asr.js';
 export * from './synthesize.js';
+export * from './from-audio.js';

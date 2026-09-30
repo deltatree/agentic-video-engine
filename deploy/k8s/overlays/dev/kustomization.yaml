@@ -1,0 +1,16 @@
+# Schlanker lokaler Stack für `npm run setup -- --runtime kubernetes` (ADR 0029): ein Pod mit CLI, Agent API
+# und Studio (Image openvideo-local), Workspace auf einem PVC, kein Koordinator, keine Worker, kein KEDA, kein S3.
+#
+# Nicht direkt anwenden: Das Setup erzeugt unter ~/.config/openvideo/kubernetes/ ein Overlay, das dieses hier
+# einbindet und Namespace, Image (lokal gebaut, per kustomize `images:`) und das Secret `openvideo-local`
+# (OPENVIDEO_API_TOKEN) setzt. Für den vollen Cluster-Betrieb: overlays/local bzw. overlays/production.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/name: openvideo
+      app.kubernetes.io/part-of: openvideo
+      app.kubernetes.io/instance: openvideo-local
+    includeSelectors: false
+resources:
+  - openvideo.yaml

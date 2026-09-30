@@ -61,6 +61,31 @@ export function wavInfo(bytes: Uint8Array): WavInfo {
 }
 
 /**
+ * Demuxer, die {@link normalizeWav} zulässt (M3, Story 16.5): Container mit eingebetteten Daten,
+ * keine Formate, die andere Dateien oder URLs nachladen (`hls`, `concat`, `dash`, Playlists).
+ * Gleiche Liste wie `AUDIO_INPUT_FORMATS` in `@agentic-video/audio`.
+ */
+export const SPEECH_INPUT_FORMATS: readonly string[] = ['wav', 'w64', 'mp3', 'flac', 'ogg', 'aac', 'aiff', 'caf', 'mov', 'mp4', 'm4a', 'matroska', 'webm', 'avi', 'mpegts', 'mpeg', 'asf', 'flv', 'ac3', 'eac3', 'dts', 'wv', 'amr', 'au', 'ape', 'tta', 'loas'];
+
+/**
+ * Baut die FFmpeg-Argumente von {@link normalizeWav}: Eingabe nur über `file`/`pipe` und nur aus
+ * {@link SPEECH_INPUT_FORMATS}; Metadaten werden entfernt.
+ *
+ * @example
+ * ```ts
+ * normalizeWavArgs('/tmp/raw.wav', '/tmp/voice.wav', 48000); // ['-nostdin', '-y', …]
+ * ```
+ */
+export function normalizeWavArgs(inputPath: string, outputPath: string, sampleRate: number): string[] {
+  return [
+    '-nostdin', '-y', '-loglevel', 'error',
+    '-protocol_whitelist', 'file,pipe', '-format_whitelist', SPEECH_INPUT_FORMATS.join(','),
+    '-i', inputPath,
+    '-map_metadata', '-1', '-ac', '1', '-ar', String(sampleRate), '-c:a', 'pcm_s16le', '-fflags', '+bitexact', '-flags:a', '+bitexact', outputPath,
+  ];
+}
+
+/**
  * Wandelt eine Audiodatei mit FFmpeg in 16-Bit-PCM-WAV, mono, mit fester Abtastrate.
  * Metadaten werden entfernt (`bitexact`), damit gleiche Eingaben gleiche Bytes ergeben.
  *
@@ -71,11 +96,7 @@ export function wavInfo(bytes: Uint8Array): WavInfo {
  */
 export async function normalizeWav(inputPath: string, outputPath: string, sampleRate: number, timeoutMs = 120_000): Promise<void> {
   const { ffmpeg } = locateFfmpeg();
-  await runProcess(
-    ffmpeg,
-    ['-nostdin', '-y', '-loglevel', 'error', '-i', inputPath, '-map_metadata', '-1', '-ac', '1', '-ar', String(sampleRate), '-c:a', 'pcm_s16le', '-fflags', '+bitexact', '-flags:a', '+bitexact', outputPath],
-    { timeoutMs },
-  );
+  await runProcess(ffmpeg, normalizeWavArgs(inputPath, outputPath, sampleRate), { timeoutMs });
 }
 
 /**

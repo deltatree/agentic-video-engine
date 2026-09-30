@@ -1,0 +1,124 @@
+# Ein Pod `openvideo` (CLI, Agent API, Studio): Der Wrapper `openvideo` auf dem Host führt Befehle per
+# `kubectl exec` darin aus (mcp, op, render …) und veröffentlicht Studio/API per `kubectl port-forward`
+# auf 127.0.0.1:7788 (ADR 0029). Sicherheit wie die übrigen Pods: Nutzer 65532, Root-FS read-only,
+# keine Capabilities, kein Service-Account-Token, kein ausgehender Verkehr.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openvideo-workspace
+  labels:
+    app.kubernetes.io/component: openvideo
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openvideo
+  labels:
+    app.kubernetes.io/component: openvideo
+spec:
+  # Der Job-Manager hält Jobs im Workspace: genau ein Pod je Workspace.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: openvideo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: openvideo
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: openvideo
+          # Platzhalter: Das erzeugte Overlay setzt Name und Tag des lokal gebauten Images.
+          image: openvideo-local
+          imagePullPolicy: IfNotPresent
+          args: [serve, --host, 0.0.0.0, --port, "7788"]
+          envFrom:
+            # OPENVIDEO_API_TOKEN, vom Setup erzeugt (Datei api.env im Konfigurationsverzeichnis).
+            - secretRef: { name: openvideo-local }
+          env:
+            - name: OPENVIDEO_WORKSPACE
+              value: /workspace
+            - name: OPENVIDEO_RUNTIME_INFO
+              value: kubernetes, pod of deploy/openvideo
+            # Node sieht die cgroup-Grenzen nicht: Worker-Prozesse passend zum Limit.
+            - name: OPENVIDEO_WORKERS
+              value: "2"
+          ports:
+            - { name: http, containerPort: 7788 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "4", memory: 4Gi }
+          readinessProbe:
+            httpGet: { path: /v1/health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /v1/health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - { name: workspace, mountPath: /workspace }
+            - { name: tmp, mountPath: /tmp }
+            - { name: cache, mountPath: /var/cache/openvideo }
+            - { name: shm, mountPath: /dev/shm }
+      volumes:
+        - name: workspace
+          persistentVolumeClaim: { claimName: openvideo-workspace }
+        - name: tmp
+          emptyDir: { sizeLimit: 4Gi }
+        # Frame-Cache und die gespiegelten Projektordner des Wrappers (host/<id>).
+        - name: cache
+          emptyDir: { sizeLimit: 10Gi }
+        # Chromium braucht mehr Shared Memory als die 64 MiB, die Container sonst haben.
+        - name: shm
+          emptyDir: { medium: Memory, sizeLimit: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openvideo
+  labels:
+    app.kubernetes.io/component: openvideo
+spec:
+  selector:
+    app.kubernetes.io/component: openvideo
+  ports:
+    - { name: http, port: 7788, targetPort: http }
+---
+# Nur Port 7788 hinein, nichts hinaus (keine Asset-URLs aus dem Netz, kein Zugriff auf andere Dienste).
+# `kubectl exec` und `kubectl port-forward` laufen über den Kubelet und sind davon nicht betroffen.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openvideo
+  labels:
+    app.kubernetes.io/component: openvideo
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: openvideo
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - { port: 7788, protocol: TCP }
+  egress: []

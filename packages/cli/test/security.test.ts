@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { OpenVideoError } from '@agentic-video/core';
 import type { NodeEnvironment, NodeEnvironmentOptions } from '@agentic-video/render';
-import { createLocalServices, createProjectDir, helloProject, htmlScriptsAllowed, projectDirOf, runCli, singleProjectWorkspace } from '@agentic-video/cli';
+import { STUDIO_HEADERS, createLocalServices, createProjectDir, helloProject, htmlScriptsAllowed, projectDirOf, runCli, singleProjectWorkspace } from '@agentic-video/cli';
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), 'ov-cli-sec-'));
@@ -101,12 +101,22 @@ describe('A18: Cache-Pfad der lokalen Dienste', () => {
   });
 });
 
-describe('Skripte in HTML nur im Container oder mit --trusted', () => {
-  it('htmlScriptsAllowed', () => {
+describe('Skripte in HTML nur ausdrücklich (Story 16.1, H1)', () => {
+  it('htmlScriptsAllowed: --trusted oder OPENVIDEO_ALLOW_HTML_SCRIPTS=1, nie über das Container-Image', () => {
     expect(htmlScriptsAllowed('container', {})).toBe(false);
     expect(htmlScriptsAllowed('trusted', {})).toBe(true);
-    expect(htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-studio:1' })).toBe(true);
-    expect(htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: '' })).toBe(false);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-studio:1' })).toBe(false);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: '1' })).toBe(true);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: 'true' })).toBe(false);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: '0' })).toBe(false);
+  });
+
+  it('die Dienste im Image (OPENVIDEO_CONTAINER_IMAGE gesetzt) erlauben keine Skripte', async () => {
+    const made: FakeEnv[] = [];
+    const services = await createLocalServices({ workspaceDir: tmp(), createEnvironment: fakeFactory(made), env: { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-render-cpu:1' } });
+    await services.withEnvironment('/a', project(1), () => Promise.resolve());
+    expect(made[0]?.options.allowHtmlScripts).toBe(false);
+    await services.dispose();
   });
 });
 
@@ -190,6 +200,30 @@ describe('B1 und B2: dev/studio mit Token, serve nicht offen im Netz', () => {
     expect(token?.length).toBeGreaterThanOrEqual(32);
     expect((await fetch(`${api ?? ''}/v1/operations`)).status).toBe(401);
     expect((await fetch(`${api ?? ''}/v1/operations`, { headers: { authorization: `Bearer ${token ?? ''}` } })).status).toBe(200);
+    stop();
+    expect(await done).toBe(0);
+  });
+
+  it('Studio-Dateien kommen mit CSP frame-ancestors none und ohne Referer (Story 16.7, N3)', async () => {
+    const studio = tmp();
+    writeFileSync(join(studio, 'index.html'), '<!doctype html><title>Studio</title>');
+    let stdout = '';
+    let stop: () => void = () => undefined;
+    const stopped = new Promise<void>((r) => {
+      stop = r;
+    });
+    const done = runCli(['serve', '--port', '0', '--workspace', tmp()], { stdout: (t) => (stdout += t), stderr: () => undefined, cwd: tmp(), env: { PATH: process.env['PATH'], OPENVIDEO_STUDIO_DIR: studio }, stop: stopped });
+    for (let i = 0; i < 200 && !stdout.includes('/v1/operations'); i++) await new Promise((r) => setTimeout(r, 25));
+    const api = /(http:\/\/127\.0\.0\.1:\d+)\/v1\/operations/u.exec(stdout)?.[1];
+    const res = await fetch(`${api ?? ''}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
+    expect(res.headers.get('content-security-policy')).toContain("script-src 'self'");
+    expect(res.headers.get('content-security-policy')).toContain("object-src 'none'");
+    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(STUDIO_HEADERS['content-security-policy']).not.toContain("'unsafe-eval'");
     stop();
     expect(await done).toBe(0);
   });

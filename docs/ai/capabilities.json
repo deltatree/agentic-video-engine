@@ -18,6 +18,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -28,7 +29,58 @@
         "clip",
         "children"
       ],
-      "required": []
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "clip": "boolean",
+        "children": "node[]"
+      },
+      "required": [],
+      "example": {
+        "id": "badge",
+        "type": "group",
+        "x": 220,
+        "y": 148,
+        "children": [
+          {
+            "id": "badge-bg",
+            "type": "rect",
+            "width": 200,
+            "height": 64,
+            "cornerRadius": 32,
+            "fill": "#FF5A1F"
+          },
+          {
+            "id": "badge-label",
+            "type": "text",
+            "text": "NEW",
+            "y": 12,
+            "width": 200,
+            "textAlign": "center",
+            "fontSize": 32,
+            "fontWeight": 700,
+            "fill": "#FFFFFF"
+          }
+        ]
+      }
     },
     "layer": {
       "description": "Compositing boundary: always rendered as its own layer.",
@@ -45,6 +97,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -58,7 +111,57 @@
         "motionBlur",
         "children"
       ],
-      "required": []
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "colorSpace": "\"srgb\" | \"linear\" | \"rec709\"",
+        "crop": "{ x, y, width, height }",
+        "effects": "({ type: \"blur\", radius } | { type: \"color-grade\", exposure?, contrast?, saturation?, temperature?, tint?, lift?, gamma?, gain? } | { type: \"lut\", asset, intensity? } | { type: \"glow\", radius, intensity, threshold? } | { type: \"vignette\", amount, softness? } | { type: \"grain\", amount, seed? } | { type: \"chromatic-aberration\", amount } | { type: \"color-matrix\", matrix })[]",
+        "motionBlur": "{ samples, shutter }",
+        "children": "node[]"
+      },
+      "required": [],
+      "example": {
+        "id": "glow-layer",
+        "type": "layer",
+        "blendMode": "screen",
+        "effects": [
+          {
+            "type": "glow",
+            "radius": 16,
+            "intensity": 0.8
+          }
+        ],
+        "children": [
+          {
+            "id": "orb",
+            "type": "ellipse",
+            "x": 220,
+            "y": 80,
+            "width": 200,
+            "height": 200,
+            "fill": "#4F8CFF"
+          }
+        ]
+      }
     },
     "composition-ref": {
       "description": "Nested composition, evaluated at the remapped local time.",
@@ -75,6 +178,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -84,9 +188,126 @@
         "height",
         "composition"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "composition": "id"
+      },
       "required": [
         "composition"
-      ]
+      ],
+      "example": {
+        "id": "intro-ref",
+        "type": "composition-ref",
+        "composition": "intro",
+        "timing": {
+          "from": 0,
+          "duration": "2s",
+          "speed": 1
+        }
+      }
+    },
+    "sequence": {
+      "description": "Plays its children one after another (each needs timing.duration, or is a composition-ref). Consecutive children overlap by the transition duration and cross over automatically.",
+      "properties": [
+        "visible",
+        "locked",
+        "timing",
+        "transition",
+        "renderer",
+        "x",
+        "y",
+        "rotation",
+        "scale",
+        "skew",
+        "origin",
+        "opacity",
+        "zIndex",
+        "blendMode",
+        "filters",
+        "shadow",
+        "mask",
+        "motionPath",
+        "width",
+        "height",
+        "between",
+        "transitions",
+        "children"
+      ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "between": "{ type: \"cut\" } | { type, duration, ease? }",
+        "transitions": "({ type: \"cut\" } | { type, duration, ease? })[]",
+        "children": "node[]"
+      },
+      "required": [],
+      "example": {
+        "id": "slides",
+        "type": "sequence",
+        "between": {
+          "type": "fade",
+          "duration": "0.5s"
+        },
+        "children": [
+          {
+            "id": "slide-1",
+            "type": "rect",
+            "width": 640,
+            "height": 360,
+            "fill": "#1B2A4A",
+            "timing": {
+              "duration": "1.25s"
+            }
+          },
+          {
+            "id": "slide-2",
+            "type": "rect",
+            "width": 640,
+            "height": 360,
+            "fill": "#FF5A1F",
+            "timing": {
+              "duration": "1.25s"
+            }
+          }
+        ]
+      }
     },
     "component": {
       "description": "Reusable component expanded at evaluation time.",
@@ -103,6 +324,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -112,9 +334,43 @@
         "props",
         "children"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "component": "string",
+        "props": "Record<string, unknown>",
+        "children": "node[]"
+      },
       "required": [
         "component"
-      ]
+      ],
+      "example": {
+        "id": "name-tag",
+        "type": "component",
+        "component": "LowerThird",
+        "props": {
+          "name": "Ada Lovelace",
+          "role": "Engineer"
+        },
+        "x": 40,
+        "y": 250
+      }
     },
     "rect": {
       "description": "Rectangle, optionally rounded.",
@@ -131,6 +387,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -149,10 +406,74 @@
         "height",
         "cornerRadius"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "strokeCap": "\"butt\" | \"round\" | \"square\"",
+        "strokeJoin": "\"miter\" | \"round\" | \"bevel\"",
+        "strokeDash": "(number (>= 0))[]",
+        "trimStart": "number (0..1, animatable)",
+        "trimEnd": "number (0..1, animatable)",
+        "trimOffset": "number (animatable)",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "cornerRadius": "number (>= 0, animatable) | [number, number, number, number]"
+      },
       "required": [
         "width",
         "height"
-      ]
+      ],
+      "example": {
+        "id": "card",
+        "type": "rect",
+        "x": 120,
+        "y": 80,
+        "width": 400,
+        "height": 200,
+        "cornerRadius": 24,
+        "fill": {
+          "type": "linear",
+          "stops": [
+            {
+              "offset": 0,
+              "color": "#FF5A1F"
+            },
+            {
+              "offset": 1,
+              "color": "#8A2BE2"
+            }
+          ],
+          "start": {
+            "x": 0,
+            "y": 0
+          },
+          "end": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "stroke": "#FFFFFF",
+        "strokeWidth": 4
+      }
     },
     "ellipse": {
       "description": "Ellipse inside the box. Equal width and height = circle.",
@@ -169,6 +490,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -186,10 +508,62 @@
         "width",
         "height"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "strokeCap": "\"butt\" | \"round\" | \"square\"",
+        "strokeJoin": "\"miter\" | \"round\" | \"bevel\"",
+        "strokeDash": "(number (>= 0))[]",
+        "trimStart": "number (0..1, animatable)",
+        "trimEnd": "number (0..1, animatable)",
+        "trimOffset": "number (animatable)",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)"
+      },
       "required": [
         "width",
         "height"
-      ]
+      ],
+      "example": {
+        "id": "dot",
+        "type": "ellipse",
+        "x": {
+          "$keyframes": [
+            {
+              "t": 0,
+              "v": 40
+            },
+            {
+              "t": "1s",
+              "v": 520,
+              "ease": "easeInOutCubic"
+            }
+          ]
+        },
+        "y": 140,
+        "width": 80,
+        "height": 80,
+        "fill": "#FF5A1F"
+      }
     },
     "line": {
       "description": "Straight line between two points.",
@@ -206,6 +580,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -223,10 +598,69 @@
         "from",
         "to"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "strokeCap": "\"butt\" | \"round\" | \"square\"",
+        "strokeJoin": "\"miter\" | \"round\" | \"bevel\"",
+        "strokeDash": "(number (>= 0))[]",
+        "trimStart": "number (0..1, animatable)",
+        "trimEnd": "number (0..1, animatable)",
+        "trimOffset": "number (animatable)",
+        "from": "{ x, y } (animatable)",
+        "to": "{ x, y } (animatable)"
+      },
       "required": [
         "from",
         "to"
-      ]
+      ],
+      "example": {
+        "id": "underline",
+        "type": "line",
+        "from": {
+          "x": 80,
+          "y": 180
+        },
+        "to": {
+          "x": 560,
+          "y": 180
+        },
+        "stroke": "#FFFFFF",
+        "strokeWidth": 8,
+        "strokeCap": "round",
+        "trimEnd": {
+          "$keyframes": [
+            {
+              "t": 0,
+              "v": 0
+            },
+            {
+              "t": "1s",
+              "v": 1,
+              "ease": "easeOutCubic"
+            }
+          ]
+        }
+      }
     },
     "polyline": {
       "description": "Open line through points.",
@@ -243,6 +677,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -259,9 +694,64 @@
         "trimOffset",
         "points"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "strokeCap": "\"butt\" | \"round\" | \"square\"",
+        "strokeJoin": "\"miter\" | \"round\" | \"bevel\"",
+        "strokeDash": "(number (>= 0))[]",
+        "trimStart": "number (0..1, animatable)",
+        "trimEnd": "number (0..1, animatable)",
+        "trimOffset": "number (animatable)",
+        "points": "([number, number])[] (animatable)"
+      },
       "required": [
         "points"
-      ]
+      ],
+      "example": {
+        "id": "trend",
+        "type": "polyline",
+        "points": [
+          [
+            40,
+            300
+          ],
+          [
+            200,
+            220
+          ],
+          [
+            360,
+            260
+          ],
+          [
+            600,
+            80
+          ]
+        ],
+        "stroke": "#4F8CFF",
+        "strokeWidth": 6,
+        "strokeJoin": "round"
+      }
     },
     "polygon": {
       "description": "Closed shape through points.",
@@ -278,6 +768,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -294,9 +785,58 @@
         "trimOffset",
         "points"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "strokeCap": "\"butt\" | \"round\" | \"square\"",
+        "strokeJoin": "\"miter\" | \"round\" | \"bevel\"",
+        "strokeDash": "(number (>= 0))[]",
+        "trimStart": "number (0..1, animatable)",
+        "trimEnd": "number (0..1, animatable)",
+        "trimOffset": "number (animatable)",
+        "points": "([number, number])[] (animatable)"
+      },
       "required": [
         "points"
-      ]
+      ],
+      "example": {
+        "id": "triangle",
+        "type": "polygon",
+        "points": [
+          [
+            320,
+            60
+          ],
+          [
+            520,
+            300
+          ],
+          [
+            120,
+            300
+          ]
+        ],
+        "fill": "#FFC857"
+      }
     },
     "path": {
       "description": "Vector path from SVG path data.",
@@ -313,6 +853,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -330,9 +871,49 @@
         "d",
         "fillRule"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "strokeCap": "\"butt\" | \"round\" | \"square\"",
+        "strokeJoin": "\"miter\" | \"round\" | \"bevel\"",
+        "strokeDash": "(number (>= 0))[]",
+        "trimStart": "number (0..1, animatable)",
+        "trimEnd": "number (0..1, animatable)",
+        "trimOffset": "number (animatable)",
+        "d": "string (animatable)",
+        "fillRule": "\"nonzero\" | \"evenodd\""
+      },
       "required": [
         "d"
-      ]
+      ],
+      "example": {
+        "id": "check",
+        "type": "path",
+        "d": "M 200 180 L 280 260 L 440 100",
+        "stroke": "#3DDC97",
+        "strokeWidth": 16,
+        "strokeCap": "round",
+        "strokeJoin": "round"
+      }
     },
     "text": {
       "description": "Single-style text with wrapping, shaping and per-unit animation.",
@@ -349,6 +930,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -377,9 +959,72 @@
         "textAnimation",
         "text"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fontFamily": "string",
+        "fontSize": "number (>= 0, animatable)",
+        "fontWeight": "number (1..1000, animatable)",
+        "fontStyle": "\"normal\" | \"italic\"",
+        "fontStretch": "number (>= 1, animatable)",
+        "fontFeatures": "Record<string, integer (>= 0)>",
+        "fontVariations": "Record<string, number (animatable)>",
+        "letterSpacing": "number (animatable)",
+        "lineHeight": "number (>= 0, animatable)",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "decoration": "\"none\" | \"underline\" | \"line-through\" | \"overline\"",
+        "background": "{ color, paddingX?, paddingY?, radius?, perLine? }",
+        "textAlign": "\"left\" | \"center\" | \"right\" | \"justify\" | \"start\" | \"end\"",
+        "direction": "\"ltr\" | \"rtl\" | \"auto\"",
+        "width": "number (>= 0, animatable)",
+        "maxLines": "integer (>= 1)",
+        "ellipsis": "string",
+        "textPath": "{ d, offset? }",
+        "textAnimation": "{ unit, start?, stagger?, duration?, ease?, from, order?, starts? }",
+        "text": "string (animatable)"
+      },
       "required": [
         "text"
-      ]
+      ],
+      "example": {
+        "id": "headline",
+        "type": "text",
+        "text": "Hello OpenVideo",
+        "x": 40,
+        "y": 140,
+        "width": 560,
+        "textAlign": "center",
+        "fontSize": 56,
+        "fontWeight": 700,
+        "fill": "#F5F7FF",
+        "textAnimation": {
+          "unit": "char",
+          "stagger": 2,
+          "duration": 12,
+          "from": {
+            "opacity": 0,
+            "y": 20
+          }
+        }
+      }
     },
     "rich-text": {
       "description": "Text with differently styled spans.",
@@ -396,6 +1041,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -424,9 +1070,71 @@
         "textAnimation",
         "spans"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "fontFamily": "string",
+        "fontSize": "number (>= 0, animatable)",
+        "fontWeight": "number (1..1000, animatable)",
+        "fontStyle": "\"normal\" | \"italic\"",
+        "fontStretch": "number (>= 1, animatable)",
+        "fontFeatures": "Record<string, integer (>= 0)>",
+        "fontVariations": "Record<string, number (animatable)>",
+        "letterSpacing": "number (animatable)",
+        "lineHeight": "number (>= 0, animatable)",
+        "fill": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "stroke": "color (animatable) | { type, stops, start?, end?, center?, radius?, angle?, units? }",
+        "strokeWidth": "number (>= 0, animatable)",
+        "decoration": "\"none\" | \"underline\" | \"line-through\" | \"overline\"",
+        "background": "{ color, paddingX?, paddingY?, radius?, perLine? }",
+        "textAlign": "\"left\" | \"center\" | \"right\" | \"justify\" | \"start\" | \"end\"",
+        "direction": "\"ltr\" | \"rtl\" | \"auto\"",
+        "width": "number (>= 0, animatable)",
+        "maxLines": "integer (>= 1)",
+        "ellipsis": "string",
+        "textPath": "{ d, offset? }",
+        "textAnimation": "{ unit, start?, stagger?, duration?, ease?, from, order?, starts? }",
+        "spans": "({ text, fontFamily?, fontSize?, fontWeight?, fontStyle?, fontStretch?, fontFeatures?, fontVariations?, letterSpacing?, lineHeight?, fill?, stroke?, strokeWidth?, decoration? })[]"
+      },
       "required": [
         "spans"
-      ]
+      ],
+      "example": {
+        "id": "tagline",
+        "type": "rich-text",
+        "x": 40,
+        "y": 150,
+        "width": 560,
+        "textAlign": "center",
+        "fontSize": 44,
+        "fill": "#F5F7FF",
+        "spans": [
+          {
+            "text": "Video as "
+          },
+          {
+            "text": "code",
+            "fill": "#FF5A1F",
+            "fontWeight": 800
+          }
+        ]
+      }
     },
     "image": {
       "description": "Raster image from an asset.",
@@ -443,6 +1151,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -454,9 +1163,44 @@
         "fit",
         "smoothing"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "asset": "id",
+        "fit": "\"fill\" | \"contain\" | \"cover\" | \"none\"",
+        "smoothing": "\"linear\" | \"nearest\" | \"cubic\""
+      },
       "required": [
         "asset"
-      ]
+      ],
+      "example": {
+        "id": "logo-image",
+        "type": "image",
+        "asset": "logo",
+        "x": 220,
+        "y": 80,
+        "width": 200,
+        "height": 200,
+        "fit": "contain"
+      }
     },
     "video": {
       "description": "Video from an asset; its audio joins the mix unless muted.",
@@ -473,6 +1217,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -488,9 +1233,47 @@
         "volume",
         "muted"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "asset": "id",
+        "fit": "\"fill\" | \"contain\" | \"cover\" | \"none\"",
+        "startFrom": "time",
+        "playbackRate": "number (> 0)",
+        "loop": "boolean",
+        "volume": "number (>= 0, animatable)",
+        "muted": "boolean"
+      },
       "required": [
         "asset"
-      ]
+      ],
+      "example": {
+        "id": "clip-video",
+        "type": "video",
+        "asset": "clip",
+        "width": 640,
+        "height": 360,
+        "fit": "cover",
+        "muted": true
+      }
     },
     "svg": {
       "description": "SVG from an asset or inline markup.",
@@ -507,6 +1290,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -518,7 +1302,41 @@
         "markup",
         "fit"
       ],
-      "required": []
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "asset": "id",
+        "markup": "string",
+        "fit": "\"fill\" | \"contain\" | \"cover\" | \"none\""
+      },
+      "required": [],
+      "example": {
+        "id": "star",
+        "type": "svg",
+        "x": 270,
+        "y": 130,
+        "width": 100,
+        "height": 100,
+        "markup": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7z\" fill=\"#FFC857\"/></svg>"
+      }
     },
     "sprite": {
       "description": "Frame from a sprite sheet grid.",
@@ -535,6 +1353,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -550,11 +1369,53 @@
         "frame",
         "loop"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "asset": "id",
+        "columns": "integer (>= 1)",
+        "rows": "integer (>= 1)",
+        "frameCount": "integer (>= 1)",
+        "frameRate": "number (> 0)",
+        "frame": "number (>= 0, animatable)",
+        "loop": "boolean"
+      },
       "required": [
         "asset",
         "columns",
         "rows"
-      ]
+      ],
+      "example": {
+        "id": "walker",
+        "type": "sprite",
+        "asset": "walk-sheet",
+        "columns": 4,
+        "rows": 1,
+        "frameRate": 8,
+        "loop": true,
+        "x": 270,
+        "y": 130,
+        "width": 100,
+        "height": 100
+      }
     },
     "lottie": {
       "description": "Lottie animation, frame-exact.",
@@ -571,6 +1432,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -584,11 +1446,48 @@
         "loop",
         "fit"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "asset": "id",
+        "speed": "number (> 0)",
+        "frameOffset": "number",
+        "loop": "boolean",
+        "fit": "\"fill\" | \"contain\" | \"cover\" | \"none\""
+      },
       "required": [
         "width",
         "height",
         "asset"
-      ]
+      ],
+      "example": {
+        "id": "spinner-anim",
+        "type": "lottie",
+        "asset": "spinner",
+        "x": 220,
+        "y": 80,
+        "width": 200,
+        "height": 200,
+        "loop": true
+      }
     },
     "shader": {
       "description": "Custom shader filling the box. Uniforms `time`, `frame`, `resolution` are provided.",
@@ -605,6 +1504,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -616,10 +1516,42 @@
         "glsl",
         "uniforms"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "sksl": "string",
+        "glsl": "string",
+        "uniforms": "Record<string, (number | number[]) (animatable)>"
+      },
       "required": [
         "width",
         "height"
-      ]
+      ],
+      "example": {
+        "id": "plasma",
+        "type": "shader",
+        "width": 640,
+        "height": 360,
+        "sksl": "uniform float time;\nuniform float2 resolution;\nhalf4 main(float2 coord) {\n  float2 uv = coord / resolution;\n  return half4(half(uv.x), half(uv.y), half(0.5 + 0.5 * sin(time * 3.0)), 1.0);\n}"
+      }
     },
     "particles": {
       "description": "Stateless 2D particle system: particle state is a pure function of time and seed.",
@@ -636,6 +1568,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -656,11 +1589,79 @@
         "shape",
         "emitDuration"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "count": "integer (1..100000)",
+        "seed": "integer",
+        "emitter": "{ x, y, radius?, shape? }",
+        "lifetime": "{ min, max }",
+        "speed": "{ min, max }",
+        "angle": "{ min, max }",
+        "gravity": "{ x, y }",
+        "size": "{ start, end }",
+        "color": "{ start, end }",
+        "fade": "{ start, end }",
+        "shape": "\"circle\" | \"square\" | \"spark\"",
+        "emitDuration": "time"
+      },
       "required": [
         "width",
         "height",
         "count"
-      ]
+      ],
+      "example": {
+        "id": "sparks",
+        "type": "particles",
+        "width": 640,
+        "height": 360,
+        "count": 200,
+        "seed": 7,
+        "emitter": {
+          "x": 320,
+          "y": 180,
+          "radius": 10,
+          "shape": "circle"
+        },
+        "lifetime": {
+          "min": 0.5,
+          "max": 1.5
+        },
+        "speed": {
+          "min": 60,
+          "max": 180
+        },
+        "angle": {
+          "min": 0,
+          "max": 360
+        },
+        "size": {
+          "start": 6,
+          "end": 1
+        },
+        "color": {
+          "start": "#FFC857",
+          "end": "#FF5A1F"
+        }
+      }
     },
     "html": {
       "description": "HTML/CSS/SVG/Canvas/WebGL content rendered by Chromium.",
@@ -677,6 +1678,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -689,14 +1691,51 @@
         "assets",
         "background"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "html": "string",
+        "css": "string",
+        "assets": "id[]",
+        "background": "color"
+      },
       "required": [
         "width",
         "height",
         "html"
-      ]
+      ],
+      "example": {
+        "id": "html-card",
+        "type": "html",
+        "x": 120,
+        "y": 80,
+        "width": 400,
+        "height": 200,
+        "html": "<div class=\"card\">Hello from HTML</div>",
+        "css": ".card { font: 600 40px sans-serif; color: #FFFFFF; padding: 72px 40px; }",
+        "background": "#1B2A4A"
+      }
     },
     "subtitles": {
-      "description": "Animated captions from a subtitle track.",
+      "description": "Animated captions from a subtitle track. textAnimation animates each word from its own start time.",
       "properties": [
         "visible",
         "locked",
@@ -710,6 +1749,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -728,11 +1768,57 @@
         "speakerStyles",
         "safeArea",
         "stroke",
-        "strokeWidth"
+        "strokeWidth",
+        "textAnimation"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "track": "id",
+        "fontFamily": "string",
+        "fontSize": "number (>= 1, animatable)",
+        "fontWeight": "number (1..1000)",
+        "color": "color (animatable)",
+        "highlightColor": "color (animatable)",
+        "box": "{ color, paddingX?, paddingY?, radius? }",
+        "position": "\"bottom\" | \"top\" | \"center\" | \"custom\"",
+        "maxWidth": "number (>= 1)",
+        "style": "\"plain\" | \"word-highlight\" | \"karaoke\" | \"pop\" | \"fade\" | \"typewriter\"",
+        "speakerStyles": "Record<string, { color?, fontFamily?, box? }>",
+        "safeArea": "number (0..0.5)",
+        "stroke": "color",
+        "strokeWidth": "number (>= 0)",
+        "textAnimation": "{ unit, start?, stagger?, duration?, ease?, from, order?, starts? }"
+      },
       "required": [
         "track"
-      ]
+      ],
+      "example": {
+        "id": "captions-view",
+        "type": "subtitles",
+        "track": "captions",
+        "fontSize": 36,
+        "style": "karaoke",
+        "color": "#FFFFFF",
+        "highlightColor": "#FFC857",
+        "position": "bottom"
+      }
     },
     "scene3d": {
       "description": "Real-time 3D scene rendered with Three.js.",
@@ -749,6 +1835,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -765,12 +1852,99 @@
         "children",
         "backend",
         "antialias",
+        "textureDownscale",
         "postprocessing"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "camera": "id",
+        "background": "color (animatable)",
+        "environment": "{ hdri?, preset?, intensity?, showBackground? }",
+        "fog": "{ color, near, far }",
+        "shadows": "boolean",
+        "toneMapping": "\"none\" | \"aces\" | \"agx\" | \"neutral\"",
+        "children": "node[]",
+        "backend": "\"auto\" | \"webgpu\" | \"webgl2\"",
+        "antialias": "boolean",
+        "textureDownscale": "boolean",
+        "postprocessing": "{ bloom?, depthOfField?, colorGrading?, vignette? }"
+      },
       "required": [
         "width",
         "height"
-      ]
+      ],
+      "example": {
+        "id": "stage",
+        "type": "scene3d",
+        "width": 640,
+        "height": 360,
+        "camera": "cam",
+        "background": "#0B0D12",
+        "children": [
+          {
+            "id": "cam",
+            "type": "camera3d",
+            "position": [
+              0,
+              1.5,
+              5
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "fov": 45
+          },
+          {
+            "id": "key",
+            "type": "light3d",
+            "kind": "directional",
+            "position": [
+              3,
+              5,
+              4
+            ],
+            "intensity": 2.5,
+            "castShadow": true
+          },
+          {
+            "id": "cube",
+            "type": "mesh3d",
+            "geometry": {
+              "type": "box"
+            },
+            "material": {
+              "color": "#FF5A1F",
+              "roughness": 0.4
+            },
+            "rotation": [
+              20,
+              35,
+              0
+            ]
+          }
+        ]
+      }
     },
     "blender": {
       "description": "Offline 3D scene rendered with Blender (Cycles or Eevee).",
@@ -787,6 +1961,7 @@
         "skew",
         "origin",
         "opacity",
+        "zIndex",
         "blendMode",
         "filters",
         "shadow",
@@ -808,10 +1983,96 @@
         "motionBlur",
         "volume"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "x": "number (animatable)",
+        "y": "number (animatable)",
+        "rotation": "number (animatable)",
+        "scale": "{ x, y } (animatable)",
+        "skew": "{ x, y } (animatable)",
+        "origin": "{ x, y } (animatable)",
+        "opacity": "number (0..1, animatable)",
+        "zIndex": "number (animatable)",
+        "blendMode": "\"normal\" | \"multiply\" | \"screen\" | \"overlay\" | \"darken\" | \"lighten\" | \"color-dodge\" | \"color-burn\" | \"hard-light\" | \"soft-light\" | \"difference\" | \"exclusion\" | \"hue\" | \"saturation\" | \"color\" | \"luminosity\" | \"add\"",
+        "filters": "({ type: \"blur\", radius } | { type: \"brightness\", amount } | { type: \"contrast\", amount } | { type: \"saturate\", amount } | { type: \"grayscale\", amount } | { type: \"sepia\", amount } | { type: \"invert\", amount } | { type: \"hue-rotate\", degrees } | { type: \"color-matrix\", matrix })[]",
+        "shadow": "{ color, blur?, offsetX?, offsetY? }",
+        "mask": "{ node, mode?, invert? }",
+        "motionPath": "{ d, progress, autoRotate? }",
+        "width": "number (>= 0, animatable)",
+        "height": "number (>= 0, animatable)",
+        "camera": "id",
+        "background": "color (animatable)",
+        "environment": "{ hdri?, preset?, intensity?, showBackground? }",
+        "fog": "{ color, near, far }",
+        "shadows": "boolean",
+        "toneMapping": "\"none\" | \"aces\" | \"agx\" | \"neutral\"",
+        "children": "node[]",
+        "engine": "\"cycles\" | \"eevee\"",
+        "samples": "integer (1..65536)",
+        "pass": "\"combined\" | \"depth\" | \"normal\" | \"object-mask\"",
+        "maskObject": "id",
+        "motionBlur": "boolean",
+        "volume": "{ density, color?, anisotropy? }"
+      },
       "required": [
         "width",
         "height"
-      ]
+      ],
+      "example": {
+        "id": "hero-shot",
+        "type": "blender",
+        "width": 640,
+        "height": 360,
+        "engine": "eevee",
+        "samples": 16,
+        "camera": "cam",
+        "children": [
+          {
+            "id": "cam",
+            "type": "camera3d",
+            "position": [
+              0,
+              1.5,
+              5
+            ],
+            "target": [
+              0,
+              0,
+              0
+            ],
+            "fov": 45
+          },
+          {
+            "id": "key",
+            "type": "light3d",
+            "kind": "directional",
+            "position": [
+              3,
+              5,
+              4
+            ],
+            "intensity": 2.5,
+            "castShadow": true
+          },
+          {
+            "id": "ball",
+            "type": "mesh3d",
+            "geometry": {
+              "type": "sphere",
+              "radius": 1
+            },
+            "material": {
+              "color": "#4F8CFF",
+              "metalness": 0.2,
+              "roughness": 0.3
+            }
+          }
+        ]
+      }
     },
     "camera3d": {
       "description": "3D camera.",
@@ -832,7 +2093,39 @@
         "target",
         "focusDistance"
       ],
-      "required": []
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "position": "[number, number, number] (animatable)",
+        "rotation": "[number, number, number] (animatable)",
+        "scale": "[number, number, number] (animatable)",
+        "projection": "\"perspective\" | \"orthographic\"",
+        "fov": "number (1..179, animatable)",
+        "near": "number (> 0)",
+        "far": "number (> 0)",
+        "zoom": "number (>= 0, animatable)",
+        "target": "[number, number, number] (animatable)",
+        "focusDistance": "number (>= 0, animatable)"
+      },
+      "required": [],
+      "example": {
+        "id": "cam",
+        "type": "camera3d",
+        "position": [
+          0,
+          1.5,
+          5
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "fov": 45
+      }
     },
     "light3d": {
       "description": "3D light.",
@@ -855,9 +2148,40 @@
         "penumbra",
         "distance"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "position": "[number, number, number] (animatable)",
+        "rotation": "[number, number, number] (animatable)",
+        "scale": "[number, number, number] (animatable)",
+        "kind": "\"ambient\" | \"directional\" | \"point\" | \"spot\" | \"hemisphere\"",
+        "color": "color (animatable)",
+        "groundColor": "color (animatable)",
+        "intensity": "number (>= 0, animatable)",
+        "target": "[number, number, number] (animatable)",
+        "castShadow": "boolean",
+        "angle": "number (0..90, animatable)",
+        "penumbra": "number (0..1, animatable)",
+        "distance": "number (>= 0, animatable)"
+      },
       "required": [
         "kind"
-      ]
+      ],
+      "example": {
+        "id": "key",
+        "type": "light3d",
+        "kind": "directional",
+        "position": [
+          3,
+          5,
+          4
+        ],
+        "intensity": 2.5,
+        "castShadow": true
+      }
     },
     "mesh3d": {
       "description": "3D mesh with built-in geometry.",
@@ -875,9 +2199,57 @@
         "castShadow",
         "receiveShadow"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "position": "[number, number, number] (animatable)",
+        "rotation": "[number, number, number] (animatable)",
+        "scale": "[number, number, number] (animatable)",
+        "geometry": "{ type: \"box\", width?, height?, depth? } | { type: \"sphere\", radius?, segments? } | { type: \"plane\", width?, height? } | { type: \"cylinder\", radiusTop?, radiusBottom?, height?, segments? } | { type: \"cone\", radius?, height?, segments? } | { type: \"torus\", radius?, tube? } | { type: \"torus-knot\", radius?, tube?, p?, q? } | { type: \"capsule\", radius?, length? }",
+        "material": "{ type?, color?, metalness?, roughness?, emissive?, emissiveIntensity?, opacity?, transmission?, clearcoat?, envMapIntensity?, wireframe?, map?, normalMap?, roughnessMap?, vertexShader?, fragmentShader?, uniforms? }",
+        "castShadow": "boolean",
+        "receiveShadow": "boolean"
+      },
       "required": [
         "geometry"
-      ]
+      ],
+      "example": {
+        "id": "spinning-cube",
+        "type": "mesh3d",
+        "geometry": {
+          "type": "box",
+          "width": 1,
+          "height": 1,
+          "depth": 1
+        },
+        "material": {
+          "color": "#FF5A1F",
+          "roughness": 0.4
+        },
+        "rotation": {
+          "$keyframes": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "t": "2s",
+              "v": [
+                0,
+                180,
+                0
+              ]
+            }
+          ]
+        }
+      }
     },
     "model3d": {
       "description": "glTF, GLB or OBJ model.",
@@ -897,9 +2269,40 @@
         "castShadow",
         "receiveShadow"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "position": "[number, number, number] (animatable)",
+        "rotation": "[number, number, number] (animatable)",
+        "scale": "[number, number, number] (animatable)",
+        "asset": "id",
+        "animation": "{ clip, offset?, speed?, loop? }",
+        "morphTargets": "Record<string, number (0..1, animatable)>",
+        "material": "{ type?, color?, metalness?, roughness?, emissive?, emissiveIntensity?, opacity?, transmission?, clearcoat?, envMapIntensity?, wireframe?, map?, normalMap?, roughnessMap?, vertexShader?, fragmentShader?, uniforms? }",
+        "castShadow": "boolean",
+        "receiveShadow": "boolean"
+      },
       "required": [
         "asset"
-      ]
+      ],
+      "example": {
+        "id": "robot-model",
+        "type": "model3d",
+        "asset": "robot",
+        "position": [
+          0,
+          -1,
+          0
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ]
+      }
     },
     "instances3d": {
       "description": "Many instances of one mesh.",
@@ -919,11 +2322,50 @@
         "layout",
         "spin"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "position": "[number, number, number] (animatable)",
+        "rotation": "[number, number, number] (animatable)",
+        "scale": "[number, number, number] (animatable)",
+        "geometry": "{ type: \"box\", width?, height?, depth? } | { type: \"sphere\", radius?, segments? } | { type: \"plane\", width?, height? } | { type: \"cylinder\", radiusTop?, radiusBottom?, height?, segments? } | { type: \"cone\", radius?, height?, segments? } | { type: \"torus\", radius?, tube? } | { type: \"torus-knot\", radius?, tube?, p?, q? } | { type: \"capsule\", radius?, length? }",
+        "material": "{ type?, color?, metalness?, roughness?, emissive?, emissiveIntensity?, opacity?, transmission?, clearcoat?, envMapIntensity?, wireframe?, map?, normalMap?, roughnessMap?, vertexShader?, fragmentShader?, uniforms? }",
+        "count": "integer (1..1000000)",
+        "seed": "integer",
+        "layout": "{ type: \"grid\", columns, spacing } | { type: \"random-box\", size, scale? } | { type: \"random-sphere\", radius, scale? } | { type: \"explicit\", transforms }",
+        "spin": "number (animatable)"
+      },
       "required": [
         "geometry",
         "count",
         "layout"
-      ]
+      ],
+      "example": {
+        "id": "dot-field",
+        "type": "instances3d",
+        "geometry": {
+          "type": "sphere",
+          "radius": 0.08
+        },
+        "material": {
+          "color": "#4F8CFF"
+        },
+        "count": 100,
+        "seed": 3,
+        "layout": {
+          "type": "grid",
+          "columns": 10,
+          "spacing": 0.3
+        },
+        "position": [
+          -1.35,
+          -1.35,
+          0
+        ]
+      }
     },
     "particles3d": {
       "description": "Stateless 3D particle system.",
@@ -946,9 +2388,55 @@
         "color",
         "additive"
       ],
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "position": "[number, number, number] (animatable)",
+        "rotation": "[number, number, number] (animatable)",
+        "scale": "[number, number, number] (animatable)",
+        "count": "integer (1..1000000)",
+        "seed": "integer",
+        "emitter": "{ shape, size? }",
+        "lifetime": "{ min, max }",
+        "speed": "{ min, max }",
+        "gravity": "[number, number, number]",
+        "size": "{ start, end }",
+        "color": "{ start, end }",
+        "additive": "boolean"
+      },
       "required": [
         "count"
-      ]
+      ],
+      "example": {
+        "id": "dust",
+        "type": "particles3d",
+        "count": 500,
+        "seed": 1,
+        "emitter": {
+          "shape": "sphere",
+          "size": 2
+        },
+        "lifetime": {
+          "min": 1,
+          "max": 3
+        },
+        "speed": {
+          "min": 0.1,
+          "max": 0.5
+        },
+        "size": {
+          "start": 0.05,
+          "end": 0
+        },
+        "color": {
+          "start": "#FFFFFF",
+          "end": "#4F8CFF"
+        },
+        "additive": true
+      }
     },
     "group3d": {
       "description": "Groups 3D nodes.",
@@ -963,7 +2451,76 @@
         "scale",
         "children"
       ],
-      "required": []
+      "propertyTypes": {
+        "visible": "boolean (animatable)",
+        "locked": "boolean",
+        "timing": "{ from?, duration?, speed?, reverse?, loop?, loopDuration?, pingPong?, remap?, hold? }",
+        "transition": "{ in?, out? }",
+        "renderer": "string",
+        "position": "[number, number, number] (animatable)",
+        "rotation": "[number, number, number] (animatable)",
+        "scale": "[number, number, number] (animatable)",
+        "children": "node[]"
+      },
+      "required": [],
+      "example": {
+        "id": "rig",
+        "type": "group3d",
+        "rotation": {
+          "$keyframes": [
+            {
+              "t": 0,
+              "v": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "t": "2s",
+              "v": [
+                0,
+                90,
+                0
+              ]
+            }
+          ]
+        },
+        "children": [
+          {
+            "id": "rig-left",
+            "type": "mesh3d",
+            "geometry": {
+              "type": "sphere",
+              "radius": 0.4
+            },
+            "position": [
+              -1,
+              0,
+              0
+            ],
+            "material": {
+              "color": "#FF5A1F"
+            }
+          },
+          {
+            "id": "rig-right",
+            "type": "mesh3d",
+            "geometry": {
+              "type": "sphere",
+              "radius": 0.4
+            },
+            "position": [
+              1,
+              0,
+              0
+            ],
+            "material": {
+              "color": "#4F8CFF"
+            }
+          }
+        ]
+      }
     }
   },
   "components": [
@@ -3104,7 +4661,7 @@
     },
     {
       "name": "LineChart",
-      "description": "Line chart with one or more series (`series`, or `data` for one series). Lines draw on (trim), points pop in; one series gets a gradient area.",
+      "description": "Line chart with one or more series (`series`, or `data` for one series). Lines draw on (trim), points pop in; one series gets a gradient area that grows with the line.",
       "props": {
         "type": "object",
         "properties": {
@@ -6657,12 +8214,46 @@
   ],
   "operations": [
     {
+      "name": "capabilities.get",
+      "summary": "What this host can do: node types (property types + example), components (props + example), operations, patch ops, backends, easings, formats. Filter with nodeType or component.",
+      "job": false,
+      "example": {
+        "nodeType": "text"
+      }
+    },
+    {
+      "name": "schema.get",
+      "summary": "JSON Schema of the Composition IR, of one node type, of the patch format, or of an operation input/output.",
+      "job": false,
+      "example": {
+        "nodeType": "rect"
+      }
+    },
+    {
       "name": "project.create",
       "summary": "Create a project from a template, a JSON project, TSX source, or an empty composition.",
       "job": false,
       "example": {
         "name": "Launch video",
         "template": "product-launch"
+      }
+    },
+    {
+      "name": "project.open",
+      "summary": "Open an existing project folder (openvideo.json or project.json) inside the allowed project roots and return its projectId.",
+      "job": false,
+      "example": {
+        "path": "launch-video"
+      }
+    },
+    {
+      "name": "project.import",
+      "summary": "Import SVG, Lottie, glTF, HTML, an anime.js timeline or Motion Canvas scenes into a project; lossy conversions are reported as OV_IMPORT_LOSSY warnings.",
+      "job": false,
+      "example": {
+        "projectId": "launch-video",
+        "path": "assets/logo.svg",
+        "idPrefix": "logo"
       }
     },
     {
@@ -6773,6 +8364,20 @@
       }
     },
     {
+      "name": "frame.renderMany",
+      "summary": "Render several frames to separate PNGs in one call (e.g. before/after a change); returns one image per frame.",
+      "job": false,
+      "example": {
+        "projectId": "launch-video",
+        "frames": [
+          0,
+          "2s",
+          "marker:outro"
+        ],
+        "scale": 0.5
+      }
+    },
+    {
       "name": "frame.inspect",
       "summary": "Scene tree with bounds, text layout and diagnostics for one frame (no pixels).",
       "job": false,
@@ -6819,7 +8424,7 @@
     },
     {
       "name": "render.status",
-      "summary": "Status, progress and result of a render job.",
+      "summary": "Status, progress and result of a render job; without jobId, all jobs (optionally of one project), newest first.",
       "job": false,
       "example": {
         "jobId": "job-…"
@@ -6840,6 +8445,18 @@
       "example": {
         "projectId": "launch-video",
         "frame": 120
+      }
+    },
+    {
+      "name": "subtitles.transcribe",
+      "summary": "Transcribe an audio/video asset with an ASR provider (e.g. whisper.cpp) into a subtitle track with word timings.",
+      "job": false,
+      "example": {
+        "projectId": "launch-video",
+        "trackId": "subs",
+        "source": "voiceover",
+        "provider": "whisper-cpp",
+        "language": "en"
       }
     },
     {
@@ -6899,7 +8516,28 @@
         "resolution": "1080p30",
         "frames": 60
       }
+    },
+    {
+      "name": "plugins.list",
+      "summary": "List the plugins of a project and what they add: agent tools (operations plugin.<name>), codecs, exporters (output formats plugin:<id>), asset loaders and Studio panels.",
+      "job": false,
+      "example": {
+        "projectId": "launch-video"
+      }
     }
+  ],
+  "patchOps": [
+    "setProperty",
+    "addNode",
+    "removeNode",
+    "moveNode",
+    "addKeyframe",
+    "removeKeyframe",
+    "replaceAsset",
+    "addAsset",
+    "removeAsset",
+    "setCompositionProperty",
+    "setProjectProperty"
   ],
   "backends": [
     {
@@ -7057,6 +8695,7 @@
         "pixi.node.polygon",
         "pixi.node.path",
         "pixi.node.text",
+        "pixi.node.rich-text",
         "pixi.node.image",
         "pixi.node.video",
         "pixi.node.sprite",
@@ -7068,6 +8707,7 @@
         "pixi.stroke",
         "pixi.opacity",
         "pixi.blend-modes",
+        "pixi.blend.hue",
         "pixi.filter.blur",
         "pixi.filter.color-matrix",
         "pixi.mask.alpha",
@@ -7100,12 +8740,12 @@
         "blender.gltf",
         "blender.obj",
         "blender.hdri",
-        "blender.transparent"
+        "blender.transparent",
+        "blender.particles",
+        "motion-states"
       ],
       "fusable": false,
-      "versions": {
-        "blender": "4.2.23"
-      }
+      "versions": {}
     }
   ],
   "easings": [
@@ -7243,6 +8883,7 @@
     "noise",
     "wiggle",
     "marker",
+    "event",
     "vec",
     "length"
   ],
@@ -7286,5 +8927,142 @@
     "Inter",
     "JetBrains Mono",
     "Noto Color Emoji"
+  ],
+  "templates": [
+    {
+      "name": "3d-product-showcase",
+      "title": "3D Product Showcase",
+      "description": "A procedurally built product turns on a plinth while the camera moves closer; features appear beside it.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 10
+    },
+    {
+      "name": "architecture-diagram",
+      "title": "Architecture Diagram",
+      "description": "Layered service diagram: boxes appear layer by layer, connectors show the data flow.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 14
+    },
+    {
+      "name": "cinematic-title",
+      "title": "Cinematic Title",
+      "description": "Letterboxed film title with dust, light and a closing tracking animation.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 10
+    },
+    {
+      "name": "code-tutorial",
+      "title": "Code Tutorial",
+      "description": "A code editor types the source, a callout explains a line, a terminal shows the result.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 15
+    },
+    {
+      "name": "comparison-video",
+      "title": "Comparison Video",
+      "description": "Side-by-side before and after columns, then the result as a counter.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "data-visualization",
+      "title": "Data Visualization",
+      "description": "KPI counters, then bar, line and donut charts with growth animation.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 14
+    },
+    {
+      "name": "logo-reveal",
+      "title": "Logo Reveal",
+      "description": "The mark draws itself, slides left and the wordmark and tagline appear.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 6
+    },
+    {
+      "name": "lower-third",
+      "title": "Lower Third",
+      "description": "Name and role overlay on a transparent background, rendered with alpha.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 6
+    },
+    {
+      "name": "podcast-clip",
+      "title": "Podcast Clip",
+      "description": "Square audiogram: waveform bars from audio amplitudes, quote and speakers.",
+      "width": 1080,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "presentation",
+      "title": "Presentation",
+      "description": "Three slides (title, bullets, table) with footer and progress bar.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 15
+    },
+    {
+      "name": "product-launch",
+      "title": "Product Launch",
+      "description": "Announce a product: name reveal, three benefit cards and a call to action with a browser mockup.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "saas-explainer",
+      "title": "SaaS Explainer",
+      "description": "Explain a SaaS product: the problem, the product in a laptop mockup with cursor, then three steps.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 15
+    },
+    {
+      "name": "social-video",
+      "title": "Social Video",
+      "description": "Vertical 9:16 clip with a hook, three tips and a follow call to action.",
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "durationSeconds": 10
+    },
+    {
+      "name": "subtitle-video",
+      "title": "Subtitle Video",
+      "description": "Speaker layout with inline subtitles and word highlighting.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "youtube-intro",
+      "title": "YouTube Intro",
+      "description": "Channel intro: the play mark springs in, channel name and episode appear, then zoom out.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 6
+    }
   ]
 }

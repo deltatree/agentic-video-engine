@@ -3,7 +3,26 @@
  * strukturierte Fehler ({@link OpenVideoError}).
  */
 import { spawn, type ChildProcess } from 'node:child_process';
-import { OpenVideoError } from '@agentic-video/core';
+import { OpenVideoError, minimalChildEnv } from '@agentic-video/core';
+
+/**
+ * Präfixe, die FFmpeg zusätzlich zu `CHILD_ENV_NAMES` (core) erbt: GPU-Treiber für die
+ * Hardware-Encoder (NVENC, VAAPI, QSV) und die Protokollierung von FFmpeg selbst.
+ */
+const FFMPEG_ENV_PREFIXES: readonly string[] = ['CUDA_', 'NVIDIA_', 'LIBVA_', 'VDPAU_', 'MFX_', 'INTEL_', 'AV_LOG_'];
+
+/**
+ * Minimale Umgebung für FFmpeg und ffprobe (Story 16.5, N1; Befund M2): keine Tokens oder
+ * S3-Schlüssel (`OPENVIDEO_*`, `AWS_*`) im Kindprozess.
+ *
+ * @example
+ * ```ts
+ * ffmpegEnv({ PATH: '/usr/bin', OPENVIDEO_S3_SECRET_ACCESS_KEY: 'x', CUDA_VISIBLE_DEVICES: '0' }); // { PATH: '/usr/bin', CUDA_VISIBLE_DEVICES: '0' }
+ * ```
+ */
+export function ffmpegEnv(source: Readonly<Record<string, string | undefined>> = process.env): Record<string, string> {
+  return minimalChildEnv(source, { prefixes: FFMPEG_ENV_PREFIXES });
+}
 
 /** Standard-Timeout für kurze Aufrufe (Inspektion, Probe) in Millisekunden. */
 export const DEFAULT_TIMEOUT_MS = 120_000;
@@ -133,7 +152,7 @@ export function waitForExit(child: ChildProcess): Promise<string> {
 export function runProcess(binary: string, args: readonly string[], options: RunOptions = {}): Promise<ProcessResult> {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'], env: ffmpegEnv() });
     const chunks: Buffer[] = [];
     let stderr = '';
     let settled = false;

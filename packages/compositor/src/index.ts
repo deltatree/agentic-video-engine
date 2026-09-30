@@ -9,9 +9,10 @@
  * const frame = compositeFrame({ width, height, scale: 1, background: '#000000', workingSpace: 'linear', layers, frame: 0, seed: 1 });
  * ```
  */
-export { compositeFrame, accumulateFrames, type CompositeInput, type CompositorNode, type CompositorMask } from './composite.js';
+export { compositeFrame, accumulateFrames, type CompositeInput, type CompositorNode, type CompositorMask, type CompositorReveal } from './composite.js';
 export { BLEND_FUNCTIONS, blendPixel, type BlendFunction, type Rgb, type Rgba } from './blend.js';
 export { applyLayerEffects, gaussianBlur, gradeColor, NEUTRAL_GRADE, type ColorGrade, type EffectContext } from './effects.js';
+export { applyNodeFilters, cssFilterMatrix, hasNodeFilters } from './filters.js';
 export { parseCubeLut, sampleLut, type Lut } from './lut.js';
 export {
   convertColorSpace,

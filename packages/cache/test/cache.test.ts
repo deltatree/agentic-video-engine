@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -72,7 +73,7 @@ describe('Cache-Ebenen (FR-68)', () => {
 const dockerOk = spawnSync('docker', ['info'], { stdio: 'ignore' }).status === 0;
 
 describe('S3Store gegen SeaweedFS (S3-kompatibel)', () => {
-  it.skipIf(!dockerOk)('liest, schreibt, listet und löscht (braucht Docker)', async () => {
+  it.skipIf(skipUnless(dockerOk, 'Docker fehlt: der SeaweedFS-Test braucht einen laufenden Docker-Daemon'))('liest, schreibt, listet und löscht (braucht Docker)', async () => {
     const name = `ov-s3-test-${String(process.pid)}`;
     execFileSync('docker', ['run', '-d', '--rm', '--name', name, '-p', '127.0.0.1::8333', 'chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882', 'server', '-s3', '-s3.port=8333'], { stdio: 'ignore' });
     try {

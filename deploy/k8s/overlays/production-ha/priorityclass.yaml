@@ -1,0 +1,10 @@
+# Priorität der Single-Writer (Koordinator, API, Object Storage): Sie werden nicht zugunsten von
+# Workern verdrängt und bei Knotenknappheit zuerst wieder eingeplant (ADR 0027).
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: openvideo-critical
+value: 100000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: OpenVideo single-writer components (coordinator, API, object storage).

@@ -1,6 +1,8 @@
 /**
  * Inspektion für Agents (FR-25, FR-26): Szenenbaum, Textbeschreibung, Timeline, Vorab-Prüfung.
  */
+import { readFileSync } from 'node:fs';
+import { checkSvgDocument, parseSvg } from '@agentic-video/renderer-skia';
 import {
   compositionDurationFrames,
   evaluateScene,
@@ -27,6 +29,8 @@ export interface SceneTreeNode {
   readonly type: string;
   readonly bounds?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly opacity?: number;
+  /** Gesetztes `zIndex` (≠ 0). Die Reihenfolge der Kinder ist bereits die effektive Zeichenreihenfolge. */
+  readonly zIndex?: number;
   readonly text?: { readonly content: string; readonly lines?: number; readonly overflow?: boolean };
   readonly source?: { readonly file: string; readonly line: number; readonly column: number };
   readonly localFrame: number;
@@ -54,6 +58,7 @@ export function sceneTree(scene: EvaluatedScene, bounds: readonly NodeBounds[]):
       id: n.id,
       type: n.type,
       ...(b !== undefined ? { bounds: { x: round(b.bounds.x), y: round(b.bounds.y), width: round(b.bounds.width), height: round(b.bounds.height) }, opacity: round(b.opacity) } : {}),
+      ...(typeof n.props['zIndex'] === 'number' && n.props['zIndex'] !== 0 ? { zIndex: n.props['zIndex'] } : {}),
       ...(text !== undefined ? { text: { content: text, ...(b?.text !== undefined ? { lines: b.text.lines, overflow: b.text.overflow } : {}) } } : {}),
       ...(n.source !== undefined ? { source: n.source } : {}),
       localFrame: round(n.time.localFrame),
@@ -251,6 +256,26 @@ export function checkProject(ctx: { readonly registry: Registry; readonly assets
   }
   if (ctx.assets !== undefined) {
     const assets = ctx.assets;
+    // SVG-Assets: nicht unterstützte Elemente und nicht ladbare Bilder (Story 17.6).
+    const checked = new Set<string>();
+    for (const comp of comps) {
+      walkIr(comp['nodes'], (n) => {
+        const id = n['asset'];
+        if (n['type'] !== 'svg' || typeof id !== 'string') return;
+        const rec = assets.get(id);
+        if (rec === undefined || checked.has(`${String(comp['id'])}:${String(n['id'])}`)) return;
+        checked.add(`${String(comp['id'])}:${String(n['id'])}`);
+        let markup: string;
+        try {
+          markup = readFileSync(rec.path, 'utf8');
+        } catch (error: unknown) {
+          if (!(error instanceof Error)) throw error;
+          return;
+        }
+        const baseDir = rec.src.includes('/') ? rec.src.slice(0, rec.src.lastIndexOf('/')) : '';
+        for (const d of checkSvgDocument(parseSvg(markup), baseDir, assets)) out.push({ ...d, nodeId: String(n['id']), compositionId: String(comp['id']), details: { ...d.details, asset: id } });
+      });
+    }
     const list = Array.isArray(project['assets']) ? project['assets'].filter(isRecord) : [];
     for (const a of list) {
       const id = String(a['id']);

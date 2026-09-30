@@ -5,9 +5,22 @@
  * verdrahtet die echten Pakete (Skia, Browser, Blender, Compositor, FFmpeg, Audio, Fonts, Assets).
  * Tests können einzelne Teile ersetzen.
  */
-import type { AssetResolver, DebugOptions, EffectDefinition, EvaluatedNode, EvaluatedScene, FontResolver, NodeBounds, Registry, RgbaImage, TextMeasurer } from '@agentic-video/core';
+import type { AssetResolver, ColorSpace, DebugOptions, EffectDefinition, EvaluatedNode, EvaluatedScene, FontResolver, Matrix2D, NodeBounds, Rect, Registry, Reveal, RgbaImage, TextMeasurer } from '@agentic-video/core';
 import type { Cache } from '@agentic-video/cache';
 import type { Telemetry } from '@agentic-video/telemetry';
+
+/** Maske eines Compositor-Knotens (Vertrag des Pakets `compositor`). */
+export interface CompositorMaskLike {
+  readonly image: RgbaImage;
+  readonly mode: 'alpha' | 'luminance';
+  readonly invert: boolean;
+}
+
+/** Aufdeck-Clip mit lokaler Box (Vertrag des Pakets `compositor`). */
+export interface CompositorRevealLike {
+  readonly reveal: Reveal;
+  readonly box: Rect;
+}
 
 /** Knoten des Compositor-Baums (Vertrag des Pakets `compositor`). */
 export type CompositorNode =
@@ -16,7 +29,19 @@ export type CompositorNode =
       readonly kind: 'group';
       readonly node: EvaluatedNode;
       readonly children: CompositorNode[];
-      readonly mask?: { readonly image: RgbaImage; readonly mode: 'alpha' | 'luminance'; readonly invert: boolean };
+      readonly mask?: CompositorMaskLike;
+      readonly reveal?: CompositorRevealLike;
+    }
+  | {
+      readonly kind: 'isolate';
+      readonly node: EvaluatedNode;
+      readonly children: CompositorNode[];
+      /** Lokale Pixel (lokale Koordinaten × scale) → Ausgabepixel. */
+      readonly matrix: Matrix2D;
+      readonly mask?: CompositorMaskLike;
+      readonly reveal?: CompositorRevealLike;
+      /** `filters` und `shadow` der Node im Compositor anwenden (Backend ohne eigene Filter). */
+      readonly applyFilters?: boolean;
     };
 
 /** Eine Farbnachschlagetabelle (Vertrag des Pakets `compositor`). */
@@ -30,8 +55,8 @@ export interface CompositeRequest {
   readonly height: number;
   readonly scale: number;
   readonly background: string;
-  readonly workingSpace: 'srgb' | 'linear' | 'rec709';
-  readonly outputSpace?: 'srgb' | 'rec709';
+  readonly workingSpace: ColorSpace;
+  readonly outputSpace?: ColorSpace;
   readonly layers: CompositorNode[];
   readonly frame: number;
   readonly seed: number;
@@ -51,6 +76,8 @@ export interface EncodeOptions {
   readonly quality: number;
   readonly hardware: string;
   readonly colorSpace: 'srgb' | 'rec709' | 'linear';
+  /** Encoder-Threads (Story 18.6); Standard des Encoders: 4. */
+  readonly threads?: number;
   readonly audioPath?: string;
   readonly audioCodec?: string;
   readonly audioBitrate?: number;
@@ -86,12 +113,18 @@ export interface AudioEngine {
     readonly startFrame: number;
     readonly endFrame: number;
     readonly outPath: string;
-  }): Promise<{ readonly path: string; readonly durationSeconds: number; readonly loudness?: number } | undefined>;
+  }): Promise<{ readonly path: string; readonly durationSeconds: number; readonly loudness?: number; readonly voices?: Readonly<Record<string, string>> } | undefined>;
 }
 
 /** Medien-Werkzeuge (FFmpeg). */
 export interface MediaTools {
   createEncoder(options: EncodeOptions): Promise<FrameEncoder>;
+  /**
+   * Verfügbare Hardware-Encoder je Familie (`nvenc`, `vaapi` …). Zusammen mit Profil und `hardware`
+   * bestimmen sie, welcher Encoder tatsächlich kodiert; darum stehen sie bei `hardware` ≠ `none` im
+   * Schlüssel der Ebene `encoding` (Review m3). Ohne diese Methode gibt es dann keinen Ausgabe-Cache.
+   */
+  hardwareEncoders?(): Promise<Readonly<Record<string, boolean>>>;
   /** Versionen und Lizenzen für das Manifest. */
   info(): Promise<{ readonly version: string; readonly license: string; readonly configuration: string; readonly codecLicenses: Readonly<Record<string, string>> }>;
 }
@@ -100,6 +133,24 @@ export interface MediaTools {
 export interface OverlayTools {
   debugOverlay(scene: EvaluatedScene, bounds: readonly NodeBounds[], options: DebugOptions, size: { readonly width: number; readonly height: number; readonly scale: number }): RgbaImage;
   contactSheet(frames: readonly { readonly image: RgbaImage; readonly label: string }[], options: { readonly columns: number; readonly cellWidth: number; readonly background: string }): RgbaImage;
+}
+
+/** Ergebnis der WebGL2/WebGPU-Probe auf der Render-Seite (Story 21.5). */
+export interface GraphicsInfoLike {
+  readonly webgl2: string;
+  readonly webgl2MaxTextureSize?: number;
+  readonly webgpu: string;
+  readonly webgpuAvailable: boolean;
+}
+
+/** Laufzeitangaben für Manifest und Telemetrie (Story 21.5). */
+export interface RuntimeInfo {
+  /** Tatsächliche Versionen gestarteter Prozesse, z. B. `chromium` aus `browser.version()`. */
+  readonly versions: Readonly<Record<string, string>>;
+  /** Belegter GPU-Speicher in Bytes, wenn eine GPU erkannt ist (Metrik `gpu_memory`). */
+  readonly gpuMemoryBytes?: number;
+  /** WebGL2/WebGPU der Render-Seite, wenn Chromium mit Grafik-Schaltern lief. */
+  readonly graphics?: GraphicsInfoLike;
 }
 
 /** Alles, was die Pipeline zum Rendern braucht. */
@@ -120,6 +171,17 @@ export interface RenderEnvironment {
   readonly versions: Readonly<Record<string, string>>;
   /** `true`, wenn nicht vertrauenswürdiger Code auf dem Host laufen darf (`--trusted`). */
   readonly trusted: boolean;
-  /** Umgebungsbeschreibung für das Manifest (Betriebssystem, Container-Image, GPU). */
-  readonly platform: { readonly os: string; readonly containerImage?: string; readonly gpu?: string };
+  /**
+   * Umgebungsbeschreibung für das Manifest: Betriebssystem, Container-Image, erkannte GPU
+   * (`nvidia-smi` oder `/dev/dri`) und Grafik-Modus des Browser-Renderers (T5).
+   */
+  readonly platform: { readonly os: string; readonly containerImage?: string; readonly gpu?: string; readonly browserGpu?: 'swiftshader' | 'native' };
+  /** Tatsächliche Versionen und GPU-Speicher zum Zeitpunkt des Aufrufs (für Manifest und `gpu_memory`). */
+  runtime?(): Promise<RuntimeInfo>;
+  /**
+   * Bereitet das Rendern eines Projekts vor: transkribiert `fromAudio`-Tracks, sobald sich ihre
+   * Deklarationen ändern (Review Q3). `renderFrame`, `renderVideo` und `missingFrames` rufen es auf;
+   * Operationen ohne Frames (validate, plugins.list) warten nicht auf ASR.
+   */
+  prepare?(project: Readonly<Record<string, unknown>>): Promise<void>;
 }

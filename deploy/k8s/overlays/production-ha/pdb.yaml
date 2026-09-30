@@ -1,0 +1,59 @@
+# PodDisruptionBudgets (Story 21.8): freiwillige Unterbrechungen (Drain, Upgrade, Autoscaler)
+# nehmen nie alle Pods einer Rolle gleichzeitig weg.
+#
+# Kein PDB für Koordinator, API und Object Storage: Mit einer Replik würde ein PDB jeden Drain
+# blockieren. Sie starten mit Recreate neu; Worker geben ihre Chunks zurück und holen sie wieder.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: studio
+  labels:
+    app.kubernetes.io/component: studio
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: studio
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-cpu
+  labels:
+    app.kubernetes.io/component: worker
+spec:
+  # Höchstens ein CPU-Worker zugleich; bei mindestens zwei Replikaten läuft immer einer.
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      openvideo.io/worker-class: cpu
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-gpu
+  labels:
+    app.kubernetes.io/component: worker
+spec:
+  maxUnavailable: 1
+  # Hängende (nicht bereite) Worker dürfen immer verdrängt werden, sonst blockierten sie Drains.
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      openvideo.io/worker-class: gpu
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker-blender
+  labels:
+    app.kubernetes.io/component: worker
+spec:
+  maxUnavailable: 1
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      openvideo.io/worker-class: blender

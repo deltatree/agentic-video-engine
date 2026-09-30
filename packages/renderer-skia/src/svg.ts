@@ -3,9 +3,11 @@
  * den der Skia-Renderer zeichnet und spätere SVG-Importe weiterverwenden.
  *
  * Unterstützt: `svg`, `g`, `path`, `rect`, `circle`, `ellipse`, `line`, `polyline`,
- * `polygon`, einfaches `text`, `linearGradient`, `radialGradient`, `stop`, `defs`, `use`.
+ * `polygon`, `text` mit `tspan`, `linearGradient`, `radialGradient`, `stop`, `pattern`, `defs`,
+ * `use`, `clipPath`, `mask` und `image` (Data-URI oder Projekt-Asset, siehe svg-image.ts).
  * Attribute: `transform`, `fill`, `stroke`, `stroke-width`, `opacity`, `fill-opacity`,
- * `stroke-opacity`, `fill-rule`, `viewBox`, `style` (und einige verwandte wie `stroke-linecap`).
+ * `stroke-opacity`, `fill-rule`, `clip-path`, `clip-rule`, `mask`, `viewBox`, `style`
+ * (und einige verwandte wie `stroke-linecap`).
  */
 
 /** Ein Element des SVG-Baums. `attrs` enthält auch die Werte aus `style`. */
@@ -15,6 +17,8 @@ export interface SvgElement {
   readonly children: readonly SvgElement[];
   /** Direkter Textinhalt (für `text`). */
   readonly text: string;
+  /** Inhalt in Dokumentreihenfolge: Text und Kind-Elemente gemischt (für `text` mit `tspan`). */
+  readonly content?: readonly (string | SvgElement)[];
 }
 
 /** Ergebnis von {@link parseSvg}. */
@@ -31,7 +35,9 @@ export interface SvgDocument {
 }
 
 /** Elemente, die der Renderer zeichnet oder auswertet. */
-export const SUPPORTED_SVG_ELEMENTS: ReadonlySet<string> = new Set(['svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'linearGradient', 'radialGradient', 'stop', 'defs', 'use']);
+export const SUPPORTED_SVG_ELEMENTS: ReadonlySet<string> = new Set([
+  'svg', 'g', 'path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text', 'tspan', 'linearGradient', 'radialGradient', 'stop', 'pattern', 'defs', 'use', 'clipPath', 'mask', 'image',
+]);
 /** Elemente ohne Darstellung, die still übergangen werden. */
 const IGNORED_SVG_ELEMENTS: ReadonlySet<string> = new Set(['title', 'desc', 'metadata']);
 
@@ -50,6 +56,7 @@ interface MutableElement {
   attrs: Record<string, string>;
   children: MutableElement[];
   text: string;
+  content: (string | MutableElement)[];
 }
 
 function parseStyle(style: string, into: Record<string, string>): void {
@@ -112,7 +119,7 @@ export function svgNumbers(value: string | undefined): number[] {
  */
 export function parseSvg(markup: string): SvgDocument {
   const source = markup.replace(/<!--[\s\S]*?-->/gu, '').replace(/<\?[\s\S]*?\?>/gu, '').replace(/<!DOCTYPE[^>]*>/giu, '');
-  const top: MutableElement = { name: '#document', attrs: {}, children: [], text: '' };
+  const top: MutableElement = { name: '#document', attrs: {}, children: [], text: '', content: [] };
   const stack: MutableElement[] = [top];
   const unsupported = new Set<string>();
   const ids = new Map<string, SvgElement>();
@@ -123,9 +130,16 @@ export function parseSvg(markup: string): SvgDocument {
     const current = stack[stack.length - 1] ?? top;
     const between = source.slice(last, m.index);
     last = m.index + m[0].length;
-    if (between.trim().length > 0) current.text += decodeEntities(between);
+    if (between.trim().length > 0) {
+      current.text += decodeEntities(between);
+      current.content.push(decodeEntities(between));
+    } else if (between.length > 0 && current.content.length > 0) {
+      // Leerraum zwischen tspans trennt Wörter.
+      current.content.push(' ');
+    }
     if (m[1] !== undefined) {
       current.text += m[1];
+      current.content.push(m[1]);
       continue;
     }
     if (m[2] !== undefined) {
@@ -147,13 +161,14 @@ export function parseSvg(markup: string): SvgDocument {
     }
     const style = /(?:^|\s)style\s*=\s*(?:"([^"]*)"|'([^']*)')/u.exec(m[4] ?? '');
     if (style !== null) parseStyle(decodeEntities(style[1] ?? style[2] ?? ''), attrs);
-    const el: MutableElement = { name, attrs, children: [], text: '' };
+    const el: MutableElement = { name, attrs, children: [], text: '', content: [] };
     current.children.push(el);
+    current.content.push(el);
     if (!SUPPORTED_SVG_ELEMENTS.has(name) && !IGNORED_SVG_ELEMENTS.has(name)) unsupported.add(name);
     if (attrs['id'] !== undefined) ids.set(attrs['id'], el);
     if (m[5] !== '/') stack.push(el);
   }
-  const root: SvgElement = top.children.find((c) => c.name === 'svg') ?? { name: 'svg', attrs: {}, children: top.children, text: '' };
+  const root: SvgElement = top.children.find((c) => c.name === 'svg') ?? { name: 'svg', attrs: {}, children: top.children, text: '', content: top.children };
   const vb = svgNumbers(root.attrs['viewBox']);
   const viewBox: [number, number, number, number] | undefined = vb.length === 4 && (vb[2] ?? 0) > 0 && (vb[3] ?? 0) > 0 ? [vb[0] ?? 0, vb[1] ?? 0, vb[2] ?? 0, vb[3] ?? 0] : undefined;
   const width = svgLength(root.attrs['width'], viewBox?.[2] ?? 300, viewBox?.[2] ?? 300);

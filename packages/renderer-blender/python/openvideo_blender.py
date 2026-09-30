@@ -306,6 +306,46 @@ def build_material(mat, spec):
     links.new(bsdf.outputs[0], out.inputs['Surface'])
 
 
+def particle_mesh(name):
+    """Kugel mit Durchmesser 1 (Ikosphäre, 2 Unterteilungen wie im Three.js-Renderer)."""
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=2, radius=0.5)
+    mesh = bpy.data.meshes.new(name + '#particle')
+    bm.to_mesh(mesh)
+    bm.free()
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    return mesh
+
+
+def particle_material(name, additive):
+    """Unbeleuchtetes Partikel-Material; Farbe aus der Objektfarbe. `additive`: Emission plus Durchsicht."""
+    mat = bpy.data.materials.new(name + '#particles')
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+    info = nodes.new('ShaderNodeObjectInfo')
+    emission = nodes.new('ShaderNodeEmission')
+    emission.inputs['Strength'].default_value = 1.0
+    links.new(info.outputs['Color'], emission.inputs['Color'])
+    out = nodes.new('ShaderNodeOutputMaterial')
+    shader = emission.outputs[0]
+    if additive:
+        # Additiv wie Three.js AdditiveBlending: Licht kommt hinzu, der Hintergrund bleibt sichtbar.
+        transparent = nodes.new('ShaderNodeBsdfTransparent')
+        add = nodes.new('ShaderNodeAddShader')
+        links.new(transparent.outputs[0], add.inputs[0])
+        links.new(shader, add.inputs[1])
+        shader = add.outputs[0]
+        if hasattr(mat, 'surface_render_method'):
+            mat.surface_render_method = 'BLENDED'
+        elif hasattr(mat, 'blend_method'):
+            mat.blend_method = 'BLEND'
+    links.new(shader, out.inputs['Surface'])
+    return mat
+
+
 def mask_materials():
     white = bpy.data.materials.new('ov_mask_white')
     white.use_nodes = True
@@ -431,6 +471,7 @@ class Runner:
         self.material_specs = {}
         self.models = {}
         self.instances = {}
+        self.particles = {}
         self.world_spec = None
         self.comp_spec = None
         self.default_camera = None
@@ -474,6 +515,7 @@ class Runner:
             self.models.pop(key).remove()
         for child in self.instances.pop(key, []):
             bpy.data.objects.remove(child, do_unlink=True)
+        self.remove_particles(key)
         obj = self.objects.pop(key)
         self.kinds.pop(key)
         self.geometry.pop(key, None)
@@ -525,6 +567,8 @@ class Runner:
                 self.apply_model(key, obj, s)
             elif kind == 'instances':
                 self.apply_instances(key, obj, s)
+            elif kind == 'particles':
+                self.apply_particles(key, obj, s)
         for key in list(self.objects):
             if key not in seen:
                 self.remove_object(key)
@@ -621,6 +665,59 @@ class Runner:
         if children:
             mat = children[0].data.materials[0]
             self.update_material(key, mat, s['material'])
+
+    def apply_particles(self, key, obj, s):
+        """Partikel als Instanzen: je lebendes Partikel eine Kugel (Durchmesser = size) mit eigener Farbe.
+
+        Die Objekte sind nach Partikel-Index gepoolt; nicht lebende Partikel werden ausgeblendet.
+        Die Farbe steht in der Objektfarbe (linear) und wird vom Material über Object Info gelesen.
+        """
+        spec = s['particles']
+        pool = self.particles.get(key)
+        if pool is None or pool['additive'] != spec['additive']:
+            if pool is not None:
+                self.remove_particles(key)
+            mesh = particle_mesh(key)
+            mat = particle_material(key, spec['additive'])
+            mesh.materials.append(mat)
+            pool = {'mesh': mesh, 'material': mat, 'additive': spec['additive'], 'objects': {}}
+            self.particles[key] = pool
+        alive = set()
+        for p in spec['items']:
+            index = p['index']
+            alive.add(index)
+            child = pool['objects'].get(index)
+            if child is None:
+                child = bpy.data.objects.new('%s#p%d' % (key, index), pool['mesh'])
+                self.scene.collection.objects.link(child)
+                child.parent = obj
+                child.rotation_mode = 'ZYX'
+                pool['objects'][index] = child
+            child.location = p['position']
+            child.scale = (p['size'], p['size'], p['size'])
+            child.color = p['color'] + [1.0]
+            child.hide_render = False
+        for index, child in pool['objects'].items():
+            if index not in alive:
+                child.hide_render = True
+
+    def remove_particles(self, key):
+        pool = self.particles.pop(key, None)
+        if pool is None:
+            return
+        for child in pool['objects'].values():
+            bpy.data.objects.remove(child, do_unlink=True)
+        bpy.data.meshes.remove(pool['mesh'])
+        bpy.data.materials.remove(pool['material'])
+
+    def children_objects(self, visible_only=True):
+        """Instanzen und Partikel (für Motion-Blur-Keyframes nur sichtbare Partikel)."""
+        out = []
+        for children in self.instances.values():
+            out.extend(children)
+        for pool in self.particles.values():
+            out.extend(o for o in pool['objects'].values() if not (visible_only and o.hide_render))
+        return out
 
     # -- Welt ---------------------------------------------------------------
 
@@ -895,7 +992,7 @@ class Runner:
     # -- Ablauf -------------------------------------------------------------
 
     def keyframe_transforms(self, frame):
-        for obj in self.objects.values():
+        for obj in list(self.objects.values()) + self.children_objects():
             obj.keyframe_insert('location', frame=frame)
             obj.keyframe_insert('scale', frame=frame)
             if obj.rotation_mode == 'QUATERNION':
@@ -906,7 +1003,7 @@ class Runner:
     def render(self, frame, path):
         states = sorted(frame['states'], key=lambda s: (s['offset'] == 0, s['offset']))
         main = states[-1]['scene']
-        for obj in self.objects.values():
+        for obj in list(self.objects.values()) + self.children_objects(visible_only=False):
             obj.animation_data_clear()
         blur = main['motionBlur'] and len(states) > 1
         for s in states:
@@ -914,7 +1011,7 @@ class Runner:
             if blur:
                 self.keyframe_transforms(BASE_FRAME + s['offset'])
         if blur:
-            for obj in self.objects.values():
+            for obj in list(self.objects.values()) + self.children_objects():
                 if obj.animation_data is not None and obj.animation_data.action is not None:
                     for fc in obj.animation_data.action.fcurves:
                         for kp in fc.keyframe_points:

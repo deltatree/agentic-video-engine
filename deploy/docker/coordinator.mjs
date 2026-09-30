@@ -7,8 +7,13 @@
 // Umgebung:
 //   OPENVIDEO_COORDINATOR_QUEUES  Liste "name:port", Standard "cpu:8080" (z. B. "cpu:8080,gpu:8081")
 //   OPENVIDEO_JOURNAL_DIR         Ordner für die Journale, Standard "/data/journal"
-//   OPENVIDEO_WORKER_TOKEN        Bearer-Token für alle /v1-Endpunkte (empfohlen)
+//   OPENVIDEO_SUBMIT_TOKEN        Token der Rolle "submit" (Agent API: Jobs einreichen und abfragen)
+//   OPENVIDEO_WORKER_TOKEN        Token der Rolle "worker" (lease, heartbeat, complete, fail)
+//   OPENVIDEO_METRICS_TOKEN       Token der Rolle "metrics" (KEDA, nur GET /v1/queue)
+//                                 Pflicht: je mindestens 24 Zeichen, verschieden, kein "REPLACE…" (Epic 16).
 //   OPENVIDEO_LEASE_SECONDS       Dauer einer Lease ohne Heartbeat, Standard 120
+//   OPENVIDEO_COORDINATOR_MAX_BODY_BYTES  Größte Anfrage, Standard 67108864 (64 MiB)
+//   OPENVIDEO_JOB_TTL_SECONDS     Fertige Jobs bleiben so lange abrufbar, Standard 86400
 //   OPENVIDEO_S3_*                Gemeinsamer Speicher (siehe @agentic-video/cache)
 import { join } from 'node:path';
 import { storeFromEnv } from '@agentic-video/cache';
@@ -35,15 +40,34 @@ if (!Number.isFinite(leaseSeconds) || leaseSeconds <= 0) {
   process.stderr.write('OPENVIDEO_LEASE_SECONDS must be a positive number.\n');
   process.exit(2);
 }
-const token = env.OPENVIDEO_WORKER_TOKEN !== undefined && env.OPENVIDEO_WORKER_TOKEN !== '' ? env.OPENVIDEO_WORKER_TOKEN : undefined;
+const positive = (name, fallback) => {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    process.stderr.write(`${name} must be a positive integer.\n`);
+    process.exit(2);
+  }
+  return value;
+};
+const nonEmpty = (value) => (value !== undefined && value !== '' ? value : undefined);
+const tokens = {
+  ...(nonEmpty(env.OPENVIDEO_SUBMIT_TOKEN) !== undefined ? { submit: env.OPENVIDEO_SUBMIT_TOKEN } : {}),
+  ...(nonEmpty(env.OPENVIDEO_WORKER_TOKEN) !== undefined ? { worker: env.OPENVIDEO_WORKER_TOKEN } : {}),
+  ...(nonEmpty(env.OPENVIDEO_METRICS_TOKEN) !== undefined ? { metrics: env.OPENVIDEO_METRICS_TOKEN } : {}),
+};
+const maxBodyBytes = positive('OPENVIDEO_COORDINATOR_MAX_BODY_BYTES', undefined);
+const jobTtlSeconds = positive('OPENVIDEO_JOB_TTL_SECONDS', undefined);
+const limits = { ...(maxBodyBytes !== undefined ? { maxBodyBytes } : {}), ...(jobTtlSeconds !== undefined ? { jobTtlSeconds } : {}) };
 const journalRoot = env.OPENVIDEO_JOURNAL_DIR ?? '/data/journal';
 const store = storeFromEnv(env, env.OPENVIDEO_CACHE_DIR ?? '/cache');
 
 const running = [];
 for (const q of queues) {
-  const coordinator = await startCoordinator({ port: q.port, host: '0.0.0.0', store, journalDir: join(journalRoot, q.name), leaseSeconds, ...(token !== undefined ? { token } : {}) });
+  // startCoordinator bricht ohne Token, mit schwachen oder mit gleichen Tokens ab (Epic 16).
+  const coordinator = await startCoordinator({ port: q.port, host: '0.0.0.0', store, journalDir: join(journalRoot, q.name), leaseSeconds, tokens, ...limits });
   running.push(coordinator);
-  log('coordinator listening', { queue: q.name, port: coordinator.port, store: store.name, auth: token !== undefined });
+  log('coordinator listening', { queue: q.name, port: coordinator.port, store: store.name, roles: Object.keys(tokens) });
 }
 
 const stop = async () => {

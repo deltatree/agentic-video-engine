@@ -2,7 +2,7 @@
  * Vorab-Prüfung einer `scene3d`-Node (FR-44): meldet, was dieser Renderer nicht
  * oder nur mit einem bestimmten Backend darstellen kann.
  */
-import { isRecord, type Diagnostic } from '@agentic-video/core';
+import { OpenVideoError, isRecord, type Diagnostic } from '@agentic-video/core';
 
 /** Node-Typen, die als Kinder einer `scene3d` erlaubt sind. */
 export const THREE_CHILD_TYPES: readonly string[] = ['camera3d', 'light3d', 'mesh3d', 'model3d', 'instances3d', 'particles3d', 'group3d'];
@@ -57,6 +57,56 @@ export function usesShaderMaterial(node: Readonly<Record<string, unknown>>): boo
  */
 export function requiresWebGL2(scene: Readonly<Record<string, unknown>>): boolean {
   return descendants(scene, '').some((w) => usesShaderMaterial(w.node));
+}
+
+/**
+ * Welches Backend rendert eine `scene3d`-Node (Story 21.5)? Dieselbe Regel wie im
+ * `ThreeLayerRenderer`: Node-Property `backend`, sonst `preferred`; `auto` nutzt WebGPU, außer die
+ * Szene braucht WebGL2 (GLSL) oder WebGPU fehlt. `backend: 'webgpu'` bleibt `webgpu` (der Renderer
+ * meldet GLSL dann als Fehler). Die Funktion ist rein; Render-Manifest und Cache-Schlüssel nutzen sie
+ * mit dem geprüften WebGPU-Adapter der Render-Seite.
+ *
+ * @example
+ * ```ts
+ * threeBackendFor({ type: 'scene3d', children: [] }, true); // 'webgpu'
+ * threeBackendFor({ type: 'scene3d', backend: 'webgl2', children: [] }, true); // 'webgl2'
+ * ```
+ */
+export function threeBackendFor(scene: Readonly<Record<string, unknown>>, webgpuAvailable: boolean, preferred: 'auto' | 'webgpu' | 'webgl2' = 'auto'): 'webgpu' | 'webgl2' {
+  const prop = scene['backend'];
+  const wanted = prop === 'webgpu' || prop === 'webgl2' || prop === 'auto' ? prop : preferred;
+  if (wanted !== 'auto') return wanted;
+  if (requiresWebGL2(scene)) return 'webgl2';
+  return webgpuAvailable ? 'webgpu' : 'webgl2';
+}
+
+/**
+ * Texturgrenze eines Backends (Review M3). Mit Probe-Ergebnis (`probed`, WebGL2 `MAX_TEXTURE_SIZE`
+ * aus dem Cache-Schlüssel) gilt für WebGL2 genau dieser Wert – nicht der live gemessene –, damit
+ * `textureDownscale` nie still von der Maschine abhängt. Kann die GPU den Wert nicht (live kleiner),
+ * wirft die Funktion `OV_THREE_GRAPHICS_MISMATCH`. WebGPU nutzt die Standardgrenzen des Geräts
+ * (`live`). `optionMax` begrenzt zusätzlich.
+ *
+ * @example
+ * ```ts
+ * threeTextureLimit('webgl2', 16384, 8192); // 8192
+ * threeTextureLimit('webgpu', 8192, 16384); // 8192
+ * ```
+ */
+export function threeTextureLimit(kind: 'webgpu' | 'webgl2', live: number, probed?: number, optionMax?: number): number {
+  let max = live;
+  if (kind === 'webgl2' && probed !== undefined && probed > 0) {
+    if (live < probed) {
+      throw new OpenVideoError({
+        code: 'OV_THREE_GRAPHICS_MISMATCH',
+        errorClass: ERROR_CLASS,
+        problem: `The GPU allows textures up to ${String(live)} px, but the graphics probe in the cache key reported ${String(probed)} px.`,
+        suggestions: ['Clear the cached graphics probe: openvideo cache clear --tier layer.', 'Render on the machine (or container) the probe was taken on.'],
+      });
+    }
+    max = probed;
+  }
+  return optionMax === undefined ? max : Math.min(max, optionMax);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { OpenVideoError } from '@agentic-video/core';
 import { SANDBOX_IMAGE, dockerRunArgs, DEFAULT_LIMITS, runSandboxed, sandboxAvailable, type SandboxRequest } from '@agentic-video/sandbox';
 
@@ -32,7 +33,7 @@ describe('docker arguments', () => {
   });
 });
 
-describe.skipIf(noDocker)('docker sandbox (needs Docker)', () => {
+describe.skipIf(skipUnless(!noDocker, 'Docker fehlt: die Sandbox braucht einen laufenden Docker-Daemon'))('docker sandbox (needs Docker)', () => {
   it('returns the completion value and passes input over stdin', async () => {
     const r = await runSandboxed({ code: '({ sum: input.a + input.b, node: process.version })', input: { a: 40, b: 2 } });
     expect(r.output).toEqual({ sum: 42, node: expect.stringMatching(/^v22\./) });

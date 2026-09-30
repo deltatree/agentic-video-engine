@@ -17,3 +17,4 @@ export * from './describe.js';
 export * from './detect.js';
 export * from './instances.js';
 export * from './place.js';
+export * from './particles.js';

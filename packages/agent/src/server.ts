@@ -5,7 +5,8 @@
  * - `GET  /v1/operations` → alle Operationen mit Schemas und Beispielen
  * - `POST /v1/<operation>` → JSON-Eingabe, JSON-Ergebnis oder `{ error: Diagnostic }`
  * - `GET  /v1/jobs/<id>` → Job-Status
- * - `GET  /v1/files/<projectId>/<pfad>` → Dateien eines Projekts (Frames, Videos, Manifeste)
+ * - `GET  /v1/files/<projectId>/<pfad>` → Dateien eines Projekts (Frames, Videos, Manifeste); `ETag` ist die Inhalts-Revision
+ * - `GET  /v1/events?projectId=<id>` → Server-Sent Events `revision` bei jeder Änderung von `project.json` (Story 20.1)
  *
  * Optional schützt ein Bearer-Token (`OPENVIDEO_API_TOKEN`) alle Endpunkte außer `/v1/health`.
  * Ohne Token bindet der Server nur an Loopback-Adressen (B2).
@@ -19,6 +20,9 @@ import { extname } from 'node:path';
 import { OpenVideoError, type Diagnostic } from '@agentic-video/core';
 import { invokeOperation, type OperationDefinition } from './operation.js';
 import { OPERATIONS, readProjectFile } from './operations.js';
+import { PLUGIN_PANEL_PATH, servePluginPanel, type PanelResponse } from './plugins.js';
+import { assertProjectAccess } from './project-access.js';
+import { RevisionWatcher, revisionOf, sseMessage } from './server-events.js';
 import type { AgentServices } from './services.js';
 
 /** Optionen für {@link startAgentServer}. */
@@ -40,6 +44,20 @@ export interface AgentServerOptions {
   readonly maxQueuedRequests?: number;
   /** Zusätzliche Operationen (z. B. Agent-Tools aus Plugins). */
   readonly extraOperations?: ReadonlyMap<string, OperationDefinition>;
+  /** Höchstzahl gleichzeitig offener Ereignis-Streams (`/v1/events`, Standard 32). */
+  readonly maxEventStreams?: number;
+  /**
+   * Der Server steht hinter einem vertrauten Reverse-Proxy, der TLS beendet: `X-Forwarded-Proto: https`
+   * gilt dann als Schema der Studio-Origin (z. B. für die CSP der Plugin-Panels). Ohne diese Option zählt
+   * der Kopf nur von Loopback-Adressen (Proxy auf demselben Rechner). Standard `false`.
+   */
+  readonly trustProxy?: boolean;
+  /**
+   * Projektordner zusätzlich alle n Millisekunden abfragen, statt nur auf Dateiereignisse zu warten.
+   * Nötig, wenn Änderungen vom Host keine inotify-Ereignisse im Container auslösen (Bind-Mounts unter
+   * macOS/Windows, ADR 0029). Standard: nur Dateiereignisse.
+   */
+  readonly watchPollMs?: number;
   /** Weitere Routen (z. B. Studio-Dateien); liefert `true`, wenn die Anfrage behandelt wurde. */
   readonly fallback?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 }
@@ -128,6 +146,28 @@ export function isLoopbackHost(host: string): boolean {
   return h === 'localhost' || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(h);
 }
 
+/**
+ * Origin einer Anfrage, wie der Browser sie sieht: Schema plus geprüfter `Host`-Kopf. `https`, wenn die
+ * Verbindung selbst TLS ist oder ein vertrauter Proxy (`trustProxy` oder Loopback-Gegenstelle)
+ * `X-Forwarded-Proto: https` sendet; sonst `http`. Den Host muss der Aufrufer vorher geprüft haben.
+ *
+ * @example
+ * ```ts
+ * requestOrigin(req, false); // 'http://localhost:7788'
+ * ```
+ */
+export function requestOrigin(req: IncomingMessage, trustProxy: boolean): string | undefined {
+  const host = req.headers.host;
+  if (typeof host !== 'string' || host === '') return undefined;
+  const socket = req.socket;
+  const tls = 'encrypted' in socket && socket.encrypted === true;
+  const forwardedHeader = req.headers['x-forwarded-proto'];
+  const forwarded = (Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader)?.split(',')[0]?.trim().toLowerCase();
+  const proxyTrusted = trustProxy || isLoopbackHost(socket.remoteAddress?.replace(/^::ffff:/u, '') ?? '');
+  const https = tls || (proxyTrusted && forwarded === 'https');
+  return `${https ? 'https' : 'http'}://${host.toLowerCase()}`;
+}
+
 /** Host-Teil einer URL für eine Bind-Adresse (`0.0.0.0` → `127.0.0.1`, IPv6 in Klammern). */
 function urlHost(host: string): string {
   if (host === '0.0.0.0') return '127.0.0.1';
@@ -192,6 +232,10 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     );
   }
   const gate = new RequestGate(options.maxConcurrentRequests ?? 8, options.maxQueuedRequests ?? 64);
+  const revisions = new RevisionWatcher(40, options.watchPollMs);
+  /** Offene Ereignis-Streams; `close()` beendet sie, sonst wartet `server.close` ewig. */
+  const streams = new Set<ServerResponse>();
+  const maxStreams = options.maxEventStreams ?? 32;
   const allowedHosts = new Set<string>();
 
   const hostOk = (req: IncomingMessage): boolean => typeof req.headers.host === 'string' && allowedHosts.has(req.headers.host.toLowerCase());
@@ -218,7 +262,7 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    const cors: Record<string, string> = options.corsOrigin !== undefined ? { 'access-control-allow-origin': options.corsOrigin, 'access-control-allow-headers': 'content-type, authorization, traceparent', 'access-control-allow-methods': 'GET, POST, OPTIONS' } : {};
+    const cors: Record<string, string> = options.corsOrigin !== undefined ? { 'access-control-allow-origin': options.corsOrigin, 'access-control-allow-headers': 'content-type, authorization, traceparent', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-expose-headers': 'etag' } : {};
     if (url.pathname === '/v1/health') {
       // Öffentlicher Vertrag für Monitore: ohne Token und ohne Host-Prüfung, verrät nichts.
       send(res, 200, { ok: true }, cors);
@@ -226,6 +270,26 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     }
     if (!hostOk(req)) {
       send(res, 403, apiError('OV_API_HOST', `Host "${req.headers.host ?? ''}" is not allowed.`, ['Use http://localhost:<port> or add the host name with --allowed-host / OPENVIDEO_ALLOWED_HOSTS.']));
+      return;
+    }
+    // Studio-Panels aus Plugins (Story 21.1): iframes senden kein Bearer-Token; die signierte URL
+    // aus plugins.list ist die Berechtigung. Unbekannte oder falsch signierte Pfade: 404. Vor der
+    // Origin-Prüfung, weil die sandboxed Panel-Seite Module mit `Origin: null` lädt (nur GET, ohne Wirkung).
+    if (req.method === 'GET' && url.pathname.startsWith(PLUGIN_PANEL_PATH)) {
+      let panel: PanelResponse | undefined;
+      try {
+        // Die CSP nennt die absolute Modul-URL; die Origin stammt aus dem oben geprüften Host-Kopf.
+        const origin = requestOrigin(req, options.trustProxy === true);
+        panel = await servePluginPanel(services, url.pathname, origin !== undefined ? { origin } : {});
+      } catch (error) {
+        if (!(error instanceof OpenVideoError)) throw error;
+        panel = undefined;
+      }
+      if (panel === undefined) send(res, 404, apiError('OV_API_NOT_FOUND', 'Unknown plugin panel.', ['Use the url from plugins.list.']));
+      else {
+        res.writeHead(panel.status, panel.headers);
+        res.end(panel.body);
+      }
       return;
     }
     if (!originOk(req)) {
@@ -244,6 +308,11 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     if (!url.pathname.startsWith('/v1/')) {
       if (options.fallback !== undefined && (await options.fallback(req, res))) return;
       send(res, 404, apiError('OV_API_NOT_FOUND', `No route for ${req.method ?? 'GET'} ${url.pathname}.`, ['GET /v1/operations lists all operations.']), cors);
+      return;
+    }
+    // Ereignis-Streams bleiben offen und zählen darum nicht gegen die Anfragegrenze.
+    if (req.method === 'GET' && url.pathname === '/v1/events') {
+      await openEvents(url, res, cors);
       return;
     }
     const release = await gate.acquire();
@@ -285,7 +354,8 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
       await sendFile(res, ctx, fileMatch[1], fileMatch[2], cors);
       return;
     }
-    const opMatch = /^\/v1\/([a-z]+\.[A-Za-z]+)$/u.exec(url.pathname);
+    // Eingebaute Operationen `bereich.verb`; Agent Tools aus Plugins `plugin.<name>` (Story 21.1).
+    const opMatch = /^\/v1\/([a-z]+\.[A-Za-z]+|plugin\.[A-Za-z][A-Za-z0-9_.-]{0,63})$/u.exec(url.pathname);
     if (req.method === 'POST' && opMatch?.[1] !== undefined) {
       const contentType = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
       if (contentType !== 'application/json') {
@@ -309,6 +379,85 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     send(res, 404, apiError('OV_API_NOT_FOUND', `No route for ${req.method ?? 'GET'} ${url.pathname}.`, ['GET /v1/operations lists all operations.']), cors);
   }
 
+  async function openEvents(url: URL, res: ServerResponse, cors: Record<string, string>): Promise<void> {
+    const projectId = url.searchParams.get('projectId') ?? '';
+    let dir: string;
+    try {
+      dir = services.workspace.projectDir(projectId);
+    } catch (error) {
+      if (!(error instanceof OpenVideoError)) throw error;
+      send(res, 400, { error: error.diagnostic }, cors);
+      return;
+    }
+    if (!services.workspace.exists(projectId)) {
+      send(res, 404, apiError('OV_PROJECT_UNKNOWN', `Project "${projectId}" does not exist.`, ['List projects with project.inspect.']), cors);
+      return;
+    }
+    try {
+      await assertProjectAccess(services, projectId);
+    } catch (error) {
+      if (!(error instanceof OpenVideoError)) throw error;
+      send(res, 403, { error: error.diagnostic }, cors);
+      return;
+    }
+    if (streams.size >= maxStreams) {
+      send(res, 503, apiError('OV_API_BUSY', `Too many open event streams (${String(maxStreams)}).`, ['Close other Studio tabs, or retry in a moment.']), { ...cors, 'retry-after': '5' });
+      return;
+    }
+    // Platz sofort belegen und das Schließen vor dem ersten await beobachten, sonst leckt ein früh
+    // getrennter Client seinen Watcher.
+    streams.add(res);
+    // Veränderlicher Zustand in einem Objekt: der close-Listener setzt ihn zwischen den awaits.
+    const life: { closed: boolean; ended: boolean; unsubscribe?: () => void; heartbeat?: ReturnType<typeof setInterval> } = { closed: false, ended: false };
+    res.on('close', () => {
+      life.closed = true;
+      if (life.heartbeat !== undefined) clearInterval(life.heartbeat);
+      life.unsubscribe?.();
+      streams.delete(res);
+    });
+    const push = (revision: string): void => {
+      res.write(sseMessage('revision', { projectId, revision }));
+    };
+    let unsubscribe: () => void;
+    try {
+      // Endet die Beobachtung von selbst (Ordner gelöscht/ersetzt, Watcher-Fehler), schließt der Strom:
+      // Der Client verbindet neu und beobachtet dann den aktuellen Ordner, statt stumm „live“ zu bleiben.
+      unsubscribe = await revisions.subscribe(dir, push, () => {
+        life.ended = true;
+        if (res.headersSent) res.end();
+      });
+    } catch (error) {
+      streams.delete(res);
+      services.telemetry.logger.error('event stream failed', { project: projectId, error: error instanceof Error ? error.message : String(error) });
+      if (!isClosed() && !res.headersSent) send(res, 500, apiError('OV_API_EVENTS', 'Live updates are not available for this project.', ['Reload the page; the Studio works without live updates.']), cors);
+      return;
+    }
+    if (isClosed() || res.destroyed) {
+      unsubscribe();
+      streams.delete(res);
+      return;
+    }
+    life.unsubscribe = unsubscribe;
+    res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no', ...SECURITY_HEADERS, ...cors });
+    const current = revisions.current(dir);
+    // Erste Nachricht: der Stand beim Verbinden (der Client vergleicht mit dem, was er geladen hat).
+    res.write(`retry: 2000\n\n${current !== undefined ? sseMessage('revision', { projectId, revision: current }) : ''}`);
+    if (life.ended) {
+      res.end();
+      return;
+    }
+    // Kommentarzeilen halten Proxys und den Browser-Timeout offen.
+    const heartbeat = setInterval(() => {
+      res.write(': keep-alive\n\n');
+    }, 15_000);
+    heartbeat.unref();
+    life.heartbeat = heartbeat;
+
+    function isClosed(): boolean {
+      return life.closed;
+    }
+  }
+
   async function sendFile(res: ServerResponse, ctx: Parameters<typeof readProjectFile>[0], projectId: string, rawPath: string, cors: Record<string, string>): Promise<void> {
     let bytes: Uint8Array;
     try {
@@ -323,7 +472,8 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     const inline = INLINE_MIME[ext];
     const headers: Record<string, string> =
       inline !== undefined ? { 'content-type': inline } : { 'content-type': ATTACHMENT_MIME[ext] ?? 'application/octet-stream', 'content-disposition': 'attachment' };
-    res.writeHead(200, { ...headers, 'content-length': String(bytes.length), 'cache-control': 'no-store', ...FILE_HEADERS, ...cors });
+    // Die ETag ist die Inhalts-Revision; für project.json dieselbe wie in /v1/events.
+    res.writeHead(200, { ...headers, 'content-length': String(bytes.length), 'cache-control': 'no-store', etag: `"${revisionOf(bytes)}"`, ...FILE_HEADERS, ...cors });
     res.end(bytes);
   }
 
@@ -348,6 +498,9 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
         url: `http://${urlHost(bindHost)}:${String(port)}`,
         close: () =>
           new Promise((r, j) => {
+            revisions.closeAll();
+            for (const stream of streams) stream.end();
+            streams.clear();
             server.close((e) => {
               if (e !== undefined) j(e);
               else r();

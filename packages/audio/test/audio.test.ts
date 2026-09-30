@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { AudioTrack, Track } from '@agentic-video/core';
 import { locateFfmpeg, probeMedia } from '@agentic-video/ffmpeg';
 import {
@@ -12,6 +12,8 @@ import {
   applyLimiter,
   atempoChain,
   decodeAudio,
+  safeInputArgs,
+  AUDIO_INPUT_FORMATS,
   masterAudio,
   measureLoudness,
   mixComposition,
@@ -130,6 +132,22 @@ describe('decodeAudio', () => {
 
   it('meldet Fehler als OpenVideoError', async () => {
     await expect(decodeAudio(join(dir, 'missing.wav'))).rejects.toMatchObject({ diagnostic: { code: 'OV_FFMPEG_FAILED' } });
+  });
+
+  it('lehnt Formate ab, die andere Dateien nachladen (concat, hls), und dekodiert weiter MP4 (Story 16.5)', async () => {
+    const tonePath = sources.get('tone')?.path ?? '';
+    const concat = join(dir, 'playlist.wav');
+    writeFileSync(concat, `ffconcat version 1.0\nfile '${basename(tonePath)}'\n`);
+    await expect(decodeAudio(concat)).rejects.toMatchObject({ diagnostic: { code: 'OV_FFMPEG_FAILED' } });
+    const hls = join(dir, 'playlist.m3u8');
+    writeFileSync(hls, `#EXTM3U\n#EXT-X-TARGETDURATION:3\n#EXTINF:3.0,\n${basename(tonePath)}\n#EXT-X-ENDLIST\n`);
+    await expect(decodeAudio(hls)).rejects.toMatchObject({ diagnostic: { code: 'OV_FFMPEG_FAILED' } });
+    const mp4 = join(dir, 'tone.m4a');
+    execFileSync(locateFfmpeg().ffmpeg, ['-v', 'error', '-y', '-i', tonePath, '-c:a', 'aac', mp4]);
+    expect((await decodeAudio(mp4)).channels[0]?.length ?? 0).toBeGreaterThan(2 * SR);
+    expect(safeInputArgs()).toEqual(['-protocol_whitelist', 'file,pipe', '-format_whitelist', AUDIO_INPUT_FORMATS.join(',')]);
+    expect(AUDIO_INPUT_FORMATS).not.toContain('concat');
+    expect(AUDIO_INPUT_FORMATS).not.toContain('hls');
   });
 });
 
