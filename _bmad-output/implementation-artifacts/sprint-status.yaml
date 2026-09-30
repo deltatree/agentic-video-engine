@@ -92,7 +92,7 @@ development_status:
   15-2-definition-of-done-test: done
   15-3-veroeffentlichung: in-progress  # abgeschlossen mit 22-7
   # Epics 16–22: planning-artifacts/epics-2026-09-30.md (Audit 2026-09-30)
-  epic-16: backlog
+  epic-16: in-progress
   16-1-html-skripte-nur-ausdruecklich: backlog
   16-2-worker-ergebnisse-und-s3-identitaeten: backlog
   16-3-rollen-tokens-koordinator: backlog
@@ -100,17 +100,18 @@ development_status:
   16-5-ffmpeg-eingaben-haerten: backlog
   16-6-lieferkette: backlog
   16-7-studio-header-und-token: backlog
-  epic-17: backlog
-  17-1-planner-composite-grenzfaelle: backlog
-  17-2-farbraeume-pro-layer: backlog
-  17-3-zindex: backlog
-  17-4-animierte-bilder: backlog
+  epic-17: in-progress
+  17-1-planner-composite-grenzfaelle: review
+  17-2-farbraeume-pro-layer: review
+  17-3-zindex: review
+  17-4-animierte-bilder: review
   17-5-blender-motion-blur-partikel: backlog
   17-6-text-svg-html-ohne-stille-auslassung: backlog
   17-7-audio-verschachtelt: backlog
   17-8-untertitel-transkription-ass-karaoke: backlog
   17-9-fonts-woff: backlog
-  17-10-events-und-sequence: backlog
+  17-10-events-und-sequence: review
+  17-11-effekte-hochgestuft-farbraum-abgleich: in-progress
   epic-18: backlog
   18-1-compositor-bounds: backlog
   18-2-color-grade-vorberechnet: backlog
@@ -122,16 +123,16 @@ development_status:
   18-8-abbruch-und-timeout: backlog
   18-9-cache-budget-lru-locale-pixel: backlog
   18-10-messung: backlog
-  epic-19: backlog
-  19-1-typisiertes-patch-schema: backlog
-  19-2-cli-paritaet: backlog
-  19-3-selbstbeschreibung: backlog
-  19-4-projekte-oeffnen: backlog
-  19-5-neue-operationen: backlog
-  19-6-diagnose-haertung: backlog
+  epic-19: in-progress
+  19-1-typisiertes-patch-schema: review
+  19-2-cli-paritaet: review
+  19-3-selbstbeschreibung: review
+  19-4-projekte-oeffnen: review
+  19-5-neue-operationen: review
+  19-6-diagnose-haertung: review
   19-7-beispiele-je-node-typ: backlog
   19-8-doku-drift-english-first: backlog
-  epic-20: backlog
+  epic-20: in-progress
   20-1-live-sync-und-dev-watcher: backlog
   20-2-ton-in-vorschau: backlog
   20-3-boot-queue-verlauf: backlog
