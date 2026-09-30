@@ -21,9 +21,10 @@ describe('parseSvg', () => {
   });
 
   it('uses the viewBox size without width and height and lists unsupported elements', () => {
-    const doc = parseSvg('<svg viewBox="0 0 50 20"><clipPath id="c"/><image href="x.png"/><mask/><path d="M0 0"/></svg>');
+    const doc = parseSvg('<svg viewBox="0 0 50 20"><clipPath id="c"/><image href="x.png"/><mask/><filter/><foreignObject/><path d="M0 0"/></svg>');
     expect([doc.width, doc.height]).toEqual([50, 20]);
-    expect(doc.unsupported).toEqual(['clipPath', 'image', 'mask']);
+    // clipPath, image und mask werden seit Story 17.6 gezeichnet.
+    expect(doc.unsupported).toEqual(['filter', 'foreignObject']);
   });
 
   it('never throws on broken markup', () => {

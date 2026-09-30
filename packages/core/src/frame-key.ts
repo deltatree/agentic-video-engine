@@ -50,6 +50,8 @@ export function frameKey(
     // Nur abweichende Ausgabekodierungen gehen ein; sRGB-Schlüssel bleiben damit unverändert.
     ...(scene.outputColorSpace !== undefined && scene.outputColorSpace !== 'srgb' ? { outputColorSpace: scene.outputColorSpace } : {}),
     nodes: scene.nodes.map(strip),
+    // Subframe-Zustände (Motion Blur) nur, wenn vorhanden; andere Schlüssel bleiben unverändert.
+    ...(scene.motionKey !== undefined ? { motion: scene.motionKey } : {}),
     versions,
     assetHashes,
     output,

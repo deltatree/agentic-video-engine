@@ -2,6 +2,8 @@
  * Worker über stdio (Prozess- und Docker-Worker).
  *
  * Ablauf: `init` → Render-Umgebung bauen → `chunk`-Aufträge nacheinander rendern → `result`.
+ * Während ein Chunk rendert, liest der Worker weiter: `cancel` bricht ihn nach dem laufenden Frame
+ * ab (Story 18.8, Antwort `error` mit `OV_RENDER_CANCELLED`), `shutdown` wartet auf das Ende.
  * Stream-Modus: Projektdateien kommen mit `init`, jeder neue Frame geht als `frame` zurück,
  * der Worker selbst hält nur einen Speicher-Cache.
  * Shared-Modus: Projektordner und Datei-Cache liegen im gemeinsamen Dateisystem.
@@ -98,12 +100,12 @@ async function closeSession(session: Session | undefined): Promise<void> {
   await session.temp?.remove();
 }
 
-async function renderOne(session: Session, telemetry: Telemetry, m: ChunkMessage): Promise<ProtocolMessage> {
+async function renderOne(session: Session, telemetry: Telemetry, m: ChunkMessage, signal: { readonly aborted: boolean }): Promise<ProtocolMessage> {
   try {
     const result = await telemetry.withRemoteParent(m.traceparent, () =>
       telemetry.withSpan('worker.chunk', { worker: session.worker, start: m.request.start, end: m.request.end }, async () => {
         const started = performance.now();
-        const r = await renderChunk(session.env, session.project, m.request);
+        const r = await renderChunk(session.env, session.project, m.request, signal);
         telemetry.logger.info('chunk rendered', { worker: session.worker, start: r.start, end: r.end, rendered: r.rendered, fromCache: r.fromCache, seconds: (performance.now() - started) / 1000 });
         return r;
       }),
@@ -148,11 +150,22 @@ export async function runWorkerStdio(options: StdioWorkerOptions = {}): Promise<
   const decoder = new MessageDecoder();
   let session: Session | undefined;
   let initError: unknown;
+  // Chunks laufen nacheinander in einer Warteschlange; die Leseschleife bleibt frei für `cancel`.
+  let queue: Promise<void> = Promise.resolve();
+  const flags = new Map<string, { aborted: boolean }>();
   try {
     read: for await (const chunk of input) {
       if (!(chunk instanceof Uint8Array)) continue;
       for (const m of decoder.push(chunk)) {
-        if (m.type === 'shutdown') return;
+        if (m.type === 'shutdown') {
+          await queue;
+          return;
+        }
+        if (m.type === 'cancel') {
+          const flag = flags.get(m.id);
+          if (flag !== undefined) flag.aborted = true;
+          continue;
+        }
         if (m.type === 'init') {
           if (session !== undefined) {
             send({ type: 'error', diagnostic: toDiagnostic(new OpenVideoError({ code: 'OV_WORKER_PROTOCOL', errorClass: 'WorkerError', problem: 'The worker received a second init message.', suggestions: ['Start a new worker per project.'] })) });
@@ -173,11 +186,23 @@ export async function runWorkerStdio(options: StdioWorkerOptions = {}): Promise<
             send({ type: 'error', id: m.id, diagnostic: toDiagnostic(new OpenVideoError({ code: 'OV_WORKER_PROTOCOL', errorClass: 'WorkerError', problem: 'The worker received a chunk before init.', suggestions: ['Send init first.'] })) });
             continue;
           }
-          send(await renderOne(session, telemetry, m));
+          const current = session;
+          const flag = { aborted: false };
+          flags.set(m.id, flag);
+          const run = async (): Promise<void> => {
+            try {
+              send(await renderOne(current, telemetry, m, flag));
+            } finally {
+              flags.delete(m.id);
+            }
+          };
+          queue = queue.then(run, run);
         }
       }
     }
   } finally {
+    // Laufende Chunks zu Ende bringen (oder abbrechen lassen), bevor die Umgebung schließt.
+    await queue.catch(() => undefined);
     await closeSession(session);
     await telemetry.shutdown();
     await new Promise<void>((resolve) => {

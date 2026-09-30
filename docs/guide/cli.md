@@ -10,7 +10,7 @@ Usage: openvideo <command> [options]
 Commands:
   create <dir>          Create a project (--tsx for TypeScript/JSX, --template <name>)
   templates             List the project templates
-  dev [dir]             Studio with live preview for a project
+  dev [dir]             Studio with live preview; watches src/** and project.json, opens the browser (--no-open)
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
   render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>)
@@ -37,6 +37,7 @@ Server options (serve, dev, studio):
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
   --workers <n>          Render videos with n local worker processes
+  --open / --no-open     Open the Studio in the browser (default on for dev/studio, off for serve)
 
 Project and workspace (serve, mcp, op):
   --project <dir>        Open this project folder (project.open may open folders inside it)

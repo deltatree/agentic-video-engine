@@ -6,7 +6,21 @@
  *
  * Jeder Schlüssel trägt den SHA-256 seines Inhalts; Leser prüfen ihn, bevor sie Bytes übernehmen.
  */
-import { OpenVideoError, sha256Hex } from '@agentic-video/core';
+import { createHash } from 'node:crypto';
+import { OpenVideoError } from '@agentic-video/core';
+
+/**
+ * SHA-256 (hex) über `node:crypto` (Story 18.5): gleiche Werte wie `sha256Hex` aus core, aber
+ * nativ. Frames im Stream-/Remote-Betrieb sind mehrere MB groß; die JS-Fassung wäre der Engpass.
+ *
+ * @example
+ * ```ts
+ * digestHex(new TextEncoder().encode('abc')); // 'ba7816bf…'
+ * ```
+ */
+export function digestHex(bytes: Uint8Array | string): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
 
 const HEX = /^[0-9a-f]{64}$/u;
 const JOB_ID = /^[A-Za-z0-9-]{1,64}$/u;
@@ -16,7 +30,7 @@ const JOB_ID = /^[A-Za-z0-9-]{1,64}$/u;
  *
  * @example
  * ```ts
- * inputKey(sha256Hex(bytes)); // 'inputs/sha256-…'
+ * inputKey(digestHex(bytes)); // 'inputs/sha256-…'
  * ```
  */
 export function inputKey(hex: string): string {
@@ -40,7 +54,7 @@ export function jobFramePrefix(jobId: string): string {
  *
  * @example
  * ```ts
- * jobFrameKey(jobId, sha256Hex(bytes)); // 'jobs/<jobId>/frames/<hex>'
+ * jobFrameKey(jobId, digestHex(bytes)); // 'jobs/<jobId>/frames/<hex>'
  * ```
  */
 export function jobFrameKey(jobId: string, hex: string): string {
@@ -99,7 +113,7 @@ export function keyDigest(key: string): string | undefined {
  */
 export function assertContentMatches(key: string, bytes: Uint8Array, errorClass: string): void {
   const want = keyDigest(key) ?? /([0-9a-f]{64})$/u.exec(key)?.[1];
-  if (want === undefined || sha256Hex(bytes) !== want) {
+  if (want === undefined || digestHex(bytes) !== want) {
     throw new OpenVideoError({
       code: 'OV_SCHEDULER_CONTENT_MISMATCH',
       errorClass,

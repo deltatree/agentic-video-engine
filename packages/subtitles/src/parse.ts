@@ -35,6 +35,18 @@ export interface AssStyle {
   readonly italic: boolean;
   /** Numpad-Ausrichtung 1..9 (ASS v4+). */
   readonly alignment?: number;
+  /** Ränder in Skript-Pixeln (`PlayResX`/`PlayResY`). */
+  readonly marginL?: number;
+  readonly marginR?: number;
+  readonly marginV?: number;
+  /** Konturfarbe (`OutlineColour`) als `#RRGGBB[AA]`. */
+  readonly outlineColor?: string;
+  /** Konturbreite in Skript-Pixeln (`Outline`). */
+  readonly outline?: number;
+  /** Hintergrundfarbe (`BackColour`); bei `BorderStyle` 3 die Farbe der Box. */
+  readonly backColor?: string;
+  /** `BorderStyle`: 1 = Kontur und Schatten, 3 = deckende Box. */
+  readonly borderStyle?: number;
 }
 
 /** Ergebnis eines Parsers. */
@@ -44,6 +56,8 @@ export interface SubtitleParseResult {
   readonly info: CueInfo[];
   /** Nur ASS: definierte Stile. */
   readonly styles: AssStyle[];
+  /** Nur ASS: Skript-Auflösung (`PlayResX`, `PlayResY` aus `[Script Info]`), falls gesetzt. */
+  readonly playRes?: { readonly x?: number; readonly y?: number };
   readonly diagnostics: Diagnostic[];
 }
 
@@ -284,6 +298,16 @@ function assStyle(fields: Readonly<Record<string, string>>): AssStyle | undefine
   const color = assColor(fields['primarycolour'] ?? fields['primarycolor'] ?? '');
   const alignment = Number(fields['alignment']);
   const flag = (v: string | undefined) => v !== undefined && v.trim() !== '0' && v.trim() !== '';
+  const count = (key: string): { [k: string]: number } => {
+    const raw = fields[key];
+    const n = raw === undefined || raw.trim() === '' ? Number.NaN : Number(raw);
+    return Number.isFinite(n) && n >= 0 ? { [key]: n } : {};
+  };
+  const margins = { ...count('marginl'), ...count('marginr'), ...count('marginv') };
+  const outlineColor = assColor(fields['outlinecolour'] ?? fields['outlinecolor'] ?? '');
+  const backColor = assColor(fields['backcolour'] ?? fields['backcolor'] ?? '');
+  const outline = Number(fields['outline']);
+  const borderStyle = Number(fields['borderstyle']);
   return {
     name,
     ...(fontFamily !== undefined && fontFamily !== '' ? { fontFamily } : {}),
@@ -292,6 +316,13 @@ function assStyle(fields: Readonly<Record<string, string>>): AssStyle | undefine
     bold: flag(fields['bold']),
     italic: flag(fields['italic']),
     ...(Number.isInteger(alignment) && alignment >= 1 && alignment <= 9 ? { alignment } : {}),
+    ...(margins['marginl'] !== undefined ? { marginL: margins['marginl'] } : {}),
+    ...(margins['marginr'] !== undefined ? { marginR: margins['marginr'] } : {}),
+    ...(margins['marginv'] !== undefined ? { marginV: margins['marginv'] } : {}),
+    ...(outlineColor !== undefined ? { outlineColor } : {}),
+    ...(Number.isFinite(outline) && outline >= 0 ? { outline } : {}),
+    ...(backColor !== undefined ? { backColor } : {}),
+    ...(Number.isInteger(borderStyle) ? { borderStyle } : {}),
   };
 }
 
@@ -327,7 +358,8 @@ function assText(raw: string, start: number): { text: string; words: TimedSegmen
 }
 
 /**
- * Liest ASS/SSA: Stile (`[V4+ Styles]`), Ereignisse (`[Events]`) und Karaoke-Tags
+ * Liest ASS/SSA: Skript-Auflösung (`PlayResX`/`PlayResY`), Stile (`[V4+ Styles]`: Schrift, Größe,
+ * Farben, Fett/Kursiv, Ausrichtung, Ränder, Kontur, `BorderStyle`), Ereignisse (`[Events]`) und Karaoke-Tags
  * (`\k`, `\K`, `\kf`, `\ko`) als Wortzeiten. Andere Override-Tags werden entfernt
  * und je Zeile mit einer Diagnose `OV_SUBTITLE_ASS_TAG` gemeldet.
  *
@@ -346,6 +378,7 @@ export function parseAss(text: string): SubtitleParseResult {
   let section = '';
   let styleFormat: string[] = [];
   let eventFormat = DEFAULT_EVENT_FORMAT;
+  const playRes: { x?: number; y?: number } = {};
   normalize(text).forEach((rawLine, i) => {
     const lineNo = i + 1;
     const l = rawLine.trim();
@@ -360,6 +393,11 @@ export function parseAss(text: string): SubtitleParseResult {
     const key = l.slice(0, colon).trim().toLowerCase();
     const rest = l.slice(colon + 1).replace(/^\s/u, '');
     const isStyles = section === 'v4+ styles' || section === 'v4 styles';
+    if (section === 'script info' && (key === 'playresx' || key === 'playresy')) {
+      const n = Number(rest.trim());
+      if (Number.isFinite(n) && n > 0) playRes[key === 'playresx' ? 'x' : 'y'] = n;
+      return;
+    }
     if (key === 'format') {
       const fields = rest.split(',').map((f) => f.trim().toLowerCase());
       if (isStyles) styleFormat = fields;
@@ -407,7 +445,7 @@ export function parseAss(text: string): SubtitleParseResult {
     cues.push(makeCue(start, end, parsed.text, speaker, parsed.words));
     info.push({ line: lineNo, ...(style !== undefined && style !== '' ? { style } : {}) });
   });
-  return { format: 'ass', cues, info, styles, diagnostics };
+  return { format: 'ass', cues, info, styles, ...(playRes.x !== undefined || playRes.y !== undefined ? { playRes } : {}), diagnostics };
 }
 
 // ---------------------------------------------------------------------------

@@ -745,7 +745,7 @@
       ]
     },
     "subtitles": {
-      "description": "Animated captions from a subtitle track.",
+      "description": "Animated captions from a subtitle track. textAnimation animates each word from its own start time.",
       "properties": [
         "visible",
         "locked",
@@ -778,7 +778,8 @@
         "speakerStyles",
         "safeArea",
         "stroke",
-        "strokeWidth"
+        "strokeWidth",
+        "textAnimation"
       ],
       "required": [
         "track"
@@ -6919,7 +6920,7 @@
     },
     {
       "name": "render.status",
-      "summary": "Status, progress and result of a render job.",
+      "summary": "Status, progress and result of a render job; without jobId, all jobs (optionally of one project), newest first.",
       "job": false,
       "example": {
         "jobId": "job-…"
@@ -7225,7 +7226,9 @@
         "blender.gltf",
         "blender.obj",
         "blender.hdri",
-        "blender.transparent"
+        "blender.transparent",
+        "blender.particles",
+        "motion-states"
       ],
       "fusable": false,
       "versions": {}

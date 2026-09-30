@@ -20,9 +20,10 @@ import {
 } from '@agentic-video/core';
 import { drawDebugOverlay } from './debug.js';
 import { drawNode, localSeconds, walkNodes, type DrawContext, type FrameResources } from './draw.js';
-import { imageFromRgba, makeSurface, rgbaFromSurface } from './image.js';
+import { disposeRasterTarget, imageFromRgba, makeRasterTarget, readRasterTarget, type RasterTarget } from './image.js';
 import { Scope, nullable } from './scope.js';
 import { parseSvg, type SvgDocument } from './svg.js';
+import { checkSvgDocument, disposeSvgImages, loadSvgImages } from './svg-image.js';
 import { TextEngine, createSkiaTextMeasurer } from './text.js';
 
 /** Node-Typen, die das Skia-Backend direkt rendert. */
@@ -46,6 +47,12 @@ export const SKIA_CAPABILITIES: readonly string[] = [
   'skia.particles',
   'skia.video',
 ];
+
+/** Höchstzahl gehaltener SkSL-Kompilate (LRU, Story 18.9). */
+const MAX_SKSL_EFFECTS = 64;
+
+/** Höchstzahl gehaltener Zeichenziele (eines je Ausgabegröße, Story 18.3). */
+const MAX_TARGETS = 2;
 
 /** Version von CanvasKit, gegen die dieses Paket gebaut ist. */
 export const CANVASKIT_VERSION = '0.42.0';
@@ -93,7 +100,28 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
   const images = new Map<string, Image>();
   const animations = new Map<string, SkottieAnimation>();
   const svgCache = new Map<string, SvgDocument>();
+  // SkSL-Kompilate als LRU (Story 18.9): Schlüssel ist der Quelltext; die Map-Reihenfolge ist die Nutzung.
   const effects = new Map<string, RuntimeEffect | string>();
+  // Ein Zeichenziel je Ausgabegröße (Story 18.3), höchstens MAX_TARGETS; das älteste wird freigegeben.
+  const targets = new Map<string, RasterTarget>();
+
+  const targetFor = (width: number, height: number): RasterTarget => {
+    const key = `${String(width)}x${String(height)}`;
+    let t = targets.get(key);
+    if (t !== undefined) {
+      targets.delete(key);
+      targets.set(key, t);
+      return t;
+    }
+    t = makeRasterTarget(ck, width, height);
+    targets.set(key, t);
+    for (const [oldKey, old] of targets) {
+      if (targets.size <= MAX_TARGETS) break;
+      targets.delete(oldKey);
+      disposeRasterTarget(ck, old);
+    }
+    return t;
+  };
 
   const engineFor = (fonts: FontResolver): TextEngine => {
     let e = engines.get(fonts);
@@ -107,11 +135,21 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
   /** Kompiliert SkSL einmal; Fehler als Text. */
   const compile = (sksl: string): RuntimeEffect | string => {
     const cached = effects.get(sksl);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      effects.delete(sksl);
+      effects.set(sksl, cached);
+      return cached;
+    }
     let message = 'unknown error';
     const effect = nullable(ck.RuntimeEffect.Make(sksl, (err) => { message = err; }));
     const result = effect ?? message;
     effects.set(sksl, result);
+    // Älteste Einträge freigeben; ein Frame nutzt sie synchron, danach sind sie ersetzbar.
+    for (const [oldKey, old] of effects) {
+      if (effects.size <= MAX_SKSL_EFFECTS) break;
+      effects.delete(oldKey);
+      if (typeof old !== 'string') old.delete();
+    }
     return result;
   };
 
@@ -169,12 +207,15 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
     const markup = node.props['markup'];
     let key: string;
     let text: string | undefined;
+    // Relative Bildpfade in SVGs gelten relativ zur SVG-Datei, bei Inline-Markup zur Project-Wurzel (Story 17.6).
+    let baseDir = '';
     if (typeof markup === 'string') {
       key = `markup:${markup}`;
       text = markup;
     } else if (node.props['asset'] !== undefined) {
       const rec = record(req, node);
       key = `asset:${rec.id}@${rec.hash}`;
+      baseDir = rec.src.includes('/') ? rec.src.slice(0, rec.src.lastIndexOf('/')) : '';
       if (!svgCache.has(key)) text = new TextDecoder().decode(await req.assets.bytes(rec.id));
     } else {
       return undefined;
@@ -184,6 +225,7 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
       doc = parseSvg(text);
       svgCache.set(key, doc);
     }
+    if (doc !== undefined) await loadSvgImages(ck, doc, req.assets, baseDir);
     return doc;
   };
 
@@ -257,12 +299,8 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
       }
     }
     if (type === 'svg' && typeof node['markup'] === 'string') {
-      const doc = parseSvg(node['markup']);
-      if (doc.unsupported.length > 0) {
-        diagnostics.push(
-          diag('OV_SVG_UNSUPPORTED', 'warning', `SVG elements are not supported and are skipped: ${doc.unsupported.join(', ')}.`, ['Convert these elements to paths, e.g. with `svgo --config` or by flattening in the design tool.', 'Render the SVG as an image asset instead.'], { ...at, path: 'markup', details: { elements: doc.unsupported.join(',') } }),
-        );
-      }
+      // Ohne Asset-Zugriff: asset:- und Pfad-Bilder prüft checkProject mit den Project-Assets.
+      for (const d of checkSvgDocument(parseSvg(node['markup']), '', undefined)) diagnostics.push({ ...d, ...at, path: 'markup' });
     }
     if (type === 'text' || type === 'rich-text') {
       const families = new Set<string>();
@@ -292,23 +330,31 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
         const text = engineFor(req.fonts);
         const resources = await prepare(req, scope);
         if (req.signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_ABORTED', errorClass: 'SkiaRendererError', problem: 'Rendering was aborted.', suggestions: ['Start the render again.'] });
-        const surface = makeSurface(ck, req.width, req.height, scope);
-        const canvas = surface.getCanvas();
-        canvas.clear(ck.TRANSPARENT);
-        canvas.scale(req.scale, req.scale);
-        const ctx: DrawContext = { ck, scope, text, scene: req.scene, resources, effect: effectFor, signal: req.signal, layouts: new Map() };
-        for (const node of req.nodes) drawNode(canvas, node, ctx);
-        const debug = req.debug;
-        if (debug !== undefined && Object.values(debug).some((v) => v === true)) {
-          const measurer = createSkiaTextMeasurer(ck, req.fonts, options.defaultFont);
-          try {
-            const bounds = computeBounds({ ...req.scene, nodes: req.nodes }, measurer);
-            drawDebugOverlay(ck, canvas, text, { ...req.scene, nodes: req.nodes }, bounds, debug, scope);
-          } finally {
-            measurer.dispose();
+        // Ab hier synchron bis zum Auslesen: Das wiederverwendete Ziel teilt sich kein anderer Aufruf.
+        const target = targetFor(req.width, req.height);
+        const canvas = target.surface.getCanvas();
+        const base = canvas.getSaveCount();
+        try {
+          canvas.clear(ck.TRANSPARENT);
+          canvas.save();
+          canvas.scale(req.scale, req.scale);
+          const ctx: DrawContext = { ck, scope, text, scene: req.scene, resources, effect: effectFor, signal: req.signal, layouts: new Map() };
+          for (const node of req.nodes) drawNode(canvas, node, ctx);
+          const debug = req.debug;
+          if (debug !== undefined && Object.values(debug).some((v) => v === true)) {
+            const measurer = createSkiaTextMeasurer(ck, req.fonts, options.defaultFont);
+            try {
+              const bounds = computeBounds({ ...req.scene, nodes: req.nodes }, measurer);
+              drawDebugOverlay(ck, canvas, text, { ...req.scene, nodes: req.nodes }, bounds, debug, scope);
+            } finally {
+              measurer.dispose();
+            }
           }
+        } finally {
+          // Matrix, Clip und offene Layer eines abgebrochenen Zeichnens dürfen den nächsten Layer nicht treffen.
+          canvas.restoreToCount(base);
         }
-        return rgbaFromSurface(ck, surface);
+        return readRasterTarget(target);
       } finally {
         scope.dispose();
       }
@@ -322,6 +368,9 @@ export function createSkiaBackend(options: SkiaBackendOptions): RenderBackend {
       animations.clear();
       for (const e of effects.values()) if (typeof e !== 'string') e.delete();
       effects.clear();
+      for (const t of targets.values()) disposeRasterTarget(ck, t);
+      targets.clear();
+      for (const doc of svgCache.values()) disposeSvgImages(doc);
       svgCache.clear();
       return Promise.resolve();
     },

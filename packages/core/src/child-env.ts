@@ -28,22 +28,31 @@ export const CHILD_ENV_NAMES: readonly string[] = [
   'WINDIR',
 ];
 
+/** Zusätzlich erlaubte Variablen eines Programms. */
+export interface ChildEnvExtra {
+  /** Weitere Namen, z. B. `PYTHONPATH` für Piper. */
+  readonly names?: readonly string[];
+  /** Präfixe für Einstellungen des Programms oder der GPU-Treiber, z. B. `CUDA_`, `BLENDER_`. */
+  readonly prefixes?: readonly string[];
+}
+
 /**
  * Baut die minimale Umgebung eines Kindprozesses: nur die Variablen aus {@link CHILD_ENV_NAMES}
- * plus ausdrücklich genannte weitere Namen (`extra`, z. B. `CUDA_VISIBLE_DEVICES` für NVENC).
- * Leere Werte werden übernommen, fehlende weggelassen.
+ * plus ausdrücklich genannte Namen und Präfixe (`extra`). Fehlende Werte werden weggelassen.
  *
  * @example
  * ```ts
  * minimalChildEnv({ PATH: '/usr/bin', OPENVIDEO_WORKER_TOKEN: 'secret' }); // { PATH: '/usr/bin' }
- * minimalChildEnv(process.env, ['NVIDIA_VISIBLE_DEVICES']);
+ * minimalChildEnv(process.env, { prefixes: ['CUDA_', 'NVIDIA_'] });
  * ```
  */
-export function minimalChildEnv(source: Readonly<Record<string, string | undefined>>, extra: readonly string[] = []): Record<string, string> {
+export function minimalChildEnv(source: Readonly<Record<string, string | undefined>>, extra: ChildEnvExtra = {}): Record<string, string> {
+  const names = new Set([...CHILD_ENV_NAMES, ...(extra.names ?? [])]);
+  const prefixes = extra.prefixes ?? [];
   const out: Record<string, string> = {};
-  for (const name of [...CHILD_ENV_NAMES, ...extra]) {
-    const value = source[name];
-    if (value !== undefined) out[name] = value;
+  for (const [name, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (names.has(name) || prefixes.some((p) => name.startsWith(p))) out[name] = value;
   }
   return out;
 }

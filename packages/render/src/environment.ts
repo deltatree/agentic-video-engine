@@ -76,6 +76,8 @@ export interface EncodeOptions {
   readonly quality: number;
   readonly hardware: string;
   readonly colorSpace: 'srgb' | 'rec709' | 'linear';
+  /** Encoder-Threads (Story 18.6); Standard des Encoders: 4. */
+  readonly threads?: number;
   readonly audioPath?: string;
   readonly audioCodec?: string;
   readonly audioBitrate?: number;

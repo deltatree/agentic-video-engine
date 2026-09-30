@@ -951,9 +951,15 @@
             "type": "string",
             "pattern": "^sha256:[0-9a-f]{64}$",
             "description": "Content hash \"sha256:<64 hex>\"."
+          },
+          "faceIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Face in a font collection (.ttc, .otc, WOFF2 collection). Default 0."
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "Font file: .ttf, .otf, .ttc/.otc (with faceIndex), .woff or .woff2."
       }
     },
     "audio": {
@@ -4413,6 +4419,13 @@
       },
       "additionalProperties": false
     },
+    "starts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/t"
+      },
+      "description": "Start of each unit in local time; replaces start + stagger · position for the units listed (e.g. word timings of captions)."
+    },
     "textAnimation_2": {
       "unit": {
         "anyOf": [
@@ -4464,6 +4477,9 @@
             "const": "random"
           }
         ]
+      },
+      "starts": {
+        "$ref": "#/$defs/starts"
       }
     },
     "textAnimation": {
@@ -11141,10 +11157,13 @@
         "strokeWidth": {
           "type": "number",
           "minimum": 0
+        },
+        "textAnimation": {
+          "$ref": "#/$defs/textAnimation"
         }
       },
       "additionalProperties": false,
-      "description": "Animated captions from a subtitle track."
+      "description": "Animated captions from a subtitle track. textAnimation animates each word from its own start time."
     },
     "Node_scene3d": {
       "type": "object",

@@ -3,7 +3,7 @@
  */
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { availableParallelism } from 'node:os';
+import { availableParallelism, freemem, totalmem } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { FileStore, TieredStore, type Cache, type ContentStore } from '@agentic-video/cache';
 import { OpenVideoError } from '@agentic-video/core';
@@ -13,7 +13,7 @@ import { runPool, type SchedulerEvent } from './pool.js';
 
 /** Optionen für {@link createProcessChunkRunner}. */
 export interface ProcessChunkRunnerOptions {
-  /** Anzahl Worker-Prozesse (Standard: Anzahl CPU-Kerne). */
+  /** Anzahl Worker-Prozesse (Standard: {@link defaultWorkerCount}, nach Kernen und Speicher). */
   readonly concurrency?: number;
   readonly projectDir: string;
   /** Projekt-IR (bei TSX-Projekten die kompilierte IR). */
@@ -27,6 +27,30 @@ export interface ProcessChunkRunnerOptions {
   /** Befehl, der den Worker startet (Standard: `node <@agentic-video/worker>/dist/bin.js`). `--stdio` wird angehängt. */
   readonly workerCommand?: readonly string[];
   readonly onEvent?: (event: SchedulerEvent) => void;
+  /** Höchstdauer eines Chunk-Versuchs in Millisekunden; danach Neustart des Workers und Wiederholung (Story 18.8). */
+  readonly chunkTimeoutMs?: number;
+}
+
+/** Geschätzter Speicherbedarf eines Worker-Prozesses (Node, Skia, Chromium) bei 1080p in Bytes. */
+const WORKER_MEMORY_BYTES = 1.5 * 1024 ** 3;
+
+/**
+ * Standardzahl lokaler Worker-Prozesse (Story 18.7): `availableParallelism()` minus einen Kern für
+ * Koordination und Encoder, begrenzt durch das Speicherbudget (die Hälfte des gesamten, höchstens
+ * der freie Speicher, je Worker {@link WORKER_MEMORY_BYTES}); mindestens 1, höchstens 16.
+ * `--workers 1` rendert weiter in einem Prozess.
+ *
+ * @example
+ * ```ts
+ * defaultWorkerCount(); // z. B. 3 auf 4 Kernen mit 16 GB
+ * defaultWorkerCount({ cores: 16, totalBytes: 8 * 1024 ** 3, freeBytes: 6 * 1024 ** 3 }); // 2
+ * ```
+ */
+export function defaultWorkerCount(machine: { readonly cores?: number; readonly totalBytes?: number; readonly freeBytes?: number } = {}): number {
+  const cores = machine.cores ?? availableParallelism();
+  const budget = Math.min((machine.totalBytes ?? totalmem()) / 2, machine.freeBytes ?? freemem());
+  const byMemory = Math.floor(budget / WORKER_MEMORY_BYTES);
+  return Math.max(1, Math.min(16, cores - 1, byMemory));
 }
 
 /** Findet das lokale Verzeichnis eines Speichers (auch als lokale Stufe eines `TieredStore`). */
@@ -93,8 +117,8 @@ export function createProcessChunkRunner(options: ProcessChunkRunnerOptions): Ch
   }
   const projectDir = resolve(options.projectDir);
   const absoluteCache = resolve(cacheDir);
-  const concurrency = Math.max(1, options.concurrency ?? availableParallelism());
-  return (chunks, onDone) => {
+  const concurrency = Math.max(1, options.concurrency ?? defaultWorkerCount());
+  return (chunks, onDone, run) => {
     const command = options.workerCommand ?? defaultWorkerCommand();
     const [file, ...args] = command;
     if (file === undefined) {
@@ -108,6 +132,8 @@ export function createProcessChunkRunner(options: ProcessChunkRunnerOptions): Ch
       launch: (slot, generation) => ({ id: `process-${String(slot + 1)}.${String(generation)}`, command: file, args: [...args, '--stdio'] }),
       init: (worker) => ({ type: 'init', mode: 'shared', worker, project: options.project, projectDir, cacheDir: absoluteCache, options: { ...(options.trusted !== undefined ? { trusted: options.trusted } : {}) } }),
       ...(options.onEvent !== undefined ? { onEvent: options.onEvent } : {}),
+      ...(options.chunkTimeoutMs !== undefined ? { chunkTimeoutMs: options.chunkTimeoutMs } : {}),
+      ...(run?.signal !== undefined ? { signal: run.signal } : {}),
     });
   };
 }

@@ -8,8 +8,8 @@ import { JobManager, Workspace, type AgentServices, type SourceService, type Tem
 import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
 import { OpenVideoError, contentHash, isRecord } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
-import { createNodeEnvironment, type BackendProvider, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
-import { createProcessChunkRunner, createRemoteChunkRunner } from '@agentic-video/scheduler';
+import { createNodeEnvironment, renderChunk, type BackendProvider, type ChunkResult, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
+import { createProcessChunkRunner, createRemoteChunkRunner, defaultWorkerCount } from '@agentic-video/scheduler';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 import { createTemplateCatalog } from '@agentic-video/templates';
 
@@ -26,7 +26,10 @@ export interface LocalServicesOptions {
   /** Backends mit eigenem Prozess (Browser, Blender). */
   readonly providers?: () => readonly BackendProvider[];
   readonly chunkRunner?: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => ChunkRunner;
-  /** Anzahl lokaler Worker-Prozesse für Video-Renders (`--workers`). Ohne Angabe rendert der Server selbst. */
+  /**
+   * Anzahl lokaler Worker-Prozesse für Video-Renders (`--workers`). `1` rendert im Server-Prozess.
+   * Ohne Angabe: {@link defaultWorkerCount} (Kerne und Speicher, Story 18.7).
+   */
   readonly workers?: number;
   readonly benchmark?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
   readonly maxConcurrentJobs?: number;
@@ -171,8 +174,8 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
       ? { chunkRunner: options.chunkRunner }
       : coordinatorUrl !== undefined
         ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => remoteRunner(env, project, coordinatorUrl, coordinatorToken) }
-        : options.workers !== undefined
-        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, options.workers ?? 1, isolation === 'trusted') }
+        : (options.workers ?? defaultWorkerCount()) > 1
+        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, options.workers ?? defaultWorkerCount(), isolation === 'trusted') }
         : {}),
     ...(options.benchmark !== undefined ? { benchmark: options.benchmark } : {}),
     assets: {
@@ -270,5 +273,16 @@ export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<st
  * ```
  */
 export function processRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, workers: number, trusted: boolean): ChunkRunner {
-  return createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted });
+  const pool = createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted });
+  // Ein einzelner Chunk lohnt keinen Worker-Start (Node, Skia, Chromium): dann im eigenen Prozess.
+  return async (chunks, onDone, run) => {
+    if (chunks.length > 1) return pool(chunks, onDone, run);
+    const results: ChunkResult[] = [];
+    for (const c of chunks) {
+      const r = await renderChunk(env, project, c, run?.signal);
+      onDone(r);
+      results.push(r);
+    }
+    return results;
+  };
 }

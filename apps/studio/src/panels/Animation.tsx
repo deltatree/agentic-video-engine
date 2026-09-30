@@ -3,9 +3,10 @@
  */
 import { isRecord } from '@agentic-video/core';
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { errorText, fetchFile } from '../api.js';
+import { errorText } from '../api.js';
+import { decodeAudio, peaks } from '../audio.js';
 import { useStudio } from '../context.js';
-import { fieldsFor } from '../fields.js';
+import { fieldsFor, type FieldKind } from '../fields.js';
 import { EASINGS, bezierOf, bezierText, findNode, formatFrame, frames, hasKeyframes, timeInfo } from '../ir.js';
 import { num, records, str, type Rec } from '../json.js';
 import type { Studio } from '../store.js';
@@ -18,26 +19,33 @@ import { Field } from './Field.js';
 function Waveform(props: { projectId: string; src: string; label: string }): ReactNode {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [status, setStatus] = useState('Loading waveform…');
+  const [width, setWidth] = useState(600);
+  useEffect(() => {
+    const el = canvas.current;
+    if (el === null) return;
+    // Die Wellenform folgt der Breite des Panels statt fester 600 px (Audit §12).
+    const observer = new ResizeObserver(() => {
+      setWidth(Math.max(100, Math.round(el.clientWidth)));
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
   useEffect(() => {
     let cancelled = false;
     const draw = async (): Promise<void> => {
-      const bytes = await fetchFile(props.projectId, props.src);
-      const ctx = new OfflineAudioContext(1, 1, 44100);
-      const audio = await ctx.decodeAudioData(bytes);
+      const audio = await decodeAudio(props.projectId, props.src);
       const el = canvas.current;
       if (cancelled || el === null) return;
       const g = el.getContext('2d');
       if (g === null) return;
-      const w = el.width;
       const h = el.height;
-      const data = audio.getChannelData(0);
-      const per = Math.max(1, Math.floor(data.length / w));
-      g.clearRect(0, 0, w, h);
-      g.fillStyle = '#6FB1FF';
-      for (let x = 0; x < w; x++) {
-        let peak = 0;
-        for (let i = x * per; i < Math.min(data.length, (x + 1) * per); i++) peak = Math.max(peak, Math.abs(data[i] ?? 0));
-        const bar = Math.max(1, peak * h);
+      const p = peaks(audio.getChannelData(0), width);
+      g.clearRect(0, 0, width, h);
+      g.fillStyle = getComputedStyle(el).color;
+      for (let x = 0; x < width; x++) {
+        const bar = Math.max(1, (p[x] ?? 0) * h);
         g.fillRect(x, (h - bar) / 2, 1, bar);
       }
       setStatus(`${audio.duration.toFixed(2)} s, ${String(audio.numberOfChannels)} channel(s)`);
@@ -48,33 +56,40 @@ function Waveform(props: { projectId: string; src: string; label: string }): Rea
     return () => {
       cancelled = true;
     };
-  }, [props.projectId, props.src]);
+  }, [props.projectId, props.src, width]);
   return (
     <figure className="waveform">
-      <canvas ref={canvas} width={600} height={60} role="img" aria-label={`Waveform of ${props.label}`} />
+      <canvas ref={canvas} width={width} height={60} role="img" aria-label={`Waveform of ${props.label}`} />
       <figcaption className="muted small">{status}</figcaption>
     </figure>
   );
 }
 
-/** Der Audio-Tab. */
+/** Zeitfelder eines Clips (Frames oder Zeit-Text wie "2s"). */
+const CLIP_FIELDS: readonly { readonly key: string; readonly label: string; readonly field: FieldKind }[] = [
+  { key: 'start', label: 'start', field: { kind: 'json' } },
+  { key: 'offset', label: 'offset', field: { kind: 'json' } },
+  { key: 'duration', label: 'duration', field: { kind: 'json' } },
+  { key: 'fadeIn', label: 'fade in', field: { kind: 'json' } },
+  { key: 'fadeOut', label: 'fade out', field: { kind: 'json' } },
+  { key: 'volume', label: 'volume', field: { kind: 'number', integer: false, min: 0, max: 2 } },
+  { key: 'pan', label: 'pan', field: { kind: 'number', integer: false, min: -1, max: 1 } },
+  { key: 'loop', label: 'loop', field: { kind: 'boolean' } },
+];
+
+/** Der Audio-Tab: Clips aller Audiospuren mit Wellenform, Zeiten, Fades und Lautstärke (Story 20.7). */
 export function Audio(): ReactNode {
   const [studio, state] = useStudio();
   const tracks = records(state.comp?.['tracks']);
   const audioTracks = tracks.filter((t) => t['kind'] === 'audio');
-  if (audioTracks.length === 0) return <p className="empty">This composition has no audio tracks. Add them in the Code panel (compositions[].tracks).</p>;
+  if (audioTracks.length === 0) return <p className="empty">This composition has no audio tracks. Drag an audio asset from the Assets tab onto the Timeline, or use its “Add” button.</p>;
   const sources = records(state.project?.['audio']);
   const assets = records(state.project?.['assets']);
   const fps = state.timeline?.fps ?? 30;
   const time = timeInfo(state.comp);
-  const setClip = (trackId: string, clipId: string, key: string, value: unknown): void => {
-    const next = tracks.map((t) =>
-      t['id'] !== trackId ? t : { ...t, clips: records(t['clips']).map((c) => (c['id'] === clipId ? (value === null ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== key)) : { ...c, [key]: value }) : c)) },
-    );
-    void studio.setCompositionProperty('tracks', next);
-  };
   return (
     <div className="audio">
+      <p className="hint small">Times are frames or values like “2s”. Playback in the Studio uses volume, pan, fades, offset, duration and loop; EQ, compressor and ducking apply only when rendering.</p>
       {audioTracks.map((t) => {
         const trackId = str(t['id'], '');
         return (
@@ -94,19 +109,22 @@ export function Audio(): ReactNode {
                     <span className="muted small">
                       source {str(c['source'], '?')}, starts at {formatFrame(frames(c['start'], time), fps, 'smpte')}
                     </span>
-                    <div className="field">
-                      <label className="field-label">volume</label>
-                      <Field
-                        name="volume"
-                        label={`Volume of ${clipId}`}
-                        field={isRecord(c['volume']) ? { kind: 'json' } : { kind: 'number', integer: false, min: 0, max: 2 }}
-                        value={c['volume'] ?? 1}
-                        onCommit={(v) => {
-                          setClip(trackId, clipId, 'volume', v);
-                        }}
-                      />
-                      <span className="icon" />
-                    </div>
+                    {CLIP_FIELDS.map((f) => (
+                      <div className="field" key={f.key}>
+                        <label className="field-label">{f.label}</label>
+                        <Field
+                          name={f.key}
+                          label={`${f.label} of ${clipId}`}
+                          field={isRecord(c[f.key]) ? { kind: 'json' } : f.field}
+                          value={c[f.key] ?? (f.key === 'volume' ? 1 : f.key === 'pan' ? 0 : undefined)}
+                          onCommit={(v) => void studio.setClipField(trackId, clipId, f.key, f.key === 'start' && v === null ? 0 : v)}
+                        />
+                        <span className="icon" />
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => void studio.removeAudioClip(trackId, clipId)}>
+                      Remove clip
+                    </button>
                   </div>
                   {src !== '' ? (
                     <Waveform projectId={state.projectId} src={src} label={clipId} />
@@ -398,6 +416,8 @@ export function Curves(): ReactNode {
               aria-label={`Handle ${String(h + 1)} (arrow keys move, Enter applies)`}
               aria-valuetext={`x ${String(b[h * 2])}, y ${String(b[h * 2 + 1])}`}
               aria-valuenow={b[h * 2 + 1]}
+              aria-valuemin={-1}
+              aria-valuemax={2}
               onPointerDown={(e) => {
                 e.currentTarget.setPointerCapture(e.pointerId);
                 setDragging(h);

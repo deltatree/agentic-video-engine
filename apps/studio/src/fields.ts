@@ -70,6 +70,14 @@ export function describeSchema(schema: unknown): { animatable: boolean; field: F
   return { animatable: false, field: literalKind(schema) };
 }
 
+/** Property-Schemas eines Node-Typs (ohne Annahmen über den statischen Typ von `NODE_SCHEMAS`). */
+function schemaProperties(type: string): unknown {
+  const schemas: unknown = NODE_SCHEMAS;
+  if (!isRecord(schemas)) return undefined;
+  const entry = Object.hasOwn(schemas, type) ? schemas[type] : undefined;
+  return isRecord(entry) ? entry['properties'] : undefined;
+}
+
 /**
  * Alle bearbeitbaren Felder eines Node-Typs in Schema-Reihenfolge.
  *
@@ -79,9 +87,7 @@ export function describeSchema(schema: unknown): { animatable: boolean; field: F
  * ```
  */
 export function fieldsFor(type: string): FieldSpec[] {
-  const entry = Object.entries(NODE_SCHEMAS).find(([t]) => t === type)?.[1];
-  if (entry === undefined) return [];
-  const props: unknown = entry.properties;
+  const props = schemaProperties(type);
   if (!isRecord(props)) return [];
   return Object.entries(props)
     .filter(([name]) => !HIDDEN_FIELDS.has(name))
@@ -132,8 +138,7 @@ export function unionBranches(schema: unknown): Map<string, unknown> {
  * ```
  */
 export function propertySchema(type: string, property: string): unknown {
-  const entry = Object.entries(NODE_SCHEMAS).find(([t]) => t === type)?.[1];
-  const props: unknown = entry?.properties;
+  const props = schemaProperties(type);
   if (!isRecord(props)) return undefined;
   const s = props[property];
   // Arrays (filters, effects): das Schema der Einträge.

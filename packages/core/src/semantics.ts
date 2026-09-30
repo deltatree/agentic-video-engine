@@ -172,7 +172,8 @@ export interface TextUnitState {
 
 /**
  * Zustand der Einheit `index` von `count` einer `textAnimation` zur lokalen Zeit (Frames).
- * Die Einheit bewegt sich von den `from`-Werten zum Normalzustand.
+ * Die Einheit bewegt sich von den `from`-Werten zum Normalzustand. Sie beginnt bei
+ * `starts[index]`, sonst bei `start + Position · stagger`.
  *
  * @example
  * ```ts
@@ -191,7 +192,12 @@ export function textUnitState(node: EvaluatedNode, index: number, count: number,
   if (order === 'backward') position = count - 1 - index;
   else if (order === 'center') position = Math.abs(index - (count - 1) / 2);
   else if (order === 'random') position = Math.floor(random(getNumber(node, 'seed', 0), 'text-order', index) * count);
-  const raw = (frame - start - position * stagger) / duration;
+  // `starts[index]` gibt den Beginn der Einheit direkt vor (z. B. Wortzeiten von Untertiteln).
+  const starts = spec['starts'];
+  const list: readonly unknown[] = Array.isArray(starts) ? starts : [];
+  const own = list[index];
+  const unitStart = typeof own === 'number' || typeof own === 'string' ? tf(own, start) : start + position * stagger;
+  const raw = (frame - unitStart) / duration;
   const p = easing(typeof spec['ease'] === 'string' ? spec['ease'] : 'easeOutCubic')(Math.min(Math.max(raw, 0), 1));
   const from = isRecord(spec['from']) ? spec['from'] : {};
   const q = 1 - p;

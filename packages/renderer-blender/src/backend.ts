@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   OpenVideoError,
+  minimalChildEnv,
   evaluateScene,
   walkEvaluated,
   type BackendCheck,
@@ -143,7 +144,7 @@ export function evaluateMotionStates(
   options: EvaluateOptions = {},
 ): MotionState[] {
   return offsets.map((offset) => {
-    const scene = evaluateScene(project, compositionId, frame + offset, options);
+    const scene = evaluateScene(project, compositionId, frame + offset, { ...options, motionKey: false });
     const found = new Map<string, EvaluatedNode>();
     walkEvaluated(scene.nodes, (n) => {
       if (nodeIds.includes(n.id)) found.set(n.id, n);
@@ -157,8 +158,8 @@ interface RunResult {
 }
 
 
-/** Variablen, die Blender erbt (N1). */
-const BLENDER_ENV_NAMES: readonly string[] = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'LD_LIBRARY_PATH', 'DISPLAY', 'XDG_RUNTIME_DIR', 'OCIO', 'SYSTEMROOT', 'WINDIR'];
+/** Variablen, die Blender zusätzlich zu `CHILD_ENV_NAMES` (core) erbt (N1). */
+const BLENDER_ENV_NAMES: readonly string[] = ['DISPLAY', 'OCIO'];
 /** Präfixe für Blender, GPU-Treiber und Mesa (z. B. `BLENDER_USER_SCRIPTS`, `CUDA_VISIBLE_DEVICES`). */
 const BLENDER_ENV_PREFIXES: readonly string[] = ['BLENDER_', 'CUDA_', 'NVIDIA_', '__GLX_', '__EGL_', 'MESA_', 'EGL_', 'LIBGL_', 'VK_', 'OMP_'];
 
@@ -172,12 +173,7 @@ const BLENDER_ENV_PREFIXES: readonly string[] = ['BLENDER_', 'CUDA_', 'NVIDIA_',
  * ```
  */
 export function blenderEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [name, value] of Object.entries(source)) {
-    if (value === undefined) continue;
-    if (BLENDER_ENV_NAMES.includes(name) || BLENDER_ENV_PREFIXES.some((p) => name.startsWith(p))) out[name] = value;
-  }
-  return out;
+  return minimalChildEnv(source, { names: BLENDER_ENV_NAMES, prefixes: BLENDER_ENV_PREFIXES });
 }
 /**
  * Erzeugt das Blender-Backend. Blender wird erst beim ersten Render gesucht; `versions()` ist ohne Blender leer;

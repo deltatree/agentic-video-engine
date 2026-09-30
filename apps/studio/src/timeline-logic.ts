@@ -25,7 +25,7 @@ export function snapFrame(frame: number, targets: readonly number[], threshold: 
  *
  * @example
  * ```ts
- * snapSpan(10, 20, 7, [30], 2); // { delta: 10, target: 30 } (Ende 27 → 30)
+ * snapSpan(10, 20, 7, [30], 3); // { delta: 10, target: 30 } (Ende 27 → 30)
  * ```
  */
 export function snapSpan(start: number, end: number, delta: number, targets: readonly number[], threshold: number): { delta: number; target?: number } {
@@ -39,7 +39,14 @@ export function snapSpan(start: number, end: number, delta: number, targets: rea
   return { delta };
 }
 
-/** Einrastziele der Timeline: Anfang, Ende, Playhead, Marker, Kanten anderer Balken und Keyframes. */
+/**
+ * Einrastziele der Timeline: Anfang, Ende, Playhead, Marker, In/Out, Kanten anderer Balken und Keyframes.
+ *
+ * @example
+ * ```ts
+ * timelineSnapTargets({ duration: 100, playhead: 42, markers: [], spans: [{ id: 'a', start: 3, end: 9 }] }); // [0, 100, 42, 3, 9]
+ * ```
+ */
 export function timelineSnapTargets(input: {
   readonly duration: number;
   readonly playhead: number;

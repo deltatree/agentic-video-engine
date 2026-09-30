@@ -1,5 +1,6 @@
 /**
- * Assets- und Components-Tab: Dateien importieren, auf die Bühne ziehen, Komponenten einfügen.
+ * Assets- und Components-Tab: Dateien importieren, auf die Bühne (Bilder, Videos …) oder die Timeline
+ * (Audio, Story 20.7) ziehen, Grund-Nodes und Komponenten einfügen und durchsuchen.
  */
 import { COMPONENTS } from '@agentic-video/components';
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
@@ -94,10 +95,11 @@ export function Assets(): ReactNode {
             const type = str(a['type'], '');
             const src = str(a['src'], '');
             const placeable = STAGE_ASSET_TYPES.has(type);
+            const audio = type === 'audio';
             return (
               <li
                 key={id}
-                draggable={placeable}
+                draggable={placeable || audio}
                 onDragStart={(e) => {
                   e.dataTransfer.setData(ASSET_DRAG_TYPE, JSON.stringify({ id, type }));
                   e.dataTransfer.effectAllowed = 'copy';
@@ -114,34 +116,94 @@ export function Assets(): ReactNode {
                     Add
                   </button>
                 )}
+                {audio && (
+                  <button type="button" onClick={() => void studio.addAudioClip(id, state.frame)} aria-label={`Add ${id} to the timeline at the playhead`}>
+                    Add
+                  </button>
+                )}
               </li>
             );
           })}
         </ul>
       )}
-      <p className="hint small">Drag an image, video, SVG or Lottie asset onto the stage to place it.</p>
+      <p className="hint small">Drag an image, video, SVG or Lottie asset onto the stage to place it. Drag audio onto the timeline to create an audio track.</p>
     </div>
   );
 }
 
-/** Der Components-Tab: alle Komponenten der Bibliothek mit ihrem Beispiel. */
+/** Grund-Nodes, die ohne Asset auskommen (auch die Container `group` und `sequence`). */
+const BASIC_NODES: readonly { readonly name: string; readonly description: string; readonly node: Readonly<Record<string, unknown>> }[] = [
+  { name: 'Rectangle', description: 'rect: a filled box', node: { id: 'rect', type: 'rect', x: 100, y: 100, width: 320, height: 180, fill: '#5AA2FF' } },
+  { name: 'Ellipse', description: 'ellipse: a circle or oval', node: { id: 'ellipse', type: 'ellipse', x: 100, y: 100, width: 200, height: 200, fill: '#FF8A80' } },
+  { name: 'Text', description: 'text: a single text block', node: { id: 'text', type: 'text', x: 100, y: 100, text: 'Text', fontSize: 64, fill: '#FFFFFF' } },
+  { name: 'Group', description: 'group: draws its children together', node: { id: 'group', type: 'group', children: [] } },
+  { name: 'Sequence', description: 'sequence: plays its children one after another (each needs timing.duration)', node: { id: 'sequence', type: 'sequence', children: [] } },
+];
+
+/**
+ * Filtert Einträge nach einem Suchtext (Name und Beschreibung, ohne Groß-/Kleinschreibung).
+ *
+ * @example
+ * ```ts
+ * matchesQuery({ name: 'LowerThird', description: 'Name and title' }, 'lower'); // true
+ * ```
+ */
+export function matchesQuery(item: { readonly name: string; readonly description: string }, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/u).filter((w) => w !== '');
+  const text = `${item.name} ${item.description}`.toLowerCase();
+  return words.every((w) => text.includes(w));
+}
+
+/** Der Components-Tab: Grund-Nodes und alle Komponenten der Bibliothek, durchsuchbar. */
 export function Components(): ReactNode {
   const [studio] = useStudio();
+  const [query, setQuery] = useState('');
+  const basics = BASIC_NODES.filter((b) => matchesQuery(b, query));
+  const components = COMPONENTS.filter((c) => matchesQuery(c, query));
   return (
-    <ul className="component-list" aria-label="Components">
-      {COMPONENTS.map((c) => (
-        <li key={c.name}>
-          <button
-            type="button"
-            className="component"
-            onClick={() => void studio.addNode({ id: c.name.charAt(0).toLowerCase() + c.name.slice(1), type: 'component', component: c.name, props: { ...c.example }, x: 100, y: 100 })}
-          >
-            <strong>{c.name}</strong>
-            <span className="muted small">{c.description}</span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="components">
+      <div className="row-actions">
+        <input
+          type="search"
+          aria-label="Search components"
+          placeholder="Search nodes and components…"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.currentTarget.value);
+          }}
+        />
+        <span className="muted small" aria-live="polite">
+          {basics.length + components.length} result(s)
+        </span>
+      </div>
+      {basics.length > 0 && (
+        <ul className="component-list" aria-label="Basic nodes">
+          {basics.map((b) => (
+            <li key={b.name}>
+              <button type="button" className="component" onClick={() => void studio.addNode({ ...b.node })}>
+                <strong>{b.name}</strong>
+                <span className="muted small">{b.description}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <ul className="component-list" aria-label="Components">
+        {components.map((c) => (
+          <li key={c.name}>
+            <button
+              type="button"
+              className="component"
+              onClick={() => void studio.addNode({ id: c.name.charAt(0).toLowerCase() + c.name.slice(1), type: 'component', component: c.name, props: { ...c.example }, x: 100, y: 100 })}
+            >
+              <strong>{c.name}</strong>
+              <span className="muted small">{c.description}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {basics.length + components.length === 0 && <p className="empty">Nothing matches “{query}”.</p>}
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 /**
  * Ein Eingabefeld je Feldart (Zahl mit Slider, Farbe, Text, Auswahl, Wahrheitswert, Vec2, JSON).
- * Änderungen werden erst beim Loslassen, Enter oder Verlassen übernommen (ein Patch je Änderung).
+ * Änderungen werden erst beim Loslassen, Enter oder Verlassen übernommen (ein Patch je Änderung);
+ * während ein Slider gezogen wird, meldet `onPreview` Zwischenwerte für die Live-Vorschau (Story 20.5).
  */
 import { isRecord } from '@agentic-video/core';
 import { useEffect, useId, useState, type ReactNode } from 'react';
@@ -29,7 +30,7 @@ function toHex6(color: string): string {
  * <Field name="x" field={{ kind: 'number', integer: false }} value={40} onCommit={(v) => save(v)} />
  * ```
  */
-export function Field(props: { name: string; label?: string; field: FieldKind; value: unknown; onCommit: (value: unknown) => void; disabled?: boolean }): ReactNode {
+export function Field(props: { name: string; label?: string; field: FieldKind; value: unknown; onCommit: (value: unknown) => void; onPreview?: (value: unknown) => void; disabled?: boolean; placeholder?: string }): ReactNode {
   const id = useId();
   const label = props.label ?? props.name;
   const f = props.field;
@@ -57,7 +58,9 @@ export function Field(props: { name: string; label?: string; field: FieldKind; v
             value={value}
             disabled={props.disabled}
             onChange={(e) => {
-              setDraft(Number(e.currentTarget.value));
+              const v = Number(e.currentTarget.value);
+              setDraft(v);
+              props.onPreview?.(v);
             }}
             onPointerUp={() => {
               commit(draft);
@@ -72,7 +75,7 @@ export function Field(props: { name: string; label?: string; field: FieldKind; v
             aria-label={label}
             step={f.integer ? 1 : 'any'}
             value={typeof draft === 'number' ? Math.round(draft * 1000) / 1000 : ''}
-            placeholder="—"
+            placeholder={props.placeholder ?? '—'}
             disabled={props.disabled}
             onChange={(e) => {
               setDraft(e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value));
@@ -107,7 +110,7 @@ export function Field(props: { name: string; label?: string; field: FieldKind; v
             type="text"
             aria-label={label}
             value={text}
-            placeholder={isRecord(props.value) ? 'gradient' : '#RRGGBB'}
+            placeholder={props.placeholder ?? (isRecord(props.value) ? 'gradient' : '#RRGGBB')}
             disabled={props.disabled}
             onChange={(e) => {
               setDraft(e.currentTarget.value);
@@ -127,6 +130,7 @@ export function Field(props: { name: string; label?: string; field: FieldKind; v
       return (
         <textarea
           aria-label={label}
+          {...(props.placeholder !== undefined ? { placeholder: props.placeholder } : {})}
           rows={props.name === 'text' || props.name === 'html' || props.name === 'css' || props.name === 'code' ? 3 : 1}
           value={text}
           disabled={props.disabled}

@@ -4,7 +4,7 @@
  * Konvention für `.cube`-Dateien), Plugin-Effekte erhalten ein 8-Bit-sRGB-{@link RgbaImage}.
  */
 import { isRecord, OpenVideoError, random, type EffectDefinition, type RgbaImage } from '@agentic-video/core';
-import { clamp01, floatToRgba, linearToSrgb, rgbaToFloat, srgbToLinear, type FloatImage } from './color.js';
+import { clamp01, floatToRgba, linearToSrgb, rgbaToFloat, srgbToLinear, type Bounds as Region, type FloatImage } from './color.js';
 import { sampleLut, type Lut } from './lut.js';
 
 /** Umgebung, die Effekte brauchen. */
@@ -45,8 +45,16 @@ function required(e: Readonly<Record<string, unknown>>, type: string, key: strin
 // Gauß-Weichzeichner
 // ---------------------------------------------------------------------------
 
-/** Kleinstes Rechteck (inklusive Grenzen), das alle Pixel mit einem Kanal ungleich 0 enthält. */
-function nonZeroBounds(data: Float32Array, w: number, h: number): { x0: number; y0: number; x1: number; y1: number } | undefined {
+/**
+ * Kleinstes Rechteck (inklusive Grenzen), das alle Pixel mit einem Kanal ungleich 0 enthält;
+ * `undefined` für ein leeres Bild.
+ *
+ * @example
+ * ```ts
+ * const b = nonZeroBounds(image.data, image.width, image.height);
+ * ```
+ */
+export function nonZeroBounds(data: Float32Array, w: number, h: number): { x0: number; y0: number; x1: number; y1: number } | undefined {
   let x0 = w;
   let y0 = h;
   let x1 = -1;
@@ -231,23 +239,86 @@ export function gradeColor(rgb: readonly [number, number, number], g: ColorGrade
  */
 export const NEUTRAL_GRADE: ColorGrade = { exposure: 0, contrast: 1, saturation: 1, temperature: 0, tint: 0, lift: 0, gamma: 1, gain: 1 };
 
-function mapStraight(image: FloatImage, fn: (rgb: [number, number, number], alpha: number) => [number, number, number]): void {
-  const d = image.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const a = d[i + 3] ?? 0;
-    if (a <= 0) continue;
-    const out = fn([(d[i] ?? 0) / a, (d[i + 1] ?? 0) / a, (d[i + 2] ?? 0) / a], a);
-    d[i] = Math.max(0, out[0]) * a;
-    d[i + 1] = Math.max(0, out[1]) * a;
-    d[i + 2] = Math.max(0, out[2]) * a;
+/** Zeilen-Grenzen einer Region als Index-Bereiche (ohne Region: das ganze Bild in einer Zeile). */
+function forRows(image: FloatImage, region: Region | undefined, fn: (start: number, end: number) => void): void {
+  const w = image.width;
+  if (region === undefined) {
+    fn(0, image.data.length);
+    return;
   }
+  for (let y = region.y0; y < region.y1; y++) fn((y * w + region.x0) * 4, (y * w + region.x1) * 4);
+}
+
+function mapStraight(image: FloatImage, fn: (rgb: [number, number, number], alpha: number) => [number, number, number], region?: Region): void {
+  const d = image.data;
+  forRows(image, region, (start, end) => {
+    for (let i = start; i < end; i += 4) {
+      const a = d[i + 3] ?? 0;
+      if (a <= 0) continue;
+      const out = fn([(d[i] ?? 0) / a, (d[i + 1] ?? 0) / a, (d[i + 2] ?? 0) / a], a);
+      d[i] = Math.max(0, out[0]) * a;
+      d[i + 1] = Math.max(0, out[1]) * a;
+      d[i + 2] = Math.max(0, out[2]) * a;
+    }
+  });
+}
+
+/**
+ * `color-grade` ohne Allokation je Pixel (Story 18.2): Konstanten (Belichtung, Weißabgleich,
+ * Kehrwert von Gamma) einmal je Effekt, übersprungene Stufen bei Neutralwerten, keine Closures
+ * oder Arrays in der Schleife. Formeln und Rundung wie {@link gradeColor}, das Ergebnis ist bitgleich.
+ * Kurven bleiben exakt gerechnet: Tabellen mit Interpolation würden Frame-Hashes verändern.
+ */
+function applyGrade(image: FloatImage, g: ColorGrade, region?: Region): void {
+  const d = image.data;
+  const ex = Math.pow(2, g.exposure);
+  const kr = 1 + 0.2 * g.temperature;
+  const kg = 1 - 0.2 * g.tint;
+  const kb = 1 - 0.2 * g.temperature;
+  const contrast = g.contrast;
+  const doContrast = contrast !== 1;
+  const sat = g.saturation;
+  const doSat = sat !== 1;
+  const inv = 1 / g.gamma;
+  const gain = g.gain;
+  const lift = g.lift;
+  const powCdl = inv !== 1;
+  forRows(image, region, (start, end) => {
+    for (let i = start; i < end; i += 4) {
+      const a = d[i + 3] ?? 0;
+      if (a <= 0) continue;
+      let r = ((d[i] ?? 0) / a) * ex * kr;
+      let gr = ((d[i + 1] ?? 0) / a) * ex * kg;
+      let b = ((d[i + 2] ?? 0) / a) * ex * kb;
+      if (doContrast) {
+        r = r <= 0 ? 0 : 0.18 * Math.pow(r / 0.18, contrast);
+        gr = gr <= 0 ? 0 : 0.18 * Math.pow(gr / 0.18, contrast);
+        b = b <= 0 ? 0 : 0.18 * Math.pow(b / 0.18, contrast);
+      }
+      if (doSat) {
+        const l = 0.2126 * r + 0.7152 * gr + 0.0722 * b;
+        r = l + (r - l) * sat;
+        gr = l + (gr - l) * sat;
+        b = l + (b - l) * sat;
+      }
+      let x = r * gain + lift;
+      r = x <= 0 ? 0 : powCdl ? Math.pow(x, inv) : x;
+      x = gr * gain + lift;
+      gr = x <= 0 ? 0 : powCdl ? Math.pow(x, inv) : x;
+      x = b * gain + lift;
+      b = x <= 0 ? 0 : powCdl ? Math.pow(x, inv) : x;
+      d[i] = Math.max(0, r) * a;
+      d[i + 1] = Math.max(0, gr) * a;
+      d[i + 2] = Math.max(0, b) * a;
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Einzelne Effekte
 // ---------------------------------------------------------------------------
 
-function applyLut(image: FloatImage, e: Readonly<Record<string, unknown>>, ctx: EffectContext): void {
+function applyLut(image: FloatImage, e: Readonly<Record<string, unknown>>, ctx: EffectContext, region?: Region): void {
   const asset = e['asset'];
   if (typeof asset !== 'string') throw invalid('lut', '"asset" must be an asset id.', "Set asset, e.g. { type: 'lut', asset: 'film-look' }.");
   const lut = ctx.resolveLut?.(asset);
@@ -267,7 +338,7 @@ function applyLut(image: FloatImage, e: Readonly<Record<string, unknown>>, ctx: 
     const s2 = linearToSrgb(clamp01(rgb[2]));
     const m = sampleLut(lut, s0, s1, s2);
     return [srgbToLinear(clamp01(s0 + (m[0] - s0) * k)), srgbToLinear(clamp01(s1 + (m[1] - s1) * k)), srgbToLinear(clamp01(s2 + (m[2] - s2) * k))];
-  });
+  }, region);
 }
 
 /**
@@ -298,29 +369,64 @@ function applyGlow(image: FloatImage, e: Readonly<Record<string, unknown>>, ctx:
   return { width: image.width, height: image.height, data: out };
 }
 
+/** Letzte Vignetten-Kurve (Story 18.2): `t = smoothstep(…)` je Pixel eines Bildviertels. */
+let vignetteCache: { readonly w: number; readonly h: number; readonly softness: number; readonly t: Float64Array; readonly qw: number } | undefined;
+
 /**
- * Vignette: `d` = Abstand zur Bildmitte, normiert auf 1 in den Ecken.
- * Faktor `f = 1 − amount · smoothstep(1 − softness, 1, d)` (Standard softness 0.5) auf RGB.
+ * Kurve `t(x, y)` der Vignette für Größe und `softness`. Sie hängt nicht von `amount` ab und ist
+ * zu beiden Achsen exakt symmetrisch (die Abstände werden mit Halbzahlen exakt gerechnet); daher
+ * genügt ein Viertel. Werte sind Float64 und bitgleich zur Rechnung je Pixel.
  */
-function applyVignette(image: FloatImage, e: Readonly<Record<string, unknown>>): void {
-  const amount = clamp01(required(e, 'vignette', 'amount'));
-  const softness = clamp01(num(e, 'softness', 0.5));
-  const { width: w, height: h, data: d } = image;
+function vignetteCurve(w: number, h: number, softness: number): { t: Float64Array; qw: number } {
+  const c = vignetteCache;
+  if (c !== undefined && c.w === w && c.h === h && c.softness === softness) return c;
   const cx = w / 2;
   const cy = h / 2;
   const e0 = 1 - softness;
-  for (let y = 0; y < h; y++) {
+  const qw = Math.ceil(w / 2);
+  const qh = Math.ceil(h / 2);
+  const t = new Float64Array(qw * qh);
+  for (let y = 0; y < qh; y++) {
     const ny = cy > 0 ? (y + 0.5 - cy) / cy : 0;
-    for (let x = 0; x < w; x++) {
+    for (let x = 0; x < qw; x++) {
       const nx = cx > 0 ? (x + 0.5 - cx) / cx : 0;
       const dist = Math.sqrt(nx * nx + ny * ny) / Math.SQRT2;
-      let t: number;
-      if (softness === 0) t = dist >= 1 ? 1 : 0;
+      let v: number;
+      if (softness === 0) v = dist >= 1 ? 1 : 0;
       else {
         const u = clamp01((dist - e0) / softness);
-        t = u * u * (3 - 2 * u);
+        v = u * u * (3 - 2 * u);
       }
-      const f = 1 - amount * t;
+      t[y * qw + x] = v;
+    }
+  }
+  vignetteCache = { w, h, softness, t, qw };
+  return vignetteCache;
+}
+
+/**
+ * Vignette: `d` = Abstand zur Bildmitte, normiert auf 1 in den Ecken.
+ * Faktor `f = 1 − amount · smoothstep(1 − softness, 1, d)` (Standard softness 0.5) auf RGB.
+ * Die Kurve kommt aus {@link vignetteCurve}; Pixel mit `t = 0` (Faktor 1) bleiben unberührt.
+ */
+function applyVignette(image: FloatImage, e: Readonly<Record<string, unknown>>, region?: Region): void {
+  const amount = clamp01(required(e, 'vignette', 'amount'));
+  const softness = clamp01(num(e, 'softness', 0.5));
+  const { width: w, height: h, data: d } = image;
+  if (w === 0 || h === 0) return;
+  const { t, qw } = vignetteCurve(w, h, softness);
+  const x0 = region?.x0 ?? 0;
+  const x1 = region?.x1 ?? w;
+  const y0 = region?.y0 ?? 0;
+  const y1 = region?.y1 ?? h;
+  const qh = Math.ceil(h / 2);
+  for (let y = y0; y < y1; y++) {
+    const qy = y < qh ? y : h - 1 - y;
+    const row = qy * qw;
+    for (let x = x0; x < x1; x++) {
+      const tv = t[row + (x < qw ? x : w - 1 - x)] ?? 0;
+      if (tv === 0) continue;
+      const f = 1 - amount * tv;
       const i = (y * w + x) * 4;
       d[i] = (d[i] ?? 0) * f;
       d[i + 1] = (d[i + 1] ?? 0) * f;
@@ -333,12 +439,12 @@ function applyVignette(image: FloatImage, e: Readonly<Record<string, unknown>>):
  * Filmkorn: `n = random(seed, frame, x, y) · 2 − 1`, `rgb += amount · n · a` (einfarbig),
  * begrenzt auf `0..a`. `seed` aus dem Effekt, sonst aus der Composition.
  */
-function applyGrain(image: FloatImage, e: Readonly<Record<string, unknown>>, ctx: EffectContext): void {
+function applyGrain(image: FloatImage, e: Readonly<Record<string, unknown>>, ctx: EffectContext, region?: Region): void {
   const amount = required(e, 'grain', 'amount');
   const seed = num(e, 'seed', ctx.seed);
   const { width: w, height: h, data: d } = image;
-  for (let y = 0; y < h; y++) {
-    for (let x = 0; x < w; x++) {
+  for (let y = region?.y0 ?? 0; y < (region?.y1 ?? h); y++) {
+    for (let x = region?.x0 ?? 0; x < (region?.x1 ?? w); x++) {
       const i = (y * w + x) * 4;
       const a = d[i + 3] ?? 0;
       if (a <= 0) continue;
@@ -435,16 +541,48 @@ function applyPlugin(image: FloatImage, def: EffectDefinition, e: Readonly<Recor
 }
 
 /**
+ * Wie weit Effekte Inhalt verschieben (Story 18.1): `0` für Effekte, die nur vorhandene Pixel
+ * ändern (`color-grade`, `lut`, `vignette`, `grain`), die Summe der Blur-Radien (3σ + 1 Pixel)
+ * bei `blur`, sonst `undefined` (Inhalt kann überall entstehen, z. B. `color-matrix` mit
+ * Verschiebung, Plugins).
+ *
+ * @example
+ * ```ts
+ * effectsReach([{ type: 'blur', radius: 4 }], 1); // 13
+ * ```
+ */
+export function effectsReach(effects: readonly unknown[], scale: number): number | undefined {
+  let reach = 0;
+  for (const raw of effects) {
+    if (!isRecord(raw)) return undefined;
+    const type = raw['type'];
+    if (type === 'color-grade' || type === 'lut' || type === 'vignette' || type === 'grain') continue;
+    if (type === 'blur') {
+      const r = raw['radius'];
+      if (typeof r !== 'number' || !Number.isFinite(r)) return undefined;
+      reach += Math.ceil(3 * Math.abs(r * scale)) + 1;
+      continue;
+    }
+    return undefined;
+  }
+  return reach;
+}
+
+/**
  * Wendet Layer-Effekte in Reihenfolge auf ein Float-Bild in linearem Licht an (vormultipliziert).
  * Unbekannte Typen ohne Plugin-Definition werfen `OV_EFFECT_UNKNOWN`.
  *
  * @example
  * ```ts
  * const out = applyEffectsLinear(img, [{ type: 'blur', radius: 2 }], { scale: 1, frame: 0, seed: 1 });
+ * // Mit Region: nur Pixel darin haben Inhalt; pixelweise Effekte rechnen nur dort.
+ * applyEffectsLinear(img, [{ type: 'vignette', amount: 0.5 }], ctx, { x0: 0, y0: 0, x1: 64, y1: 64 });
  * ```
  */
-export function applyEffectsLinear(image: FloatImage, effects: readonly unknown[], ctx: EffectContext): FloatImage {
+export function applyEffectsLinear(image: FloatImage, effects: readonly unknown[], ctx: EffectContext, region?: Region): FloatImage {
   let img = image;
+  // Nur bis zum ersten Effekt, der Inhalt verschiebt oder erzeugt, gilt die Region noch.
+  let local: Region | undefined = region;
   effects.forEach((raw, index) => {
     if (!isRecord(raw) || typeof raw['type'] !== 'string') {
       throw new OpenVideoError({
@@ -458,6 +596,7 @@ export function applyEffectsLinear(image: FloatImage, effects: readonly unknown[
     switch (type) {
       case 'blur':
         img = gaussianBlur(img, required(raw, 'blur', 'radius') * ctx.scale);
+        local = undefined;
         return;
       case 'color-grade': {
         const grade: ColorGrade = {
@@ -470,26 +609,29 @@ export function applyEffectsLinear(image: FloatImage, effects: readonly unknown[
           gamma: Math.max(0.01, num(raw, 'gamma', 1)),
           gain: num(raw, 'gain', 1),
         };
-        mapStraight(img, (rgb) => gradeColor(rgb, grade));
+        applyGrade(img, grade, local);
         return;
       }
       case 'lut':
-        applyLut(img, raw, ctx);
+        applyLut(img, raw, ctx, local);
         return;
       case 'glow':
         img = applyGlow(img, raw, ctx);
+        local = undefined;
         return;
       case 'vignette':
-        applyVignette(img, raw);
+        applyVignette(img, raw, local);
         return;
       case 'grain':
-        applyGrain(img, raw, ctx);
+        applyGrain(img, raw, ctx, local);
         return;
       case 'chromatic-aberration':
         img = applyChromaticAberration(img, raw, ctx);
+        local = undefined;
         return;
       case 'color-matrix':
         applyColorMatrix(img, raw);
+        local = undefined;
         return;
       default: {
         const def = ctx.effects?.get(type);
@@ -504,6 +646,7 @@ export function applyEffectsLinear(image: FloatImage, effects: readonly unknown[
           });
         }
         img = applyPlugin(img, def, raw);
+        local = undefined;
       }
     }
   });

@@ -117,7 +117,9 @@ async function readBody(req: IncomingMessage, limit: number): Promise<Uint8Array
     if (size > limit) return undefined;
     chunks.push(chunk);
   }
-  return new Uint8Array(Buffer.concat(chunks));
+  // `Buffer.concat` legt schon einen eigenen Puffer an; eine Sicht darauf spart eine zweite Kopie (Story 18.4).
+  const body = Buffer.concat(chunks, size);
+  return new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
 }
 
 function send(res: ServerResponse, status: number, type: string, body: string | Uint8Array): void {

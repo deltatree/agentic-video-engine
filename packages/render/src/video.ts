@@ -4,11 +4,12 @@
  */
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
 import { dirname, join, basename } from 'node:path';
 import { OpenVideoError, contentHash, evaluateScene, findComposition, compositionDurationFrames, frameKey, isRecord, type Diagnostic, type RgbaImage } from '@agentic-video/core';
-import { decodeRawFrame } from '@agentic-video/png';
+import { decodeRawFrameAsync } from '@agentic-video/png';
 import type { RenderEnvironment } from './environment.js';
-import { assetHashes, outputSize, renderFrame } from './frame.js';
+import { assetHashes, outputSize, renderFrame, resolveAnimatedImages } from './frame.js';
 import { chunkHash, countDiagnostics, imageHash, versionOr, type RenderManifest } from './manifest.js';
 import { OPENVIDEO_VERSION } from './version.js';
 
@@ -50,8 +51,23 @@ export interface ChunkRequest {
   readonly offset: number;
 }
 
-/** Rendert Chunks; Standard ist lokal im selben Prozess, der Scheduler ersetzt ihn für Parallelität. */
-export type ChunkRunner = (chunks: readonly ChunkRequest[], onChunkDone: (result: ChunkResult) => void) => Promise<readonly ChunkResult[]>;
+/** Abbruch-Signal (Story 18.8): wird abgefragt; `true` heißt „aufhören“. Ein `AbortSignal` passt. */
+export interface CancelSignal {
+  readonly aborted: boolean;
+}
+
+/** Laufzeit-Optionen eines Chunk-Runners. */
+export interface ChunkRunOptions {
+  /** Bricht laufende und wartende Chunks ab (Worker bekommen `cancel`). */
+  readonly signal?: CancelSignal;
+}
+
+/**
+ * Rendert Chunks; Standard ist lokal im selben Prozess, der Scheduler ersetzt ihn für Parallelität.
+ * `onChunkDone` kann Chunks in beliebiger Reihenfolge melden. Mit `options.signal` bricht der
+ * Runner ab (Story 18.8) und wirft `OV_RENDER_CANCELLED`.
+ */
+export type ChunkRunner = (chunks: readonly ChunkRequest[], onChunkDone: (result: ChunkResult) => void, options?: ChunkRunOptions) => Promise<readonly ChunkResult[]>;
 
 /** Optionen für {@link renderVideo}. */
 export interface RenderVideoOptions {
@@ -66,6 +82,49 @@ export interface RenderVideoOptions {
   readonly signal?: { readonly aborted: boolean };
   /** Audio weglassen. */
   readonly noAudio?: boolean;
+  /**
+   * Threads des Encoders (Story 18.6). Standard: `OPENVIDEO_ENCODER_THREADS`, sonst die freien
+   * Kerne neben den lokalen Render-Prozessen (mindestens 2, höchstens 16). Die Frame-Hashes hängen
+   * nicht davon ab, die Bytes der Videodatei schon: Für bitgleiche Dateien über Maschinen hinweg
+   * eine feste Zahl setzen (bis Epic 18 galt fest 4).
+   */
+  readonly encoderThreads?: number;
+  /** Anzahl der lokal gleichzeitig rendernden Prozesse (für die Encoder-Threads; Standard 1). */
+  readonly localRenderProcesses?: number;
+  /**
+   * Obergrenze des lokalen Caches in Bytes; nach dem Render wird bis dahin aufgeräumt (LRU,
+   * Story 18.9). Standard `OPENVIDEO_CACHE_MAX_BYTES`; ohne Wert kein Aufräumen.
+   */
+  readonly cacheMaxBytes?: number;
+}
+
+/** Wirft `OV_RENDER_CANCELLED`, wenn das Signal gesetzt ist. */
+function throwIfCancelled(signal: CancelSignal | undefined): void {
+  if (signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
+}
+
+/**
+ * Encoder-Threads nach freien Kernen (Story 18.6): Kerne minus lokale Render-Prozesse, mindestens
+ * 2, höchstens 16; `OPENVIDEO_ENCODER_THREADS` hat Vorrang.
+ *
+ * @example
+ * ```ts
+ * encoderThreadsFor(4, {}, 8); // 4
+ * encoderThreadsFor(1, { OPENVIDEO_ENCODER_THREADS: '4' }); // 4
+ * ```
+ */
+export function encoderThreadsFor(localRenderProcesses: number, env: Readonly<Record<string, string | undefined>> = process.env, cores: number = availableParallelism()): number {
+  const fixed = Number(env['OPENVIDEO_ENCODER_THREADS']);
+  if (Number.isInteger(fixed) && fixed > 0) return Math.min(64, fixed);
+  return Math.max(2, Math.min(16, cores - Math.max(0, Math.floor(localRenderProcesses))));
+}
+
+/** Liest `OPENVIDEO_CACHE_MAX_BYTES` (Bytes, auch mit Exponent wie `5e10`); ungültig oder leer: keine Grenze. */
+export function cacheMaxBytesFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): number | undefined {
+  const raw = env['OPENVIDEO_CACHE_MAX_BYTES'];
+  if (raw === undefined || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : undefined;
 }
 
 /** Ergebnis von {@link renderVideo}. */
@@ -104,17 +163,20 @@ export function resolveOutput(comp: Readonly<Record<string, unknown>>, profile: 
  * const result = await renderChunk(env, project, { compositionId: 'main', start: 0, end: 30, scale: 1, step: 1, offset: 0 });
  * ```
  */
-export async function renderChunk(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, chunk: ChunkRequest, signal?: { readonly aborted: boolean }): Promise<ChunkResult> {
+export async function renderChunk(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, chunk: ChunkRequest, signal?: CancelSignal, onFrame?: (image: RgbaImage, index: number) => Promise<void>): Promise<ChunkResult> {
   const hashes: string[] = [];
   const keys: string[] = [];
   const diagnostics: Diagnostic[] = [];
   let rendered = 0;
   let fromCache = 0;
+  // Layer-Historie über die Frames des Chunks: animierte Layer werden nicht komprimiert (Story 18.3).
+  const layerHistory = new Map<string, string>();
   for (let i = chunk.start; i < chunk.end; i++) {
-    if (signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
+    throwIfCancelled(signal);
     const frame = chunk.offset + i * chunk.step;
-    const result = await renderFrame(env, project, { compositionId: chunk.compositionId, frame, scale: chunk.scale, ...(signal !== undefined ? { signal } : {}) });
+    const result = await renderFrame(env, project, { compositionId: chunk.compositionId, frame, scale: chunk.scale, layerHistory, ...(signal !== undefined ? { signal } : {}) });
     hashes.push(imageHash(result.image));
+    if (onFrame !== undefined) await onFrame(result.image, i);
     keys.push(result.key);
     if (result.cached) fromCache++;
     else rendered++;
@@ -141,6 +203,11 @@ function packageVersionsOf(versions: Readonly<Record<string, string>>): Record<s
 
 /**
  * Rendert eine Composition zu einer Videodatei und schreibt `render-manifest.json` daneben.
+ *
+ * Ablauf (Story 18.6): Audio → Encoder starten → Chunks rendern; fertige Chunks gehen in
+ * Reihenfolge sofort an den Encoder, während weitere rendern. Im lokalen Runner bekommt der
+ * Encoder die Frames direkt aus dem Speicher; mit Scheduler kommen sie aus dem Frame-Cache
+ * (Entpacken im Thread-Pool). Danach optional LRU-Aufräumen des Caches (Story 18.9).
  *
  * @example
  * ```ts
@@ -172,31 +239,8 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
   const chunks: ChunkRequest[] = splitChunks(outCount, chunkSize).map((c) => ({ compositionId, start: c.start, end: c.end, scale: out.scale, step: out.step, offset: range.start }));
   const total = outCount;
   let done = 0;
-  const runner: ChunkRunner =
-    options.runChunks ??
-    (async (list, onDone) => {
-      const results: ChunkResult[] = [];
-      for (const c of list) {
-        const r = await renderChunk(env, project, c, options.signal);
-        onDone(r);
-        results.push(r);
-      }
-      return results;
-    });
-  const renderStart = performance.now();
-  const results = await stage('renderFrames', () =>
-    runner(chunks, (r) => {
-      done += r.end - r.start;
-      options.onProgress?.({ stage: 'render', done, total });
-    }),
-  );
-  const ordered = [...results].sort((a, b) => a.start - b.start);
-  const keys = ordered.flatMap((r) => [...r.keys]);
-  const frameHashes = ordered.flatMap((r) => [...r.frameHashes]);
-  const diagnostics = ordered.flatMap((r) => [...r.diagnostics]);
-  if (keys.length !== outCount) {
-    throw new OpenVideoError({ code: 'OV_RENDER_INCOMPLETE', errorClass: 'RenderError', problem: `Expected ${String(outCount)} frames but got ${String(keys.length)}.`, suggestions: ['Retry the failed chunks with `render.status`.'] });
-  }
+  const signal = options.signal;
+  throwIfCancelled(signal);
 
   await mkdir(dirname(options.outPath), { recursive: true });
   let audio: { path: string; durationSeconds: number; loudness?: number } | undefined;
@@ -205,40 +249,123 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
     audio = await stage('audioPipeline', () => audioEngine.renderComposition({ project, composition: comp, startFrame: range.start, endFrame: range.end, outPath: join(dirname(options.outPath), `${basename(options.outPath)}.audio.wav`) }));
   }
 
-  const encodeStart = performance.now();
-  const encoded = await stage('ffmpeg', async () => {
-    const encoder = await media.createEncoder({
-      outPath: options.outPath,
-      format: options.profile.format,
-      ...(options.profile.codec !== undefined ? { codec: options.profile.codec } : {}),
-      width: out.width,
-      height: out.height,
-      fps: out.fps,
-      alpha: options.profile.alpha === true,
-      quality: options.profile.quality ?? 80,
-      hardware: options.profile.hardwareAcceleration ?? 'auto',
-      colorSpace: options.profile.colorSpace ?? 'srgb',
-      ...(audio !== undefined ? { audioPath: audio.path } : {}),
-      ...(options.profile.audioCodec !== undefined ? { audioCodec: options.profile.audioCodec } : {}),
-      ...(options.profile.audioBitrate !== undefined ? { audioBitrate: options.profile.audioBitrate } : {}),
-    });
-    try {
-      let written = 0;
-      for (const key of keys) {
-        const bytes = await env.cache.tier('frame').get(key);
-        if (bytes === undefined) {
-          throw new OpenVideoError({ code: 'OV_RENDER_FRAME_MISSING', errorClass: 'RenderError', problem: `Frame ${key} is missing from the frame cache.`, suggestions: ['Check that all workers share the same cache store (OPENVIDEO_S3_*).'] });
-        }
-        await encoder.write(decodeRawFrame(bytes));
-        options.onProgress?.({ stage: 'encode', done: ++written, total });
-      }
-      return await encoder.finish();
-    } catch (error) {
-      await encoder.abort();
-      throw error;
-    }
+  const localProcesses = options.localRenderProcesses ?? (options.runChunks === undefined ? 1 : 0);
+  const encoder = await media.createEncoder({
+    outPath: options.outPath,
+    format: options.profile.format,
+    ...(options.profile.codec !== undefined ? { codec: options.profile.codec } : {}),
+    width: out.width,
+    height: out.height,
+    fps: out.fps,
+    alpha: options.profile.alpha === true,
+    quality: options.profile.quality ?? 80,
+    hardware: options.profile.hardwareAcceleration ?? 'auto',
+    colorSpace: options.profile.colorSpace ?? 'srgb',
+    threads: options.encoderThreads ?? encoderThreadsFor(localProcesses),
+    ...(audio !== undefined ? { audioPath: audio.path } : {}),
+    ...(options.profile.audioCodec !== undefined ? { audioCodec: options.profile.audioCodec } : {}),
+    ...(options.profile.audioBitrate !== undefined ? { audioBitrate: options.profile.audioBitrate } : {}),
   });
-  env.telemetry.metrics.recordEncodingDuration((performance.now() - encodeStart) / 1000, { format: options.profile.format });
+
+  // Encoder-Pumpe: schreibt fertige Chunks in Ausgabe-Reihenfolge, parallel zum Rendern.
+  let written = 0;
+  let encodeSeconds = 0;
+  let nextStart = 0;
+  const ready = new Map<number, ChunkResult>();
+  const direct = new Set<number>();
+  let pump: Promise<void> = Promise.resolve();
+  let pumpError: unknown;
+  let pumpFailed = false;
+  const writeFrame = async (image: RgbaImage): Promise<void> => {
+    const t = performance.now();
+    await encoder.write(image);
+    encodeSeconds += (performance.now() - t) / 1000;
+    written++;
+    options.onProgress?.({ stage: 'encode', done: written, total });
+  };
+  const drain = async (): Promise<void> => {
+    for (let r = ready.get(nextStart); r !== undefined; r = ready.get(nextStart)) {
+      ready.delete(nextStart);
+      if (!direct.has(r.start)) {
+        for (const key of r.keys) {
+          throwIfCancelled(signal);
+          const bytes = await env.cache.tier('frame').get(key);
+          if (bytes === undefined) {
+            throw new OpenVideoError({ code: 'OV_RENDER_FRAME_MISSING', errorClass: 'RenderError', problem: `Frame ${key} is missing from the frame cache.`, suggestions: ['Check that all workers share the same cache store (OPENVIDEO_S3_*).'] });
+          }
+          await writeFrame(await decodeRawFrameAsync(bytes));
+        }
+      }
+      nextStart = r.end;
+    }
+  };
+  const enqueue = (r: ChunkResult): void => {
+    ready.set(r.start, r);
+    pump = pump.then(drain).catch((error: unknown) => {
+      if (!pumpFailed) {
+        pumpFailed = true;
+        pumpError = error;
+      }
+    });
+  };
+
+  const runner: ChunkRunner =
+    options.runChunks ??
+    (async (list, onDone) => {
+      const results: ChunkResult[] = [];
+      for (const c of list) {
+        // Lokal in Reihenfolge: Frames gehen ohne Umweg über den Cache an den Encoder.
+        await pump;
+        const inOrder = c.start === nextStart && ready.size === 0 && !pumpFailed;
+        if (inOrder) direct.add(c.start);
+        const r = await renderChunk(env, project, c, signal, inOrder ? writeFrame : undefined);
+        onDone(r);
+        results.push(r);
+      }
+      return results;
+    });
+  const renderStart = performance.now();
+  let results: readonly ChunkResult[];
+  try {
+    results = await stage('renderFrames', () =>
+      runner(
+        chunks,
+        (r) => {
+          done += r.end - r.start;
+          options.onProgress?.({ stage: 'render', done, total });
+          enqueue(r);
+        },
+        signal !== undefined ? { signal } : {},
+      ),
+    );
+    await pump;
+    if (pumpFailed) throw pumpError;
+  } catch (error) {
+    await pump.catch(() => undefined);
+    await encoder.abort();
+    throw error;
+  }
+  const ordered = [...results].sort((a, b) => a.start - b.start);
+  const keys = ordered.flatMap((r) => [...r.keys]);
+  const frameHashes = ordered.flatMap((r) => [...r.frameHashes]);
+  const diagnostics = ordered.flatMap((r) => [...r.diagnostics]);
+  if (keys.length !== outCount || written !== outCount) {
+    await encoder.abort();
+    throw new OpenVideoError({ code: 'OV_RENDER_INCOMPLETE', errorClass: 'RenderError', problem: `Expected ${String(outCount)} frames but got ${String(keys.length)} (${String(written)} encoded).`, suggestions: ['Retry the failed chunks with `render.status`.'] });
+  }
+
+  const encodeStart = performance.now();
+  let encoded: Awaited<ReturnType<typeof encoder.finish>>;
+  try {
+    encoded = await stage('ffmpeg', () => encoder.finish());
+  } catch (error) {
+    await encoder.abort();
+    throw error;
+  }
+  // `ffmpeg` misst die Zeit, die der Encoder den Ablauf aufhielt: Schreiben (parallel zum Rendern) und Abschluss.
+  stages['ffmpeg'] = (stages['ffmpeg'] ?? 0) + encodeSeconds;
+  const encodeWall = (performance.now() - encodeStart) / 1000 + encodeSeconds;
+  env.telemetry.metrics.recordEncodingDuration(encodeWall, { format: options.profile.format });
   env.telemetry.metrics.recordRenderDuration((performance.now() - renderStart) / 1000, { composition: compositionId });
 
   const mediaInfo = await media.info();
@@ -291,13 +418,22 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
   };
   const manifestPath = join(dirname(options.outPath), `${basename(options.outPath)}.render-manifest.json`);
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  // Cache-Budget (Story 18.9): nach dem Render bis zur Obergrenze aufräumen (älteste zuerst).
+  const maxBytes = options.cacheMaxBytes ?? cacheMaxBytesFromEnv();
+  if (maxBytes !== undefined) {
+    try {
+      await env.cache.prune(maxBytes);
+    } catch (error) {
+      env.telemetry.logger.warn('cache prune failed', { maxBytes, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
   return { outputs: encoded.outputs, manifestPath, manifest, diagnostics };
 }
 
 /** Liest einen gerenderten Frame aus dem Cache (für Vorschau und Tests). */
 export async function frameFromCache(env: RenderEnvironment, key: string): Promise<RgbaImage | undefined> {
   const bytes = await env.cache.tier('frame').get(key);
-  return bytes === undefined ? undefined : decodeRawFrame(bytes);
+  return bytes === undefined ? undefined : decodeRawFrameAsync(bytes);
 }
 
 /**
@@ -307,7 +443,9 @@ export async function frameFromCache(env: RenderEnvironment, key: string): Promi
 export async function missingFrames(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, compositionId: string | undefined, frames: readonly number[], scale = 1): Promise<number[]> {
   const out: number[] = [];
   for (const f of frames) {
-    const scene = evaluateScene(project, compositionId, f, { registry: env.registry });
+    // Wie renderFrame: animierte Bilder laufen als Video-Nodes; sonst wiche der Schlüssel ab und
+    // jeder Frame mit animiertem Bild gälte als fehlend (Story 18.9).
+    const scene = resolveAnimatedImages(env.assets, evaluateScene(project, compositionId, f, { registry: env.registry }));
     const size = outputSize(scene, scale);
     const key = frameKey(scene, env.versions, assetHashes(env, project), { width: size.width, height: size.height, extra: { scale, debug: null } });
     if (!(await env.cache.tier('frame').has(key))) out.push(f);

@@ -24,7 +24,7 @@ Der MCP-Server bietet zusätzlich die Resources `openvideo://agents.md`, `openvi
 | `preview.render` | Render a low-resolution preview video (job). | ja |
 | `preview.contactSheet` | Render several frames into one labeled contact sheet image. |  |
 | `video.render` | Render the final video with a render profile (job); writes a render manifest. | ja |
-| `render.status` | Status, progress and result of a render job. |  |
+| `render.status` | Status, progress and result of a render job; without jobId, all jobs (optionally of one project), newest first. |  |
 | `render.cancel` | Cancel a queued or running render job. |  |
 | `diagnostics.get` | All diagnostics: validation, backend checks, and (with frame) scene diagnostics. |  |
 | `subtitles.transcribe` | Transcribe an audio/video asset with an ASR provider (e.g. whisper.cpp) into a subtitle track with word timings. |  |
@@ -287,7 +287,7 @@ Render the final video with a render profile (job); writes a render manifest.
 
 ### render.status
 
-Status, progress and result of a render job.
+Status, progress and result of a render job; without jobId, all jobs (optionally of one project), newest first.
 
 ```json
 {

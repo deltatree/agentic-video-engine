@@ -11,6 +11,14 @@
  */
 import { OpenVideoError, type ColorSpace, type RgbaImage } from '@agentic-video/core';
 
+/** Rechteck in Pixeln (`x1`, `y1` exklusiv), außerhalb dessen ein Bild nur Nullen enthält. */
+export interface Bounds {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
 /** Float-Bild mit vormultipliziertem Alpha, 4 Kanäle je Pixel, Werte nominell 0..1. */
 export interface FloatImage {
   readonly width: number;
@@ -111,6 +119,9 @@ function transfer(v: number, from: ColorSpace, to: ColorSpace): number {
   if (from === to) return v;
   return encodeTransfer(decodeTransfer(v, from), to);
 }
+
+/** Byte-Reihenfolge der Plattform (für 32-Bit-Schreibzugriffe auf RGBA). */
+const LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
 /** Stützstellen der Transfer-Tabellen. Lineare Interpolation; Fehler < 0.01 LSB bei 8 Bit. */
 const TABLE_STEPS = 4096;
@@ -220,37 +231,56 @@ export function rgbaToFloat(image: RgbaImage, space: ColorSpace): FloatImage {
  * @example
  * ```ts
  * const frame = floatToRgba(linear, 'linear', 'srgb');
+ * // Nur eine Region hat Inhalt (Rest ist 0): nur dort umrechnen.
+ * const part = floatToRgba(linear, 'linear', 'srgb', { x0: 0, y0: 0, x1: 64, y1: 64 });
  * ```
  */
-export function floatToRgba(image: FloatImage, from: ColorSpace, to: ColorSpace): RgbaImage {
+export function floatToRgba(image: FloatImage, from: ColorSpace, to: ColorSpace, region?: Bounds): RgbaImage {
   const src = image.data;
   const out = new Uint8Array(src.length);
-  if (from === to) {
-    for (let i = 0; i < src.length; i += 4) {
+  const w = image.width;
+  // Außerhalb der Region sind alle Kanäle 0 (Story 18.1); dort bleibt `out` 0 wie bei `!(a > 0)`.
+  const y0 = region?.y0 ?? 0;
+  const y1 = region?.y1 ?? image.height;
+  const x0 = region?.x0 ?? 0;
+  const x1 = region?.x1 ?? w;
+  // Ein 32-Bit-Wort je Pixel schreiben (Little Endian: R im niedrigsten Byte).
+  const words = LITTLE_ENDIAN ? new Uint32Array(out.buffer, out.byteOffset, out.length >> 2) : undefined;
+  const t = from === to ? undefined : transferTable(from, to);
+  for (let y = y0; y < y1; y++) {
+    for (let p = y * w + x0, end = y * w + x1; p < end; p++) {
+      const i = p * 4;
       let a = src[i + 3] ?? 0;
       if (!(a > 0)) continue;
       if (a > 1) a = 1;
-      let v = src[i] ?? 0;
-      out[i] = ((v < 0 ? 0 : v > a ? a : v) * 255 + 0.5) | 0;
-      v = src[i + 1] ?? 0;
-      out[i + 1] = ((v < 0 ? 0 : v > a ? a : v) * 255 + 0.5) | 0;
-      v = src[i + 2] ?? 0;
-      out[i + 2] = ((v < 0 ? 0 : v > a ? a : v) * 255 + 0.5) | 0;
-      out[i + 3] = (a * 255 + 0.5) | 0;
+      let r: number;
+      let g: number;
+      let b: number;
+      let a8: number;
+      if (t === undefined) {
+        let v = src[i] ?? 0;
+        r = ((v < 0 ? 0 : v > a ? a : v) * 255 + 0.5) | 0;
+        v = src[i + 1] ?? 0;
+        g = ((v < 0 ? 0 : v > a ? a : v) * 255 + 0.5) | 0;
+        v = src[i + 2] ?? 0;
+        b = ((v < 0 ? 0 : v > a ? a : v) * 255 + 0.5) | 0;
+        a8 = (a * 255 + 0.5) | 0;
+      } else {
+        const inv = 1 / a;
+        const f = a * 255;
+        r = (lookup(t, (src[i] ?? 0) * inv) * f + 0.5) | 0;
+        g = (lookup(t, (src[i + 1] ?? 0) * inv) * f + 0.5) | 0;
+        b = (lookup(t, (src[i + 2] ?? 0) * inv) * f + 0.5) | 0;
+        a8 = (f + 0.5) | 0;
+      }
+      if (words !== undefined) words[p] = (r & 255) | ((g & 255) << 8) | ((b & 255) << 16) | ((a8 & 255) << 24);
+      else {
+        out[i] = r;
+        out[i + 1] = g;
+        out[i + 2] = b;
+        out[i + 3] = a8;
+      }
     }
-    return { width: image.width, height: image.height, data: out };
-  }
-  const t = transferTable(from, to);
-  for (let i = 0; i < src.length; i += 4) {
-    let a = src[i + 3] ?? 0;
-    if (!(a > 0)) continue;
-    if (a > 1) a = 1;
-    const inv = 1 / a;
-    const f = a * 255;
-    out[i] = (lookup(t, (src[i] ?? 0) * inv) * f + 0.5) | 0;
-    out[i + 1] = (lookup(t, (src[i + 1] ?? 0) * inv) * f + 0.5) | 0;
-    out[i + 2] = (lookup(t, (src[i + 2] ?? 0) * inv) * f + 0.5) | 0;
-    out[i + 3] = (f + 0.5) | 0;
   }
   return { width: image.width, height: image.height, data: out };
 }
@@ -261,21 +291,29 @@ export function floatToRgba(image: FloatImage, from: ColorSpace, to: ColorSpace)
  * @example
  * ```ts
  * convertFloatInPlace(img, 'srgb', 'linear');
+ * convertFloatInPlace(img, 'linear', 'srgb', { x0: 0, y0: 0, x1: 64, y1: 64 }); // nur die Region
  * ```
  */
-export function convertFloatInPlace(image: FloatImage, from: ColorSpace, to: ColorSpace): void {
+export function convertFloatInPlace(image: FloatImage, from: ColorSpace, to: ColorSpace, region?: Bounds): void {
   if (from === to) return;
   const t = transferTable(from, to);
   const d = image.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const a = d[i + 3] ?? 0;
-    if (a <= 0) {
-      d[i] = 0;
-      d[i + 1] = 0;
-      d[i + 2] = 0;
-      continue;
+  const w = image.width;
+  const y0 = region?.y0 ?? 0;
+  const y1 = region?.y1 ?? image.height;
+  for (let y = y0; y < y1; y++) {
+    const start = region === undefined ? y * w * 4 : (y * w + region.x0) * 4;
+    const end = region === undefined ? (y + 1) * w * 4 : (y * w + region.x1) * 4;
+    for (let i = start; i < end; i += 4) {
+      const a = d[i + 3] ?? 0;
+      if (a <= 0) {
+        d[i] = 0;
+        d[i + 1] = 0;
+        d[i + 2] = 0;
+        continue;
+      }
+      for (let c = 0; c < 3; c++) d[i + c] = lookup(t, (d[i + c] ?? 0) / a) * a;
     }
-    for (let c = 0; c < 3; c++) d[i + c] = lookup(t, (d[i + c] ?? 0) / a) * a;
   }
 }
 
@@ -318,4 +356,125 @@ export function convertColorSpace(image: RgbaImage, from: ColorSpace, to: ColorS
     out[i + 3] = a8;
   }
   return { width: image.width, height: image.height, data: out };
+}
+
+/**
+ * Komponiert nur 8-Bit-Bildlayer (`normal`) über einen Hintergrund und kodiert direkt in 8 Bit
+ * (Story 18.1): ein Durchlauf je Pixel über alle Layer, ohne Float-Zwischenbild in Ausgabegröße.
+ * Jede Zwischensumme wird wie beim Speichern in ein Float32-Bild mit `Math.fround` gerundet;
+ * das Ergebnis ist bitgleich zu Hintergrund füllen → je Layer mischen → {@link floatToRgba}.
+ * `background` enthält die vormultiplizierten Werte im Arbeitsraum `space` (Float32-gerundet).
+ *
+ * @example
+ * ```ts
+ * const frame = flattenImageLayers([layer], [0, 0, 0, 0], 'srgb', 'srgb', 1920, 1080);
+ * ```
+ */
+export function flattenImageLayers(layers: readonly RgbaImage[], background: readonly [number, number, number, number], space: ColorSpace, to: ColorSpace, width: number, height: number): RgbaImage {
+  const out = new Uint8Array(width * height * 4);
+  const words = LITTLE_ENDIAN ? new Uint32Array(out.buffer, out.byteOffset, out.length >> 2) : undefined;
+  const table = decodeTable(space);
+  const t = space === to ? undefined : transferTable(space, to);
+  const k = 1 / 255;
+  const [bgR, bgG, bgB, bgA] = background;
+  const only = layers.length === 1 ? layers[0] : undefined;
+  if (only !== undefined && words !== undefined) {
+    // Ein Layer: Das Ergebnis eines Kanals hängt nur von (Alpha, Wert) des Layers ab. Tabellen je
+    // Kanal (65 536 Einträge, einmal je Frame mit derselben Rechnung wie unten) ersetzen die
+    // Float-Rechnung je Pixel.
+    const shift = [0, 8, 16] as const;
+    const bgc = [bgR, bgG, bgB] as const;
+    const luts = shift.map(() => new Uint32Array(65536));
+    const alphaLut = new Uint32Array(256);
+    for (let a8 = 0; a8 < 256; a8++) {
+      let a = bgA;
+      if (a8 === 255) a = 1;
+      else if (a8 !== 0) a = Math.fround(a8 * k + bgA * (1 - a8 * k));
+      if (!(a > 0)) continue;
+      if (a > 1) a = 1;
+      alphaLut[a8] = ((((a * 255 + 0.5) | 0) & 255) << 24) >>> 0;
+      const row = a8 << 8;
+      for (let c = 0; c < 3; c++) {
+        const lut = luts[c];
+        const base = bgc[c] ?? 0;
+        if (lut === undefined) continue;
+        for (let v = 0; v < 256; v++) {
+          let x = base;
+          if (a8 === 255) x = table[row | v] ?? 0;
+          else if (a8 !== 0) x = Math.fround((table[row | v] ?? 0) + base * (1 - a8 * k));
+          const b8 = t === undefined ? ((x < 0 ? 0 : x > a ? a : x) * 255 + 0.5) | 0 : (lookup(t, x * (1 / a)) * (a * 255) + 0.5) | 0;
+          lut[row | v] = ((b8 & 255) << (shift[c] ?? 0)) >>> 0;
+        }
+      }
+    }
+    const [lr, lg, lb] = luts;
+    const s = only.data;
+    if (lr === undefined || lg === undefined || lb === undefined) return { width, height, data: out };
+    const n = width * height;
+    for (let p = 0, i = 0; p < n; p++, i += 4) {
+      const a8 = s[i + 3] ?? 0;
+      const row = a8 << 8;
+      words[p] = (lr[row | (s[i] ?? 0)] ?? 0) | (lg[row | (s[i + 1] ?? 0)] ?? 0) | (lb[row | (s[i + 2] ?? 0)] ?? 0) | (alphaLut[a8] ?? 0);
+    }
+    return { width, height, data: out };
+  }
+  const sources = layers.map((l) => l.data);
+  const count = sources.length;
+  const n = width * height;
+  for (let p = 0; p < n; p++) {
+    const i = p * 4;
+    let r = bgR;
+    let g = bgG;
+    let b = bgB;
+    let a = bgA;
+    for (let l = 0; l < count; l++) {
+      const s = sources[l];
+      if (s === undefined) continue;
+      const a8 = s[i + 3] ?? 0;
+      if (a8 === 0) continue;
+      const row = a8 << 8;
+      const lr = table[row | (s[i] ?? 0)] ?? 0;
+      const lg = table[row | (s[i + 1] ?? 0)] ?? 0;
+      const lb = table[row | (s[i + 2] ?? 0)] ?? 0;
+      if (a8 === 255) {
+        r = lr;
+        g = lg;
+        b = lb;
+        a = 1;
+        continue;
+      }
+      const inv = 1 - a8 * k;
+      r = Math.fround(lr + r * inv);
+      g = Math.fround(lg + g * inv);
+      b = Math.fround(lb + b * inv);
+      a = Math.fround(a8 * k + a * inv);
+    }
+    if (!(a > 0)) continue;
+    if (a > 1) a = 1;
+    let r8: number;
+    let g8: number;
+    let b8: number;
+    let a8: number;
+    if (t === undefined) {
+      r8 = ((r < 0 ? 0 : r > a ? a : r) * 255 + 0.5) | 0;
+      g8 = ((g < 0 ? 0 : g > a ? a : g) * 255 + 0.5) | 0;
+      b8 = ((b < 0 ? 0 : b > a ? a : b) * 255 + 0.5) | 0;
+      a8 = (a * 255 + 0.5) | 0;
+    } else {
+      const inv = 1 / a;
+      const f = a * 255;
+      r8 = (lookup(t, r * inv) * f + 0.5) | 0;
+      g8 = (lookup(t, g * inv) * f + 0.5) | 0;
+      b8 = (lookup(t, b * inv) * f + 0.5) | 0;
+      a8 = (f + 0.5) | 0;
+    }
+    if (words !== undefined) words[p] = (r8 & 255) | ((g8 & 255) << 8) | ((b8 & 255) << 16) | ((a8 & 255) << 24);
+    else {
+      out[i] = r8;
+      out[i + 1] = g8;
+      out[i + 2] = b8;
+      out[i + 3] = a8;
+    }
+  }
+  return { width, height, data: out };
 }

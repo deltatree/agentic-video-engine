@@ -13,5 +13,6 @@
  * ```
  */
 export * from './sfnt.js';
+export * from './woff.js';
 export * from './font-set.js';
 export * from './usage.js';

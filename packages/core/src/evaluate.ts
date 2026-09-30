@@ -8,6 +8,7 @@ import { OpenVideoError, validateValue, Theme as ThemeSchema, Timing as TimingSc
 import { computeLocalTime, easing, evaluateAnimated, resolveMarkers, toFrames, type AnimationContext, type TimelineEvent } from '@agentic-video/timeline';
 import type { EvaluatedNode, EvaluatedScene, Reveal } from './contracts.js';
 import { conforms, isRecord } from './guards.js';
+import { contentHash } from './hash.js';
 import { sortByZIndex } from './plan.js';
 import type { ExpandContext, Registry } from './registry.js';
 
@@ -22,6 +23,65 @@ export interface EvaluateOptions {
    * Darüber bricht die Auswertung mit der Diagnose `OV_EVAL_NODE_BUDGET` ab.
    */
   readonly maxNodes?: number;
+  /**
+   * Subframe-Zustände für Motion Blur in {@link EvaluatedScene.motionKey} aufnehmen (Standard `true`).
+   * Auswertungen von Subframes selbst setzen `false`.
+   */
+  readonly motionKey?: boolean;
+}
+
+/**
+ * Subframe-Offsets der Blender-Motion-Blur-Zustände (Verschlusszeit ½ Frame, zentriert).
+ * Muss `DEFAULT_MOTION_OFFSETS` in `@agentic-video/renderer-blender` entsprechen.
+ */
+export const BLENDER_MOTION_OFFSETS: readonly number[] = [-0.25, 0.25];
+
+/** Offsets der Subframes, die eine Node für Motion Blur braucht (leer = keine). */
+function motionOffsets(node: EvaluatedNode): number[] {
+  if (node.type === 'blender' && node.props['motionBlur'] === true) return [...BLENDER_MOTION_OFFSETS];
+  const blur = node.props['motionBlur'];
+  if (node.type === 'layer' && isRecord(blur) && typeof blur['samples'] === 'number' && typeof blur['shutter'] === 'number' && blur['samples'] >= 2) {
+    const samples = blur['samples'];
+    const shutter = blur['shutter'];
+    return Array.from({ length: samples }, (_, i) => (i / (samples - 1) - 0.5) * shutter).filter((o) => o !== 0);
+  }
+  return [];
+}
+
+function stripForMotion(node: EvaluatedNode): unknown {
+  return {
+    id: node.id,
+    type: node.type,
+    props: node.props,
+    children: node.children.map(stripForMotion),
+    mask: node.mask === undefined ? undefined : { ...node.mask, node: stripForMotion(node.mask.node) },
+    reveal: node.reveal,
+    time: node.time.localFrame,
+  };
+}
+
+/**
+ * Hash der Subframe-Zustände aller Motion-Blur-Nodes (Blender `motionBlur: true`, `layer.motionBlur`),
+ * oder `undefined`, wenn die Szene keine hat. Geht in den Frame-Schlüssel ein: Gleiche Zustände am
+ * Frame, aber andere Bewegung zwischen den Frames, ergeben verschiedene Pixel.
+ */
+function motionKeyOf(project: Readonly<Record<string, unknown>>, compositionId: string, frame: number, nodes: readonly EvaluatedNode[], options: EvaluateOptions): string | undefined {
+  const wanted = new Map<string, number[]>();
+  walkEvaluated(nodes, (n) => {
+    const offsets = motionOffsets(n);
+    if (offsets.length > 0) wanted.set(n.id, offsets);
+  });
+  if (wanted.size === 0) return undefined;
+  const offsets = [...new Set([...wanted.values()].flat())].sort((a, b) => a - b);
+  const states = offsets.map((offset) => {
+    const sub = evaluateScene(project, compositionId, frame + offset, { ...options, motionKey: false });
+    const found: unknown[] = [];
+    walkEvaluated(sub.nodes, (n) => {
+      if (wanted.get(n.id)?.includes(offset) === true) found.push(stripForMotion(n));
+    });
+    return { offset, nodes: found };
+  });
+  return contentHash(states);
 }
 
 /** Standard-Knotenbudget pro Auswertung (Schutz vor exponentiellen `composition-ref`-Bäumen). */
@@ -436,7 +496,8 @@ function arrangeSequence(raw: Readonly<Record<string, unknown>>, id: string, par
     const item = items[i];
     if (item === undefined) continue;
     const next = items[i + 1];
-    const gapSpec = perGap[i] ?? between;
+    // transitions[i] liegt zwischen Kind i und i + 1 der IR; übersprungene Kinder verschieben den Index nicht.
+    const gapSpec = perGap[item.index] ?? between;
     let overlap = 0;
     let outgoing: Record<string, unknown> | undefined;
     let nextIn: Record<string, unknown> | undefined;
@@ -635,6 +696,8 @@ export function evaluateScene(project: Readonly<Record<string, unknown>>, compos
   const safe = isRecord(comp['safeArea']) ? comp['safeArea'] : {};
   const colorSpace: ColorSpace = colorSpaceOf(comp['colorSpace']) ?? colorSpaceOf(settings['workingColorSpace']) ?? 'srgb';
   const outputColorSpace = colorSpaceOf(settings['outputColorSpace']);
+  const sorted = sortByZIndex(nodes);
+  const motionKey = options.motionKey === false ? undefined : motionKeyOf(project, id, frame, sorted, options);
   return {
     compositionId: id,
     width,
@@ -648,8 +711,9 @@ export function evaluateScene(project: Readonly<Record<string, unknown>>, compos
     colorSpace,
     ...(outputColorSpace !== undefined ? { outputColorSpace } : {}),
     safeArea: { action: num(safe['action'], 0.035), title: num(safe['title'], 0.05) },
-    nodes: sortByZIndex(nodes),
+    nodes: sorted,
     diagnostics,
+    ...(motionKey !== undefined ? { motionKey } : {}),
   };
 }
 

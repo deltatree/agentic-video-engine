@@ -264,7 +264,7 @@ type Fn = (args: readonly ExprValue[], scope: ExprScope, src: string) => ExprVal
 
 function numArg(args: readonly ExprValue[], i: number, src: string, name: string): number {
   const v = args[i];
-  if (typeof v !== 'number') throw exprError(src, `Argument ${String(i + 1)} of ${name}() must be a number.`);
+  if (typeof v !== 'number') throw exprError(src, `Argument ${String(i + 1)} of ${name}() must be a number${typeof v === 'string' ? `, got the string ${JSON.stringify(v)}` : ''}.`);
   return v;
 }
 
@@ -279,7 +279,7 @@ const unaryMath = (f: (x: number) => number, name: string): Fn => (args, _s, src
 function mapNum(v: ExprValue | undefined, f: (x: number) => number, src: string, name: string): ExprValue {
   if (typeof v === 'number') return f(v);
   if (Array.isArray(v)) return v.map((x: number) => f(x));
-  throw exprError(src, `${name}() expects a number or vector.`);
+  throw exprError(src, `${name}() expects a number or vector${typeof v === 'string' ? `, got the string ${JSON.stringify(v)}` : ''}.`);
 }
 
 /** Funktionen der Expression-Sprache. */
@@ -425,7 +425,7 @@ function evaluate(node: Node, scope: ExprScope, src: string): ExprValue {
     case 'arr':
       return node.items.map((item) => {
         const v = evaluate(item, scope, src);
-        if (typeof v !== 'number') throw exprError(src, 'Vector items must be numbers.');
+        if (typeof v !== 'number') throw exprError(src, `Vector items must be numbers${typeof v === 'string' ? `, got the string ${JSON.stringify(v)}` : ''}.`);
         return v;
       });
     case 'un': {
@@ -444,7 +444,8 @@ function evaluate(node: Node, scope: ExprScope, src: string): ExprValue {
       if (typeof l === 'string' || typeof r === 'string') {
         if (node.op === '==') return l === r ? 1 : 0;
         if (node.op === '!=') return l !== r ? 1 : 0;
-        throw exprError(src, `Operator "${node.op}" cannot use strings.`);
+        const text = typeof l === 'string' ? l : r;
+        throw exprError(src, `Operator "${node.op}" cannot use the string ${JSON.stringify(text)}. Strings (e.g. text data from event(id, key)) only work with == and !=.`);
       }
       if (typeof l === 'number' && typeof r === 'number') return arith(node.op, l, r);
       const la: readonly number[] = typeof l === 'number' ? [] : l;

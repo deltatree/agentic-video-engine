@@ -77,6 +77,11 @@ export interface AgentServices {
    * (`openvideo serve|mcp --project <dir>`, `OPENVIDEO_PROJECT_ROOTS`). Ohne Angabe ist `project.open` aus.
    */
   readonly projectRoots?: readonly string[];
+  /**
+   * Projektordner, die der Host selbst eingebunden hat (z. B. `openvideo dev <dir>`). Eingebundene
+   * Projekte (Symlinks im Workspace) sind nur erreichbar, solange ihr Ziel in `projectRoots` oder hier liegt.
+   */
+  readonly hostProjectDirs?: readonly string[];
   /** Benchmarks (Paket `benchmarks`). */
   readonly benchmark?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
 }

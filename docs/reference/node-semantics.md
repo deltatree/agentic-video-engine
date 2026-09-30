@@ -95,6 +95,7 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
   - Eigene `transition`-Einträge der Kinder gelten an Stellen ohne Sequenz-Übergang (z. B. `in` des ersten und `out` des letzten Kinds).
   - Die Gesamtdauer ist die Summe der Kinddauern minus der Überlappungen.
 - **composition-ref**, **component**, **subtitles**: werden vor dem Rendern expandiert. Renderer sehen sie nie.
+  Eine `composition-ref` bringt den Ton ihrer Composition mit (Spuren, Video-Ton, weitere Refs, rekursiv), versetzt und abgebildet mit der lokalen Zeit der Ref (`from`, `speed`, `reverse`, `remap` wirken wie bei Video-Ton). Lautheit und Limiter der verschachtelten Composition wirken nicht; gemastert wird nur die äußere.
 
 ### Formen
 
@@ -113,9 +114,10 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 - Mit `width` bricht der Text an Wortgrenzen um. `textAlign` richtet innerhalb von `width` aus.
 - `maxLines` begrenzt die Zeilen; mit `ellipsis` wird die letzte Zeile gekürzt. Mehr Text als Platz ist **Überlauf** (Diagnose `OV_TEXT_OVERFLOW`).
 - `fontFeatures` (z. B. `{ liga: 0, tnum: 1 }`) und `fontVariations` (z. B. `{ wght: 650 }`) gehen direkt an den Textsatz.
-- `textPath`: Glyphen folgen dem Pfad ab `offset` Pixeln.
+- `textPath`: Glyphen folgen dem Pfad ab `offset` Pixeln. `background` wird dann zu einem Band entlang des Pfads (Zeilenhöhe plus `paddingY`, `paddingX` vor und nach dem Text, `radius > 0` rundet die Enden); `textAnimation` wirkt je Einheit um ihre Mitte auf dem Pfad.
 - `fill` als Verlauf füllt die Textbox; `stroke` zeichnet Glyphenkonturen.
-- `textAnimation`: Jede Einheit (Zeichen, Wort, Zeile) geht von `from` in den Normalzustand über. Den Zustand berechnet `textUnitState(node, i, count, localFrame, fps)`; die Aufteilung `splitTextUnits`. Verschiebung und Skalierung wirken um die Mitte der Einheit.
+- `textAnimation`: Jede Einheit (Zeichen, Wort, Zeile) geht von `from` in den Normalzustand über. Den Zustand berechnet `textUnitState(node, i, count, localFrame, fps)`; die Aufteilung `splitTextUnits`. Verschiebung und Skalierung wirken um die Mitte der Einheit. Einheit i beginnt bei `starts[i]`, sonst bei `start + Position · stagger`.
+- **subtitles** (Makro): siehe `packages/subtitles/README.md` – ASS-Stile, Umbruch mit echter Textmessung, Karaoke-Fill im laufenden Wort, `textAnimation` je Wort ab seiner Wortzeit, `fromAudio` vor dem Render transkribiert.
 - `background`: Box hinter dem gemessenen Text (`color`, `paddingX`, `paddingY`, `radius`); mit `perLine: true` eine Box je Zeile. Die Box gehört zur Node (Opacity, Transform, Maske wirken mit).
 - `rich-text`: `spans` mit eigenen Stilen; Stil-Properties der Node sind Standard für alle Spans.
 
@@ -123,7 +125,8 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 
 - **image**: `fit` Standard `fill` bei gesetzten Maßen. `contain`/`cover` zentrieren. `smoothing` Standard `linear`. Animierte Bilder (GIF, APNG, animiertes WebP) normalisiert die Asset-Pipeline zu einem verlustfreien Video; die Node zeigt dann den Frame zur lokalen Zeit, in einer Endlosschleife über die Dauer des Bildes (Video-Frame-Pfad wie bei `video`, `loop: true`, stumm). Animiertes WebP braucht ein FFmpeg, das animiertes WebP dekodiert (FFmpeg 6.1 kann das nicht; der Import meldet dann einen Fehler).
 - **video**: Quellzeit = `startFrom + localTime · playbackRate`; mit `loop` modulo Dauer, sonst geklemmt. Das Bild liefert `AssetResolver.videoFrame(asset, sekunden)`.
-- **svg**: Asset oder `markup` in die Box skaliert (`fit` Standard `contain`).
+  Ton (ohne `muted`): In einfacher Einbettung (nur `timing.from`/`duration` an der Node und allen Vorfahren, nicht in `sequence` oder Komponenten) ist er ein Clip; `playbackRate` ändert das Tempo bei gleicher Tonhöhe. Sonst (`speed`, `reverse`, `remap`, `loop`, `pingPong`, `hold` an der Node oder einem Vorfahren) folgt der Ton der Quellzeit des Bildes, je Frame abgetastet und linear interpoliert, und läuft wie ein Band (Tonhöhe folgt der Geschwindigkeit, `reverse` spielt rückwärts).
+- **svg**: Asset oder `markup` in die Box skaliert (`fit` Standard `contain`). Gezeichnet werden Formen, `g`, `use`, Verläufe, `pattern`, `clipPath` (`clipPathUnits`, `clip-rule`), `mask` (Luminanz × Alpha, `mask-type: alpha`, Maskenbereich), `image` und `text` mit `tspan` (`x`, `y`, `dx`, `dy`, eigener Stil). `<image>` lädt nur Data-URIs (PNG, JPEG, WebP, GIF, BMP) und Bild-Assets des Projects (`asset:<id>` oder ein Pfad relativ zur SVG-Datei innerhalb des Projects); andere Quellen meldet die Prüfung als `OV_SVG_IMAGE_BLOCKED`. Nicht unterstützte Elemente (z. B. `filter`, `foreignObject`) meldet sie als `OV_SVG_UNSUPPORTED`, auch für SVG-Assets (`checkProject`).
 - **sprite**: Rasterbild mit `columns × rows` Zellen, zeilenweise nummeriert. Index = `frame`, sonst `floor(localTime · frameRate)`; mit `loop` modulo `frameCount`, sonst geklemmt.
 - **lottie**: Zeit = `localTime · speed + frameOffset / lottieFps`; mit `loop` modulo Dauer.
 

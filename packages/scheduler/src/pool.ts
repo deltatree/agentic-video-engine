@@ -8,7 +8,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { OpenVideoError, type Diagnostic } from '@agentic-video/core';
 import type { Cache } from '@agentic-video/cache';
-import type { ChunkRequest, ChunkResult } from '@agentic-video/render';
+import type { CancelSignal, ChunkRequest, ChunkResult } from '@agentic-video/render';
 import type { LogLevel, Telemetry } from '@agentic-video/telemetry';
 import { MessageDecoder, encodeMessage, type InitMessage, type ProtocolMessage } from './protocol.js';
 
@@ -42,7 +42,17 @@ export interface PoolOptions {
   readonly launch: (slot: number, generation: number) => WorkerLaunch;
   readonly init: (worker: string) => InitMessage;
   readonly onEvent?: (event: SchedulerEvent) => void;
+  /**
+   * Höchstdauer eines Chunk-Versuchs in Millisekunden (Story 18.8). Danach wird der Worker beendet
+   * und der Chunk auf einem anderen Worker wiederholt (zählt als Versuch). Standard: kein Limit.
+   */
+  readonly chunkTimeoutMs?: number;
+  /** Abbruch (Story 18.8): Worker bekommen `cancel`, der Pool endet mit `OV_RENDER_CANCELLED`. */
+  readonly signal?: CancelSignal;
 }
+
+/** Wie oft der Pool das Abbruch-Signal prüft (Millisekunden). */
+const CANCEL_POLL_MS = 100;
 
 type Outcome = { readonly kind: 'result'; readonly result: ChunkResult } | { readonly kind: 'error'; readonly diagnostic: Diagnostic } | { readonly kind: 'crash'; readonly reason: string };
 
@@ -68,6 +78,8 @@ class WorkerConnection {
   private exitInfo: { code: number | null; signal: string | null } | undefined;
   readonly exited: Promise<void>;
   private sequence = 0;
+  /** Grund, wenn der Pool den Worker wegen Zeitüberschreitung beendet hat. */
+  private timeoutReason: string | undefined;
 
   constructor(
     readonly launch: WorkerLaunch,
@@ -79,7 +91,7 @@ class WorkerConnection {
         this.exitInfo = { code, signal };
         launch.cleanup?.();
         options.onEvent?.({ type: 'worker-exited', worker: launch.id, code, signal });
-        this.finishCurrent({ kind: 'crash', reason: this.exitReason() });
+        this.finishCurrent({ kind: 'crash', reason: this.timeoutReason ?? this.exitReason() });
         resolve();
       });
     });
@@ -182,13 +194,33 @@ class WorkerConnection {
     this.options.telemetry.logger.log(lvl, typeof message === 'string' ? message : 'worker log', { ...fields, worker: this.launch.id });
   }
 
-  run(chunk: ChunkRequest, traceparent: string | undefined): Promise<Outcome> {
+  run(chunk: ChunkRequest, traceparent: string | undefined, timeoutMs?: number): Promise<Outcome> {
     if (!this.alive) return Promise.resolve({ kind: 'crash', reason: this.exitReason() });
     const id = `${this.launch.id}/${String(++this.sequence)}`;
     return new Promise((resolve) => {
-      this.current = { id, resolve };
+      let timer: NodeJS.Timeout | undefined;
+      this.current = {
+        id,
+        resolve: (outcome) => {
+          clearTimeout(timer);
+          resolve(outcome);
+        },
+      };
+      if (timeoutMs !== undefined && timeoutMs > 0) {
+        timer = setTimeout(() => {
+          // Ein hängender Worker gibt den Chunk nicht mehr her: beenden; der Pool wiederholt ihn woanders.
+          this.timeoutReason = `Chunk ${describeChunk(chunk)} timed out after ${String(timeoutMs)} ms on worker ${this.launch.id}; the worker was stopped.`;
+          this.child.kill('SIGKILL');
+        }, timeoutMs);
+      }
       this.send({ type: 'chunk', id, request: chunk, ...(traceparent !== undefined ? { traceparent } : {}) });
     });
+  }
+
+  /** Bittet den Worker, den laufenden Chunk abzubrechen (Story 18.8). */
+  cancel(): void {
+    const current = this.current;
+    if (current !== undefined && this.alive) this.send({ type: 'cancel', id: current.id });
   }
 
   async shutdown(): Promise<void> {
@@ -242,6 +274,18 @@ export function runPool(chunks: readonly ChunkRequest[], onDone: (result: ChunkR
     for (const w of live) w.kill();
     notify();
   };
+  // Abbruch: laufende Chunks bekommen `cancel`; die Worker enden danach regulär über `shutdown`.
+  const cancel = (): void => {
+    if (state.finished) return;
+    fatal = new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
+    state.finished = true;
+    for (const w of live) w.cancel();
+    notify();
+  };
+  const signal = options.signal;
+  const watch = signal === undefined ? undefined : setInterval(() => {
+    if (signal.aborted) cancel();
+  }, CANCEL_POLL_MS);
 
   const take = (worker: string): Task | undefined => {
     const preferred = queue.findIndex((t) => t.avoid !== worker);
@@ -286,7 +330,7 @@ export function runPool(chunks: readonly ChunkRequest[], onDone: (result: ChunkR
       task.attempts++;
       telemetry.metrics.recordQueueWait((performance.now() - task.enqueued) / 1000, { worker: worker.launch.id });
       options.onEvent?.({ type: 'chunk-started', worker: worker.launch.id, ...(worker.pid !== undefined ? { pid: worker.pid } : {}), ...(worker.launch.container !== undefined ? { container: worker.launch.container } : {}), start: task.chunk.start, end: task.chunk.end, attempt: task.attempts });
-      const outcome = await telemetry.withSpan('scheduler.chunk', { start: task.chunk.start, end: task.chunk.end, worker: worker.launch.id, attempt: task.attempts }, () => worker.run(task.chunk, telemetry.traceparent()));
+      const outcome = await telemetry.withSpan('scheduler.chunk', { start: task.chunk.start, end: task.chunk.end, worker: worker.launch.id, attempt: task.attempts }, () => worker.run(task.chunk, telemetry.traceparent(), options.chunkTimeoutMs));
       served = true;
       if (isFinished()) return served;
       if (outcome.kind === 'result') {
@@ -346,9 +390,15 @@ export function runPool(chunks: readonly ChunkRequest[], onDone: (result: ChunkR
     }
   };
 
-  if (chunks.length === 0) return Promise.resolve([]);
+  if (chunks.length === 0) {
+    clearInterval(watch);
+    return Promise.resolve([]);
+  }
+  if (signal?.aborted === true) cancel();
   const slots = Array.from({ length: Math.max(1, Math.min(options.concurrency, chunks.length)) }, (_, i) => slot(i));
-  return Promise.all(slots).then(() => {
+  return Promise.all(slots).finally(() => {
+    clearInterval(watch);
+  }).then(() => {
     if (fatal !== undefined) throw fatal;
     const done = results.filter((r): r is ChunkResult => r !== undefined);
     if (done.length !== chunks.length) {

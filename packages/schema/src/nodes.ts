@@ -328,6 +328,7 @@ export const TextAnimation = Type.Object(
       { additionalProperties: false },
     ),
     order: Type.Optional(Type.Union([Type.Literal('forward'), Type.Literal('backward'), Type.Literal('center'), Type.Literal('random')])),
+    starts: Type.Optional(Type.Array(TimeValue, { description: 'Start of each unit in local time; replaces start + stagger · position for the units listed (e.g. word timings of captions).' })),
   },
   { additionalProperties: false },
 );
@@ -538,8 +539,9 @@ export const SubtitlesNode = node(
     safeArea: Type.Optional(Type.Number({ minimum: 0, maximum: 0.5, description: 'Margin as fraction of frame size. Default 0.05.' })),
     stroke: Type.Optional(Color),
     strokeWidth: Type.Optional(Type.Number({ minimum: 0 })),
+    textAnimation: Type.Optional(TextAnimation),
   },
-  'Animated captions from a subtitle track.',
+  'Animated captions from a subtitle track. textAnimation animates each word from its own start time.',
 );
 
 // ---------------------------------------------------------------------------

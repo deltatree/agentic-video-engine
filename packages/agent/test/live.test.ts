@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { isRecord } from '@agentic-video/core';
 import { OPERATIONS, RevisionWatcher, invokeOperation, revisionOf, sseMessage, startAgentServer, type AgentServer, type AgentServices, type InvocationResult } from '@agentic-video/agent';
 import { smallProject, testServices } from './helpers.js';
 
@@ -22,7 +23,18 @@ async function run(services: AgentServices, op: string, input: unknown): Promise
 async function ok(services: AgentServices, op: string, input: unknown): Promise<Record<string, unknown>> {
   const r = await run(services, op, input);
   if (!r.ok) throw new Error(`${op} failed: ${r.error.code} ${r.error.problem}`);
-  return r.result as Record<string, unknown>;
+  if (!isRecord(r.result)) throw new Error(`${op} returned no object`);
+  return r.result;
+}
+
+/** Objekte einer Liste (andere Einträge fallen weg). */
+function objects(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+/** Feld eines Objekts als Text. */
+function field(value: unknown, key: string): string {
+  return isRecord(value) ? String(value[key]) : '';
 }
 
 describe('Story 20.5: frame.render mit transienten Patches', () => {
@@ -34,7 +46,7 @@ describe('Story 20.5: frame.render mit transienten Patches', () => {
     const plain = await ok(services, 'frame.render', { projectId: id, frame: 0, inline: false });
     const moved = await ok(services, 'frame.render', { projectId: id, frame: 0, inline: false, patches: [{ op: 'setProperty', nodeId: 'box', property: 'x', value: 30 }] });
     expect(moved['key']).not.toBe(plain['key']);
-    expect(String((moved['image'] as { file: string }).file)).toMatch(/main-0-preview\.png$/u);
+    expect(field(moved['image'], 'file')).toMatch(/main-0-preview\.png$/u);
     expect(readFileSync(file, 'utf8')).toBe(before);
     // Ohne Patches kommt wieder der gespeicherte Stand.
     expect((await ok(services, 'frame.render', { projectId: id, frame: 0, inline: false }))['key']).toBe(plain['key']);
@@ -58,11 +70,10 @@ describe('Story 20.8: render.status ohne jobId', () => {
     const first = String((await ok(services, 'preview.render', { projectId: a, scale: 0.5 }))['jobId']);
     await ok(services, 'preview.render', { projectId: b, scale: 0.5 });
     const listed = await ok(services, 'render.status', { projectId: a });
-    const jobs = listed['jobs'] as { id: string; projectId: string; kind: string }[];
-    expect(jobs.map((j) => j.id)).toEqual([first]);
-    expect(jobs[0]?.projectId).toBe(a);
-    const all = (await ok(services, 'render.status', {}))['jobs'] as unknown[];
-    expect(all.length).toBe(2);
+    const jobs = objects(listed['jobs']);
+    expect(jobs.map((j) => j['id'])).toEqual([first]);
+    expect(jobs[0]?.['projectId']).toBe(a);
+    expect(objects((await ok(services, 'render.status', {}))['jobs']).length).toBe(2);
   });
 });
 
@@ -107,7 +118,8 @@ describe('Story 20.1: Revisionen und Server-Sent Events', () => {
         const match = /event: revision\ndata: (.*)\n\n/u.exec(buffer);
         if (match !== null) {
           buffer = buffer.slice(match.index + match[0].length);
-          return String((JSON.parse(match[1] ?? '{}') as { revision: string }).revision);
+          const data: unknown = JSON.parse(match[1] ?? '{}');
+          return field(data, 'revision');
         }
         const chunk = await reader.read();
         if (chunk.done) throw new Error('stream ended');
@@ -148,6 +160,53 @@ describe('Story 20.1: Revisionen und Server-Sent Events', () => {
     } finally {
       stop();
       watcher.closeAll();
+    }
+  });
+
+  it('schließt beim Abmelden nie den Watcher eines neueren Abonnements (Review m1)', async () => {
+    const watcher = new RevisionWatcher(10);
+    const dir = services.workspace.projectDir(projectId);
+    const stopOld = await watcher.subscribe(dir, () => undefined);
+    // Fehler/Neustart: der alte Eintrag verschwindet, ein neuer entsteht.
+    watcher.closeAll();
+    const seen: string[] = [];
+    const stopNew = await watcher.subscribe(dir, (r) => seen.push(r));
+    try {
+      stopOld();
+      writeFileSync(join(dir, 'project.json'), `${JSON.stringify(smallProject([{ ...RECT, x: 11 }]))}\n`);
+      await expect.poll(() => seen.length, { timeout: 5000 }).toBe(1);
+    } finally {
+      stopNew();
+      watcher.closeAll();
+    }
+  });
+
+  it('begrenzt gleichzeitige Streams und gibt Plätze beim Trennen frei (Review m2, m3)', async () => {
+    const local = await startAgentServer({ services, port: 0, token: TOKEN, maxEventStreams: 1 });
+    const headers = { authorization: `Bearer ${TOKEN}` };
+    try {
+      const first = new AbortController();
+      const open = await fetch(`${local.url}/v1/events?projectId=${projectId}`, { headers, signal: first.signal });
+      expect(open.status).toBe(200);
+      const second = await fetch(`${local.url}/v1/events?projectId=${projectId}`, { headers });
+      expect(second.status).toBe(503);
+      const body: unknown = await second.json();
+      expect(isRecord(body) ? field(body['error'], 'code') : '').toBe('OV_API_BUSY');
+      first.abort();
+      // Nach dem Trennen ist der Platz wieder frei (close-Listener räumt auf).
+      await expect
+        .poll(
+          async () => {
+            const c = new AbortController();
+            const r = await fetch(`${local.url}/v1/events?projectId=${projectId}`, { headers, signal: c.signal });
+            c.abort();
+            return r.status;
+          },
+          { timeout: 5000 },
+        )
+        .toBe(200);
+    } finally {
+      await local.close();
     }
   });
 

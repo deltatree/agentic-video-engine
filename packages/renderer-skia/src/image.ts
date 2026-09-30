@@ -1,7 +1,7 @@
 /**
  * Umwandlung zwischen `RgbaImage` und CanvasKit-Bildern.
  */
-import type { CanvasKit, Image, ImageInfo, Surface } from 'canvaskit-wasm';
+import type { CanvasKit, Image, ImageInfo, MallocObj, Surface } from 'canvaskit-wasm';
 import { OpenVideoError, type RgbaImage } from '@agentic-video/core';
 import { nullable, type Scope } from './scope.js';
 
@@ -117,6 +117,83 @@ export function makeSurface(ck: CanvasKit, width: number, height: number, scope:
     });
   }
   return surface;
+}
+
+/**
+ * Wiederverwendbares Zeichenziel (Story 18.3): Raster-Surface auf einem eigenen, mit `Malloc`
+ * reservierten Pixelpuffer. Das Backend hält eines je Ausgabegröße, statt je Layer 33 MB (4K)
+ * neu zu reservieren; das Auslesen kopiert die Pixel genau einmal aus dem WASM-Speicher.
+ */
+export interface RasterTarget {
+  readonly width: number;
+  readonly height: number;
+  readonly surface: Surface;
+  readonly pixels: MallocObj;
+}
+
+function surfaceError(width: number, height: number): OpenVideoError {
+  return new OpenVideoError({
+    code: 'OV_SKIA_SURFACE',
+    errorClass: 'SkiaRendererError',
+    problem: `Cannot create a ${String(width)}x${String(height)} raster surface.`,
+    details: { width, height },
+    suggestions: ['Use positive integer sizes.', 'Render at a smaller preview scale if memory is short.'],
+  });
+}
+
+/**
+ * Erzeugt ein {@link RasterTarget} (RGBA 8 Bit, vormultipliziert, sRGB). Der Aufrufer gibt es mit
+ * {@link disposeRasterTarget} frei.
+ *
+ * @example
+ * ```ts
+ * const target = makeRasterTarget(ck, 1920, 1080);
+ * try { draw(target.surface.getCanvas()); const layer = readRasterTarget(target); } finally { disposeRasterTarget(ck, target); }
+ * ```
+ */
+export function makeRasterTarget(ck: CanvasKit, width: number, height: number): RasterTarget {
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) throw surfaceError(width, height);
+  const pixels = ck.Malloc(Uint8Array, width * height * 4);
+  const surface = nullable(ck.MakeRasterDirectSurface(rgbaInfo(ck, width, height), pixels, width * 4));
+  if (surface === null) {
+    ck.Free(pixels);
+    throw surfaceError(width, height);
+  }
+  surface.getCanvas().clear(ck.TRANSPARENT);
+  return { width, height, surface, pixels };
+}
+
+/**
+ * Liest die Pixel eines {@link RasterTarget}: `flush`, dann eine einzige Kopie aus dem Pixelpuffer
+ * (statt Snapshot und `readPixels`, die zwei Kopien anlegen). Bitgleich zu {@link rgbaFromSurface}.
+ *
+ * @example
+ * ```ts
+ * const layer = readRasterTarget(target);
+ * ```
+ */
+export function readRasterTarget(target: RasterTarget): RgbaImage {
+  target.surface.flush();
+  // `toTypedArray` liefert eine frische Sicht (der WASM-Speicher kann gewachsen sein); `slice` kopiert.
+  const view = target.pixels.toTypedArray();
+  const bytes = target.width * target.height * 4;
+  if (!(view instanceof Uint8Array) || view.length < bytes) {
+    throw new OpenVideoError({ code: 'OV_SKIA_READBACK', errorClass: 'SkiaRendererError', problem: 'Reading pixels from the Skia surface failed.', suggestions: ['Check that width and height are positive and fit into memory.'] });
+  }
+  return { width: target.width, height: target.height, data: view.slice(0, bytes) };
+}
+
+/**
+ * Gibt Surface und Pixelpuffer eines {@link RasterTarget} frei.
+ *
+ * @example
+ * ```ts
+ * disposeRasterTarget(ck, target);
+ * ```
+ */
+export function disposeRasterTarget(ck: CanvasKit, target: RasterTarget): void {
+  target.surface.delete();
+  ck.Free(target.pixels);
 }
 
 /**

@@ -16,7 +16,7 @@ import { OUTPUT_FORMATS, OpenVideoError, Registry, VIDEO_CODECS, isRecord, type 
 import { HARDWARE_FAMILIES, codecLicenses, createEncoder, probeCapabilities, type FfmpegCapabilities } from '@agentic-video/ffmpeg';
 import { loadFontSet } from '@agentic-video/fonts';
 import { createSkiaBackend, createSkiaTextMeasurer, loadCanvasKitNode, renderContactSheet, renderDebugOverlay } from '@agentic-video/renderer-skia';
-import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, synthesizeVoices } from '@agentic-video/speech';
+import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, resolveFromAudioTracks, synthesizeVoices } from '@agentic-video/speech';
 import { registerSubtitles } from '@agentic-video/subtitles';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 import { createLazyBrowserBackends } from '@agentic-video/renderer-browser';
@@ -90,6 +90,7 @@ function mediaTools(): MediaTools {
         quality: options.quality,
         alpha: options.alpha,
         colorSpace: options.colorSpace,
+        ...(options.threads !== undefined ? { threads: options.threads } : {}),
         ...(hardware !== undefined ? { hardware } : {}),
         ...(options.audioPath !== undefined ? { audioPath: options.audioPath } : {}),
         ...(audioCodec !== undefined ? { audioCodec } : {}),
@@ -203,7 +204,7 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   });
   const fonts = await loadFontSet({
     projectDir,
-    ...(Array.isArray(project['fonts']) ? { fonts: project['fonts'].filter(isRecord).map((f) => ({ family: String(f['family']), ...(typeof f['src'] === 'string' ? { src: f['src'] } : {}), ...(typeof f['asset'] === 'string' ? { asset: f['asset'] } : {}) })) } : {}),
+    ...(Array.isArray(project['fonts']) ? { fonts: project['fonts'].filter(isRecord).map((f) => ({ family: String(f['family']), ...(typeof f['src'] === 'string' ? { src: f['src'] } : {}), ...(typeof f['asset'] === 'string' ? { asset: f['asset'] } : {}), ...(typeof f['faceIndex'] === 'number' ? { faceIndex: f['faceIndex'] } : {}) })) } : {}),
     resolveAsset: async (id) => {
       const a = assets.get(id);
       if (a === undefined) throw new OpenVideoError({ code: 'OV_ASSET_MISSING', errorClass: 'FontError', problem: `Font asset "${id}" is not available.`, suggestions: ['Declare the font file in project.assets.'] });
@@ -216,12 +217,21 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   const versions: Record<string, string> = { openvideo: OPENVIDEO_VERSION, compositor: 'openvideo-compositor-3' };
   if (!registry.backends.has('skia')) registry.registerBackend(createSkiaBackend({ canvasKit, fonts, ...(defaultFont !== undefined ? { defaultFont } : {}) }));
   if (registry.components.size === 0) registerComponents(registry);
+  if (registry.voiceProviders.size === 0) await registerLocalSpeech(registry);
+  const measurer = createSkiaTextMeasurer(canvasKit, fonts, defaultFont);
   if (!registry.expanders.has('subtitles')) {
     const texts = new Map<string, string>();
     for (const a of assets.all()) if (a.type === 'subtitle') texts.set(a.id, await readFile(a.path, 'utf8'));
-    registerSubtitles(registry, { loadTrackText: (id) => texts.get(id) });
+    // fromAudio-Tracks werden vor dem Render transkribiert (Cache je Audio-Hash, Story 17.8).
+    const transcripts = await resolveFromAudioTracks(project, { registry, assets, cache });
+    registerSubtitles(registry, {
+      loadTrackText: (id) => texts.get(id),
+      transcript: (compositionId, trackId) => transcripts.get(`${compositionId}/${trackId}`),
+      // Umbruch mit echter Textmessung statt geschätzter Zeichenbreite.
+      measureText: (text, style) =>
+        measurer.measure({ id: '__subtitle-measure', type: 'text', props: { text, ...style }, children: [], time: { localFrame: 0, relFrame: 0, durationFrames: 1, progress: 0, compositionFrame: 0 }, pointer: '' }).width,
+    });
   }
-  if (registry.voiceProviders.size === 0) await registerLocalSpeech(registry);
   const providers: BackendProvider[] = [...(options.providers ?? [])];
   if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project, { allowHtmlScripts: options.allowHtmlScripts === true }));
   for (const provider of providers) Object.assign(versions, await provider.register(registry, { assets, fonts, telemetry }));
@@ -229,7 +239,6 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
     versions[`backend:${b.id}`] = Object.values(b.versions()).join('+') || '1';
     Object.assign(versions, b.versions());
   }
-  const measurer = createSkiaTextMeasurer(canvasKit, fonts, defaultFont);
   const media = mediaTools();
   try {
     versions['ffmpeg'] = (await media.info()).version;
@@ -257,7 +266,7 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
       contactSheet: (frames, o) => renderContactSheet(canvasKit, fonts, frames, o),
     },
     media,
-    audio: createAudioEngine({ assets, cache, synthesizeVoices: synthesize }),
+    audio: createAudioEngine({ assets, cache, synthesizeVoices: synthesize, registry }),
     composite: (request) => {
       // LUTs kommen immer aus den Assets dieses Projekts, nicht aus der Anfrage.
       const { resolveLut: _fromRequest, ...rest } = request;

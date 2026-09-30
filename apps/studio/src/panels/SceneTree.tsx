@@ -1,11 +1,14 @@
 /**
  * Scene Tree: Baum der IR mit Auswahl, Umbenennen, Sperren, Verbergen,
- * Reihenfolge per Drag & Drop, Gruppieren und Löschen.
+ * Reihenfolge per Drag & Drop und Ebenen-Befehlen, Gruppieren, Auflösen und Löschen.
+ * Geschwister erscheinen in effektiver Zeichenreihenfolge (stabil nach `zIndex` sortiert, wie der Renderer).
  */
+import { isAnimated } from '@agentic-video/core';
 import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useStudio } from '../context.js';
-import { findNode, walkNodes } from '../ir.js';
-import { str } from '../json.js';
+import { findNode } from '../ir.js';
+import { records, str, type Rec } from '../json.js';
+import { orderedChildren, zOf } from '../layers.js';
 
 interface Row {
   readonly id: string;
@@ -17,9 +20,20 @@ interface Row {
   readonly hasChildren: boolean;
   readonly visible: boolean;
   readonly locked: boolean;
+  readonly z: number;
+  readonly zAnimated: boolean;
 }
 
-const CONTAINERS = new Set(['group', 'layer', 'component']);
+const CONTAINERS = new Set(['group', 'layer', 'sequence', 'component']);
+
+/** Besucht Nodes in effektiver Zeichenreihenfolge; `index` bleibt die Position im Dokument. */
+function walkOrdered(list: unknown, fn: (node: Rec, where: { parentId: string | null; index: number; depth: number }) => void, resolve: (value: unknown, node: Readonly<Rec>) => unknown, parentId: string | null = null, depth = 0): void {
+  const doc = records(list);
+  for (const node of orderedChildren(list, resolve)) {
+    fn(node, { parentId, index: doc.indexOf(node), depth });
+    walkOrdered(node['children'], fn, resolve, typeof node['id'] === 'string' ? node['id'] : null, depth + 1);
+  }
+}
 
 /** Der Scene-Tree-Tab. */
 export function SceneTree(): ReactNode {
@@ -31,7 +45,7 @@ export function SceneTree(): ReactNode {
 
   const rows: Row[] = [];
   const hidden = new Set<string>();
-  walkNodes(state.comp?.['nodes'], (node, where) => {
+  walkOrdered(state.comp?.['nodes'], (node, where) => {
     const id = str(node['id'], '');
     if (where.parentId !== null && (collapsed.has(where.parentId) || hidden.has(where.parentId))) {
       hidden.add(id);
@@ -47,8 +61,10 @@ export function SceneTree(): ReactNode {
       hasChildren: Array.isArray(node['children']) && node['children'].length > 0,
       visible: node['visible'] !== false,
       locked: node['locked'] === true,
+      z: zOf(node, (v) => studio.valueOf(id, v)),
+      zAnimated: isAnimated(node['zIndex']),
     });
-  });
+  }, (v, n) => studio.valueOf(str(n['id'], ''), v));
   const selected = new Set(state.selection);
   const current = focusId ?? state.selection[0] ?? rows[0]?.id;
 
@@ -116,16 +132,35 @@ export function SceneTree(): ReactNode {
   };
 
   if (rows.length === 0) {
+    if (state.status === 'loading') return <p className="empty">Loading…</p>;
+    if (state.status === 'error') return <p className="empty">The project could not be loaded.</p>;
     return <p className="empty">No nodes yet. Add a component from the Components tab or drop an asset on the stage.</p>;
   }
+  const none = state.selection.length === 0;
+  const groupSelected = state.selection.some((id) => ['group', 'layer'].includes(str(findNode(state.comp, id)?.node['type'], '')));
 
   return (
     <div className="scene-tree">
-      <div className="row-actions">
-        <button type="button" onClick={() => void studio.group()} disabled={state.selection.length === 0}>
+      <div className="row-actions" role="group" aria-label="Arrange">
+        <button type="button" onClick={() => void studio.group()} disabled={none} title="Group (Ctrl+G)">
           Group
         </button>
-        <button type="button" onClick={() => void studio.deleteSelection()} disabled={state.selection.length === 0}>
+        <button type="button" onClick={() => void studio.ungroup()} disabled={!groupSelected} title="Ungroup (Ctrl+Shift+G)">
+          Ungroup
+        </button>
+        <button type="button" onClick={() => void studio.arrange('front')} disabled={none} aria-label="Bring to front" title="Bring to front (Ctrl+Shift+])">
+          ⤒
+        </button>
+        <button type="button" onClick={() => void studio.arrange('forward')} disabled={none} aria-label="Bring forward" title="Bring forward (Ctrl+])">
+          ↑
+        </button>
+        <button type="button" onClick={() => void studio.arrange('backward')} disabled={none} aria-label="Send backward" title="Send backward (Ctrl+[)">
+          ↓
+        </button>
+        <button type="button" onClick={() => void studio.arrange('back')} disabled={none} aria-label="Send to back" title="Send to back (Ctrl+Shift+[)">
+          ⤓
+        </button>
+        <button type="button" onClick={() => void studio.deleteSelection()} disabled={none} title="Delete (Del)">
           Delete
         </button>
       </div>
@@ -204,6 +239,13 @@ export function SceneTree(): ReactNode {
               <span className="tree-label">
                 <span className={row.visible ? '' : 'muted'}>{row.name !== '' ? row.name : row.id}</span>
                 <span className="muted small"> {row.type}</span>
+                {(row.z !== 0 || row.zAnimated) && (
+                  <span className="muted small" title="zIndex: draw order among siblings">
+                    {' '}
+                    z{row.zAnimated ? '~' : ''}
+                    {row.z}
+                  </span>
+                )}
               </span>
             )}
             <button
@@ -217,7 +259,7 @@ export function SceneTree(): ReactNode {
                 void studio.patch([{ op: 'setProperty', nodeId: row.id, property: 'visible', value: row.visible ? false : null }]);
               }}
             >
-              {row.visible ? '◉' : '○'}
+              <span aria-hidden="true">{row.visible ? '◉' : '○'}</span>
             </button>
             <button
               type="button"
@@ -230,12 +272,12 @@ export function SceneTree(): ReactNode {
                 void studio.patch([{ op: 'setProperty', nodeId: row.id, property: 'locked', value: row.locked ? null : true }]);
               }}
             >
-              {row.locked ? '🔒' : '🔓'}
+              <span aria-hidden="true">{row.locked ? '🔒' : '🔓'}</span>
             </button>
           </div>
         ))}
       </div>
-      <p className="hint small">Shift/Ctrl+click selects several nodes. Double-click or F2 renames. Drag rows to reorder or into a group.</p>
+      <p className="hint small">Rows show the draw order (zIndex first, then document order; last is on top). Shift/Ctrl+click selects several nodes. Double-click or F2 renames. Drag rows to reorder or into a group.</p>
     </div>
   );
 }

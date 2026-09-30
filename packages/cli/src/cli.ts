@@ -29,6 +29,7 @@ import {
   type Diagnostic,
 } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
+import { defaultWorkerCount } from '@agentic-video/scheduler';
 import { createTemplateCatalog } from '@agentic-video/templates';
 import { checkProject, createNodeEnvironment, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
 import { cannotOpenReason, openBrowser } from './browser.js';
@@ -166,10 +167,13 @@ interface ServeOptions {
 
 type SourceServiceOf = ReturnType<typeof createSourceService>;
 
-/** Meldung des Datei-Watchers für das Terminal. */
+/**
+ * Meldung des Datei-Watchers für das Terminal. Gültige JSON-Änderungen und Kompilate ohne neue IR bleiben
+ * still: Jede Studio-Änderung schreibt `project.json`, das Terminal soll dabei nicht mitlaufen.
+ */
 function watchMessage(event: WatchEvent): string {
-  if (event.kind === 'compiled') return event.changed ? `Recompiled after ${event.file} changed; the Studio reloads.\n` : `Recompiled after ${event.file} changed (no change in the IR).\n`;
-  if (event.kind === 'changed') return `${event.file} changed; the Studio reloads.\n`;
+  if (event.kind === 'compiled') return event.changed ? `Recompiled after ${event.file} changed; the Studio reloads.\n` : '';
+  if (event.kind === 'changed') return '';
   return `${event.file}: ${event.diagnostics.filter((d) => d.severity === 'error').map((d) => formatDiagnostic(d)).join('\n\n')}\n`;
 }
 
@@ -204,7 +208,8 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
       ? watchProject({
           ...options.watch,
           onEvent: (event) => {
-            (event.kind === 'error' ? io.stderr : io.stdout)(watchMessage(event));
+            const text = watchMessage(event);
+            if (text !== '') (event.kind === 'error' ? io.stderr : io.stdout)(text);
           },
         })
       : undefined;
@@ -349,7 +354,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   };
   try {
     const serverWorkers = num(values.workers, 'workers');
-    const workersOption = serverWorkers !== undefined && serverWorkers > 1 ? { workers: Math.floor(serverWorkers) } : {};
+    // `--workers 1` rendert im Server-Prozess; ohne Angabe gilt die Standardzahl (Story 18.7).
+    const workersOption = serverWorkers !== undefined && serverWorkers >= 1 ? { workers: Math.floor(serverWorkers) } : {};
     switch (command) {
       case 'create': {
         if (rest[0] === undefined) throw new UsageError('Usage: openvideo create <dir> [--tsx] [--template <name>]');
@@ -394,15 +400,31 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'coordinator': {
         const { startCoordinator } = await import('@agentic-video/scheduler');
-        const token = values.token ?? io.env['OPENVIDEO_WORKER_TOKEN'];
+        // Rollen-Tokens wie in scheduler/src/coordinator.ts (Story 16.3): submit (API), worker, metrics (KEDA).
+        // `--token` ist ein gemeinsames Token für alle Rollen (nur lokaler Betrieb).
+        const nonEmpty = (v: string | undefined): string | undefined => (v !== undefined && v !== '' ? v : undefined);
+        const shared = nonEmpty(values.token);
+        const submitToken = nonEmpty(io.env['OPENVIDEO_SUBMIT_TOKEN']);
+        const workerToken = nonEmpty(io.env['OPENVIDEO_WORKER_TOKEN']);
+        const metricsToken = nonEmpty(io.env['OPENVIDEO_METRICS_TOKEN']);
+        const tokens = {
+          ...(submitToken !== undefined ? { submit: submitToken } : {}),
+          ...(workerToken !== undefined ? { worker: workerToken } : {}),
+          ...(metricsToken !== undefined ? { metrics: metricsToken } : {}),
+        };
         const host = values.host ?? '127.0.0.1';
         const port = num(values.port, 'port') ?? 8080;
-        if ((token === undefined || token === '') && !isLoopbackHost(host)) {
-          throw new OpenVideoError({ code: 'OV_API_TOKEN_REQUIRED', errorClass: 'SecurityError', problem: `The coordinator would listen on ${host} without a token.`, suggestions: ['Set OPENVIDEO_WORKER_TOKEN or pass --token <secret>.', 'Or bind to 127.0.0.1 for local use.'] });
+        if (shared === undefined && Object.keys(tokens).length === 0 && !isLoopbackHost(host)) {
+          throw new OpenVideoError({
+            code: 'OV_API_TOKEN_REQUIRED',
+            errorClass: 'SecurityError',
+            problem: `The coordinator would listen on ${host} without a token.`,
+            suggestions: ['Set OPENVIDEO_SUBMIT_TOKEN, OPENVIDEO_WORKER_TOKEN and OPENVIDEO_METRICS_TOKEN (one random token per role).', 'Or pass --token <secret> for a single shared token (local use).', 'Or bind to 127.0.0.1 for local use.'],
+          });
         }
         const workspaceDir = resolve(io.cwd, values.workspace ?? '.');
         const store = storeFromEnv(io.env, workspaceDir);
-        const coordinator = await startCoordinator({ port, host, store, journalDir: resolve(io.cwd, values.journal ?? join(workspaceDir, '.openvideo', 'journal')), ...(token !== undefined && token !== '' ? { token } : {}) });
+        const coordinator = await startCoordinator({ port, host, store, journalDir: resolve(io.cwd, values.journal ?? join(workspaceDir, '.openvideo', 'journal')), ...(shared !== undefined ? { token: shared } : {}), ...(Object.keys(tokens).length > 0 ? { tokens } : {}) });
         out({ url: coordinator.url, store: store.name }, `${PRODUCT_NAME} coordinator: ${coordinator.url} (store ${store.name})`);
         await new Promise<void>((resolveStop) => {
           const stop = () => {
@@ -469,10 +491,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           const outPath = resolve(io.cwd, values.out ?? join(loaded.dir, 'out', `${String(comp['id'])}${ext}`));
           const range = values.start !== undefined || values.end !== undefined ? { start: values.start !== undefined ? frameOf(loaded.project, values.composition, values.start) : 0, end: values.end !== undefined ? frameOf(loaded.project, values.composition, values.end) : compositionDurationFrames(comp) } : undefined;
           let last = '';
-          const workers = num(values.workers, 'workers');
-          const runChunks = workers !== undefined && workers > 1 ? processRunner(env, loaded.project, workers, trusted) : undefined;
+          // Standard: mehrere Worker-Prozesse nach Kernen und Speicher (Story 18.7); `--workers 1` rendert im Prozess.
+          const workers = Math.max(1, Math.floor(num(values.workers, 'workers') ?? defaultWorkerCount()));
+          const runChunks = workers > 1 ? processRunner(env, loaded.project, workers, trusted) : undefined;
           const r = await renderVideo(env, loaded.project, {
-            ...(runChunks !== undefined ? { runChunks } : {}),
+            ...(runChunks !== undefined ? { runChunks, localRenderProcesses: workers } : {}),
             ...(values.composition !== undefined ? { compositionId: values.composition } : {}),
             outPath,
             profile,
@@ -667,7 +690,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       case 'studio': {
         const loaded = await loadProject(target, { sources });
         const { workspaceDir, projectId } = await singleProjectWorkspace(loaded.dir);
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
+        // Der eingebundene Projektordner bleibt nur für diesen Host erreichbar (Review M3).
+        const services: LocalServices = { ...(await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption })), hostProjectDirs: [loaded.dir] };
         // dev/studio schützen die API immer mit einem Token; ohne Vorgabe ein zufälliges (B1).
         const given = values.token ?? io.env['OPENVIDEO_API_TOKEN'];
         const token = given !== undefined && given !== '' ? given : randomBytes(32).toString('base64url');

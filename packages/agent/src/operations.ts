@@ -24,6 +24,7 @@ import { checkProject, describeScene, inspectTimeline, profileById, renderFrame,
 import { assertFps, assertFrameCount, assertImageSize, sampleFrames } from './guards.js';
 import { describeOperations } from './describe.js';
 import { projectImport } from './importing.js';
+import { assertProjectAccess } from './project-access.js';
 import { defineOperation, type OperationContext, type OperationDefinition } from './operation.js';
 import { PatchSchema, checkPatchList, toCorePatches } from './patch-schema.js';
 import {
@@ -830,6 +831,7 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
  * ```
  */
 export async function readProjectFile(ctx: OperationContext, projectId: string, path: string): Promise<Uint8Array> {
+  await assertProjectAccess(ctx.services, projectId);
   const file = await safeRealPath(ctx.services.workspace.projectDir(projectId), path);
   try {
     return await readFile(file);

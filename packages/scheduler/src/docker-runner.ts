@@ -35,6 +35,8 @@ export interface DockerChunkRunnerOptions {
   /** Docker-Programm (Standard `docker`). */
   readonly docker?: string;
   readonly onEvent?: (event: SchedulerEvent) => void;
+  /** Höchstdauer eines Chunk-Versuchs in Millisekunden; danach Neustart des Workers und Wiederholung (Story 18.8). */
+  readonly chunkTimeoutMs?: number;
 }
 
 /**
@@ -89,7 +91,7 @@ export function createDockerChunkRunner(options: DockerChunkRunnerOptions): Chun
   const docker = options.docker ?? 'docker';
   const concurrency = Math.max(1, options.concurrency ?? availableParallelism());
   const run = randomUUID().slice(0, 8);
-  return async (chunks, onDone) => {
+  return async (chunks, onDone, runOptions) => {
     const files: ProjectFile[] = await collectProjectFiles(options.projectDir);
     return runPool(chunks, onDone, {
       concurrency,
@@ -114,6 +116,8 @@ export function createDockerChunkRunner(options: DockerChunkRunnerOptions): Chun
       },
       init: (worker) => ({ type: 'init', mode: 'stream', worker, project: options.project, files, options: { offline: true } }),
       ...(options.onEvent !== undefined ? { onEvent: options.onEvent } : {}),
+      ...(options.chunkTimeoutMs !== undefined ? { chunkTimeoutMs: options.chunkTimeoutMs } : {}),
+      ...(runOptions?.signal !== undefined ? { signal: runOptions.signal } : {}),
     });
   };
 }

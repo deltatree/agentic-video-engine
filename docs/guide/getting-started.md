@@ -16,9 +16,17 @@ Prüfe alles mit `openvideo doctor`. Jede Zeile nennt bei Bedarf eine Lösung.
 
 1. Lege ein Projekt an: `openvideo create hello`.
 2. Wechsle in den Ordner: `cd hello`.
-3. Starte das Studio: `openvideo dev`. Die Adresse steht in der Ausgabe.
+3. Starte das Studio: `openvideo dev`. Der Browser öffnet sich mit dem Projekt; die Adresse (mit Token im `#token=`-Fragment) steht auch in der Ausgabe.
 
 Das Studio zeigt die Composition. Änderungen im Studio landen als Patches in `project.json`.
+
+`openvideo dev` beobachtet `src/**` und `project.json`:
+
+- Speicherst du in deinem Editor, kompiliert `dev` TSX-Projekte neu und schreibt die IR nach `project.json`. Kompilierfehler stehen im Terminal; das Studio behält den letzten guten Stand.
+- Ändert ein Agent (MCP, Agent API, `openvideo patch`) oder dein Editor das Projekt, lädt das Studio sofort neu (Server-Sent Events `GET /v1/events`, siehe [ADR 0025](../adr/0025-live-sync-ueber-inhaltsrevisionen.md)). Undo-Schritte von vor der Fremdänderung verfallen. Hast du im Code-Panel ungespeicherte Änderungen, warnt das Studio statt sie zu überschreiben.
+- `--no-open` öffnet keinen Browser (in CI und ohne grafische Sitzung öffnet `dev` ohnehin keinen). `openvideo serve --open` öffnet das Studio auch beim Agent-API-Server.
+
+Im Studio hilft `?` mit allen Tastenkürzeln (u. a. J/K/L, I/O, M für Marker, Strg+←/→ für Keyframes).
 
 ## Rendern
 

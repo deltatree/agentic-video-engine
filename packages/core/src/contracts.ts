@@ -65,6 +65,11 @@ export interface EvaluatedScene {
   readonly safeArea: { readonly action: number; readonly title: number };
   readonly nodes: readonly EvaluatedNode[];
   readonly diagnostics: readonly Diagnostic[];
+  /**
+   * Hash der Subframe-Zustände von Motion-Blur-Nodes (Blender `motionBlur`, `layer.motionBlur`);
+   * fehlt ohne solche Nodes. Teil des Frame-Schlüssels.
+   */
+  readonly motionKey?: string;
 }
 
 // ---------------------------------------------------------------------------

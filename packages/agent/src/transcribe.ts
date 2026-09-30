@@ -5,7 +5,7 @@
  */
 import Type from 'typebox';
 import { OpenVideoError, applyPatches, findComposition, isRecord } from '@agentic-video/core';
-import { WHISPER_HINTS, transcribe } from '@agentic-video/speech';
+import { chooseAsrProvider, transcribe, transcriptionSource } from '@agentic-video/speech';
 import { defineOperation } from './operation.js';
 import { CompositionId, Diagnostics, ProjectId, loadProject, plainDiagnostics, tsxProjectError, withEnv } from './shared.js';
 import { isSourceEntry } from './workspace.js';
@@ -55,27 +55,10 @@ export const subtitlesTranscribe = defineOperation({
       throw transcribeError('OV_TRANSCRIBE_SOURCE', 'No audio source is given.', ['Pass "source": the id of an audio or video asset.', `Or set tracks[].fromAudio: { "source": "<asset id>", "provider": "whisper-cpp" } on track "${input.trackId}".`]);
     }
     return withEnv(ctx, loaded, async (env) => {
-      const providers = [...env.registry.asrProviders.keys()];
+      // Gemeinsame Logik mit dem Render (fromAudio-Tracks, Story 17.8): Provider-Wahl und Quellprüfung.
       const wanted = input.provider ?? (typeof fromAudio?.['provider'] === 'string' ? fromAudio['provider'] : undefined);
-      const provider = wanted ?? (providers.length === 1 ? providers[0] : undefined);
-      if (providers.length === 0) {
-        throw transcribeError('OV_ASR_UNAVAILABLE', 'No speech recognition (ASR) engine is installed on this host.', [
-          ...WHISPER_HINTS,
-          'Then set OPENVIDEO_WHISPER and OPENVIDEO_WHISPER_MODEL and restart the server.',
-          'Alternatively write the cues yourself into tracks[].cues, or reference an .srt/.vtt file with tracks[].asset.',
-        ]);
-      }
-      if (provider === undefined || !providers.includes(provider)) {
-        throw transcribeError('OV_ASR_PROVIDER', provider === undefined ? 'Several ASR providers are installed; none was chosen.' : `ASR provider "${provider}" is not installed.`, [`Pass "provider": one of ${providers.join(', ')}.`]);
-      }
-      const asset = env.assets.get(source);
-      if (asset === undefined) {
-        const known = env.assets.all().map((a) => a.id);
-        throw transcribeError('OV_ASSET_UNKNOWN', `Asset "${source}" is not declared in the project.`, [`Declared assets: ${known.join(', ') || '(none)'}.`, 'Import the audio with asset.import first.']);
-      }
-      if (asset.type !== 'audio' && asset.type !== 'video') {
-        throw transcribeError('OV_TRANSCRIBE_SOURCE', `Asset "${source}" is ${asset.type}, not audio or video.`, ['Pass the id of an audio or video asset.']);
-      }
+      const provider = chooseAsrProvider(env.registry, wanted);
+      const asset = transcriptionSource(env.assets, source);
       const cues = await transcribe(asset.path, { registry: env.registry, provider, cache: env.cache, ...(input.language !== undefined ? { language: input.language } : {}) });
       const plainCues = cues.map((c) => ({ ...c }));
       const saved = input.dryRun !== true;

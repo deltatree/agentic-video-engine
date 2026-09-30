@@ -15,6 +15,7 @@ export { createSkiaTextMeasurer, detectDirection, TextEngine, type TextLayout } 
 export { renderDebugOverlay, renderContactSheet, drawDebugOverlay, DEBUG_GRID_SIZE, type ContactSheetOptions } from './debug.js';
 export { decodeImage, imageFromRgba } from './image.js';
 export { parseSvg, parseSvgTransform, svgColor, svgLength, svgNumbers, SUPPORTED_SVG_ELEMENTS, type SvgDocument, type SvgElement, type SvgMatrix } from './svg.js';
+export { checkSvgDocument, checkSvgImages, resolveSvgImageHref, type SvgImageSource } from './svg-image.js';
 export { fitRect } from './draw.js';
 export { filterMatrix } from './paint.js';
 export { loadCanvasKitNode } from './node.js';

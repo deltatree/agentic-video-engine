@@ -1,0 +1,42 @@
+# ADR 0025: Live-Sync des Studios über Inhaltsrevisionen und Server-Sent Events
+
+- Status: angenommen
+- Datum: 2026-09-30
+- Bezug: Audit 2026-09-30 (UX §1, §4, §47), Epic 20 (Story 20.1, 20.3, 20.5), ADR 0001, ADR 0009
+
+## Kontext
+
+Das Studio, Agents (MCP, Agent API), die CLI und der Editor des Nutzers ändern dasselbe Projekt.
+Das Studio kannte nur seine eigenen Änderungen: Fremdänderungen blieben unsichtbar, und seine
+Undo-Inversen bezogen sich danach auf einen Stand, den es nicht mehr gab. `openvideo dev` beobachtete
+keine Dateien und ignorierte `--open`.
+
+## Entscheidung
+
+1. **Revision = Inhalt:** Die Revision eines Projekts ist der SHA-256 (16 Hex-Zeichen) von `project.json`.
+   Sie entsteht unabhängig davon, wer schreibt, und bleibt gleich, wenn dieselbe IR nur neu geschrieben
+   wird (TSX-Projekte schreiben die kompilierte IR bei jedem Laden). Keine Zähler, kein Zustand im Server.
+2. **Ereignisse:** `GET /v1/events?projectId=<id>` liefert Server-Sent Events `revision` (mit Token wie alle
+   `/v1/*`-Routen). Der Server beobachtet den Projektordner (`fs.watch`), nur solange jemand zuhört, und
+   begrenzt gleichzeitige Streams (`maxEventStreams`, Standard 32). Die erste Nachricht ist der aktuelle Stand.
+   `GET /v1/files/<projekt>/project.json` trägt dieselbe Revision als `ETag`.
+3. **Studio:** Es liest den Stream mit `fetch` (`EventSource` kann keinen `Authorization`-Header senden),
+   merkt sich die Revision der geladenen Datei und lädt bei einer anderen Revision neu. Eigene Schreibvorgänge
+   laufen über eine serielle Warteschlange; Ereignisse währenddessen werden nur vorgemerkt und danach
+   verglichen. Eine Fremdänderung verwirft Undo und Redo. Ein offener Code-Entwurf wird nie überschrieben;
+   das Studio warnt stattdessen.
+4. **Vorschau ohne Speichern:** `frame.render` nimmt optional `patches`, wendet sie nur für diesen Render an
+   und speichert nie. Das Studio zeigt so Zwischenstände beim Ziehen (gedrosselt, höchstens ein Render
+   gleichzeitig, der neueste gewinnt).
+5. **`openvideo dev`:** beobachtet `src/**`, die Entry-Datei und `project.json`, kompiliert TSX neu und schreibt
+   die IR nur bei Änderung. `--open` ist bei `dev`/`studio` Standard (`--no-open` schaltet ab; in CI und ohne
+   grafische Sitzung wird nichts geöffnet).
+
+## Folgen
+
+- Agents und Menschen arbeiten gleichzeitig am selben Projekt; das Studio zeigt immer den Stand auf der Platte.
+- Eine Fremdänderung, die mitten in eine eigene Speicherung fällt, landet im neu geladenen Stand, ohne dass
+  Undo verworfen wird (die Revisionen sind dann gleich). Das ist bewusst einfach; die Inversen sind semantische
+  Patches und bleiben meist gültig.
+- Ohne Dateisystem-Ereignisse (manche Netzlaufwerke) bleiben Live-Updates aus; das Studio zeigt „Offline“
+  bzw. keine Aktualisierung und funktioniert sonst unverändert.

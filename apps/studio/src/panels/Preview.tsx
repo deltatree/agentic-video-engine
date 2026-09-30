@@ -1,15 +1,17 @@
 /**
  * Preview/Bühne: Server-Frames mit Zoom und Schwenken, Linealen, Hilfslinien, Safe Areas,
- * Raster, Auswahl-Bounds, Verschieben mit Einrasten und Asset-Drop.
+ * Raster, Auswahl-Bounds, Verschieben mit Einrasten, Transform-Griffe (Größe, Drehung),
+ * Rahmenauswahl, Live-Vorschau beim Ziehen und Asset-Drop.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { useStudio } from '../context.js';
 import { snapMove, union, type Box, type Delta, type Snap } from '../geometry.js';
 import { allIds, findNode, topLevel } from '../ir.js';
 import { keyState } from '../keys.js';
-import { num, rec } from '../json.js';
+import { num, rec, str, type PatchJson } from '../json.js';
 import { flattenTree } from '../store.js';
-import { ASSET_DRAG_TYPE } from './Library.js';
+import { HANDLES, angleOf, marqueeHits, normalizeBox, resizeBlocker, resizeBox, type Handle } from '../transform.js';
+import { ASSET_DRAG_TYPE, STAGE_ASSET_TYPES } from './Library.js';
 
 interface Guide {
   readonly id: number;
@@ -20,7 +22,10 @@ interface Guide {
 type Drag =
   | { readonly kind: 'move'; readonly ids: readonly string[]; readonly start: { x: number; y: number }; readonly box: Box; readonly delta: Delta; readonly lineX?: number; readonly lineY?: number }
   | { readonly kind: 'pan'; readonly start: { x: number; y: number }; readonly pan: { x: number; y: number } }
-  | { readonly kind: 'guide'; readonly guide: Guide };
+  | { readonly kind: 'guide'; readonly guide: Guide }
+  | { readonly kind: 'resize'; readonly id: string; readonly handle: Handle; readonly start: { x: number; y: number }; readonly box: Box; readonly next: Box }
+  | { readonly kind: 'rotate'; readonly id: string; readonly center: { x: number; y: number }; readonly startAngle: number; readonly angle: number; readonly snap: boolean }
+  | { readonly kind: 'marquee'; readonly start: { x: number; y: number }; readonly end: { x: number; y: number }; readonly additive: boolean };
 
 function tickStep(zoom: number): number {
   for (const s of [5, 10, 20, 50, 100, 200, 500, 1000, 2000]) if (s * zoom >= 50) return s;
@@ -31,7 +36,7 @@ function Ruler(props: { axis: 'x' | 'y'; length: number; pan: number; zoom: numb
   const step = tickStep(props.zoom);
   const first = Math.floor(-props.pan / props.zoom / step) * step;
   const ticks: number[] = [];
-  for (let u = first; (u * props.zoom + props.pan) < props.length && ticks.length < 200; u += step) ticks.push(u);
+  for (let u = first; u * props.zoom + props.pan < props.length && ticks.length < 200; u += step) ticks.push(u);
   return (
     <div className={`ruler ruler-${props.axis}`} aria-hidden="true" onPointerDown={props.onPointerDown} title="Drag to create a guide">
       {ticks.map((u) => (
@@ -41,6 +46,14 @@ function Ruler(props: { axis: 'x' | 'y'; length: number; pan: number; zoom: numb
       ))}
     </div>
   );
+}
+
+const CURSORS: Readonly<Record<Handle, string>> = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+
+function handlePosition(h: Handle, box: Box): { x: number; y: number } {
+  const x = h.includes('w') ? box.x : h.includes('e') ? box.x + box.width : box.x + box.width / 2;
+  const y = h.startsWith('n') ? box.y : h.startsWith('s') ? box.y + box.height : box.y + box.height / 2;
+  return { x, y };
 }
 
 /** Die Bühne. */
@@ -53,6 +66,8 @@ export function Preview(): ReactNode {
   const [grid, setGrid] = useState(false);
   const [safe, setSafe] = useState(true);
   const [drag, setDrag] = useState<Drag | undefined>(undefined);
+  const [guideAxis, setGuideAxis] = useState<'x' | 'y'>('x');
+  const [guidePos, setGuidePos] = useState('');
   const nextGuide = useRef(1);
   const fitted = useRef('');
 
@@ -136,15 +151,21 @@ export function Preview(): ReactNode {
 
   const ids = allIds(state.comp);
   const flat = flattenTree(state.tree).filter((n) => ids.has(n.id) && n.bounds !== undefined);
+  const selectable = flat.filter((n) => {
+    const node = findNode(state.comp, n.id)?.node;
+    return node?.['locked'] !== true && node?.['visible'] !== false;
+  });
   const selectedBoxes = state.selection.map((id) => ({ id, box: flat.find((n) => n.id === id)?.bounds })).filter((s): s is { id: string; box: Box } => s.box !== undefined);
+  const single = selectedBoxes.length === 1 && state.selection.length === 1 ? selectedBoxes[0] : undefined;
+  const singleNode = single !== undefined ? findNode(state.comp, single.id)?.node : undefined;
+  const canTransform = singleNode !== undefined && singleNode['locked'] !== true;
+  const blocker = canTransform ? resizeBlocker(singleNode) : 'locked';
 
   const hitTest = (p: { x: number; y: number }): string | undefined => {
-    for (let i = flat.length - 1; i >= 0; i--) {
-      const n = flat[i];
+    for (let i = selectable.length - 1; i >= 0; i--) {
+      const n = selectable[i];
       const b = n?.bounds;
       if (n === undefined || b === undefined) continue;
-      const node = findNode(state.comp, n.id)?.node;
-      if (node?.['locked'] === true || node?.['visible'] === false) continue;
       if (p.x >= b.x && p.x <= b.x + b.width && p.y >= b.y && p.y <= b.y + b.height) return n.id;
     }
     return undefined;
@@ -162,6 +183,11 @@ export function Preview(): ReactNode {
     return { xs, ys };
   };
 
+  /** Live-Vorschau des aktuellen Zwischenstands (Story 20.5). */
+  const preview = (patches: PatchJson[] | string): void => {
+    if (typeof patches !== 'string') studio.previewPatches(patches);
+  };
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
     if (e.button === 1 || (e.button === 0 && keyState.space)) {
       keyState.spaceUsed = true;
@@ -174,7 +200,9 @@ export function Preview(): ReactNode {
     const hit = hitTest(p);
     const modifier = e.shiftKey || e.ctrlKey || e.metaKey;
     if (hit === undefined) {
-      if (!modifier) studio.select([]);
+      // Leere Fläche: Rahmenauswahl (mit Shift/Ctrl ergänzend).
+      e.currentTarget.setPointerCapture(e.pointerId);
+      setDrag({ kind: 'marquee', start: p, end: p, additive: modifier });
       return;
     }
     let selection = state.selection;
@@ -193,6 +221,21 @@ export function Preview(): ReactNode {
     setDrag({ kind: 'move', ids: moving, start: p, box, delta: { dx: 0, dy: 0 } });
   };
 
+  const startHandle = (e: PointerEvent<HTMLElement>, handle: Handle | 'rotate'): void => {
+    if (single === undefined || e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    area.current?.setPointerCapture(e.pointerId);
+    const p = toComp(e.clientX, e.clientY);
+    if (handle === 'rotate') {
+      const center = { x: single.box.x + single.box.width / 2, y: single.box.y + single.box.height / 2 };
+      const a = angleOf(center, p);
+      setDrag({ kind: 'rotate', id: single.id, center, startAngle: a, angle: a, snap: e.shiftKey });
+      return;
+    }
+    setDrag({ kind: 'resize', id: single.id, handle, start: p, box: single.box, next: single.box });
+  };
+
   const onPointerMove = (e: PointerEvent<HTMLDivElement>): void => {
     if (drag === undefined) return;
     if (drag.kind === 'pan') {
@@ -204,12 +247,32 @@ export function Preview(): ReactNode {
       setDrag({ kind: 'guide', guide: { ...drag.guide, pos: Math.round(drag.guide.axis === 'x' ? p.x : p.y) } });
       return;
     }
+    if (drag.kind === 'marquee') {
+      setDrag({ ...drag, end: p });
+      return;
+    }
+    if (drag.kind === 'resize') {
+      // Shift hält das Seitenverhältnis, Alt skaliert um die Mitte.
+      const raw = resizeBox(drag.box, drag.handle, p.x - drag.start.x, p.y - drag.start.y, e.shiftKey, e.altKey);
+      const next = { x: Math.round(raw.x), y: Math.round(raw.y), width: Math.max(1, Math.round(raw.width)), height: Math.max(1, Math.round(raw.height)) };
+      setDrag({ ...drag, next });
+      preview(studio.resizeNodePatches(drag.id, drag.box, next));
+      return;
+    }
+    if (drag.kind === 'rotate') {
+      const angle = angleOf(drag.center, p);
+      setDrag({ ...drag, angle, snap: e.shiftKey });
+      preview(studio.rotatePatches(drag.id, drag.startAngle, angle, e.shiftKey));
+      return;
+    }
     const raw = { dx: p.x - drag.start.x, dy: p.y - drag.start.y };
     const targets = snapTargets(new Set(drag.ids));
     // Alt schaltet das Einrasten ab.
     const snapped: Snap = e.altKey ? raw : snapMove(drag.box, raw.dx, raw.dy, targets.xs, targets.ys, 6 / zoom);
     const { lineX, lineY } = snapped;
-    setDrag({ kind: 'move', ids: drag.ids, start: drag.start, box: drag.box, delta: { dx: Math.round(snapped.dx), dy: Math.round(snapped.dy) }, ...(lineX !== undefined ? { lineX } : {}), ...(lineY !== undefined ? { lineY } : {}) });
+    const delta = { dx: Math.round(snapped.dx), dy: Math.round(snapped.dy) };
+    setDrag({ kind: 'move', ids: drag.ids, start: drag.start, box: drag.box, delta, ...(lineX !== undefined ? { lineX } : {}), ...(lineY !== undefined ? { lineY } : {}) });
+    if (delta.dx !== 0 || delta.dy !== 0) studio.previewPatches(studio.movePatches(new Map(drag.ids.map((id) => [id, delta]))).patches);
   };
 
   const onPointerUp = (e: PointerEvent<HTMLDivElement>): void => {
@@ -222,9 +285,38 @@ export function Preview(): ReactNode {
       setGuides((list) => [...list.filter((g) => g.id !== d.guide.id), ...(inside ? [d.guide] : [])]);
       return;
     }
+    if (d.kind === 'marquee') {
+      const rect = { x: d.start.x, y: d.start.y, width: d.end.x - d.start.x, height: d.end.y - d.start.y };
+      // Ein Klick ohne Ziehen leert die Auswahl.
+      if (Math.abs(rect.width) * zoom < 3 && Math.abs(rect.height) * zoom < 3) {
+        if (!d.additive) studio.select([]);
+        return;
+      }
+      const hits = topLevel(state.comp, marqueeHits(selectable, rect));
+      studio.select(hits, d.additive ? 'add' : 'replace');
+      return;
+    }
     if (d.kind === 'move' && (d.delta.dx !== 0 || d.delta.dy !== 0)) {
       void studio.moveNodes(new Map(d.ids.map((id) => [id, d.delta])));
+      return;
     }
+    if (d.kind === 'resize' && (d.next.width !== d.box.width || d.next.height !== d.box.height || d.next.x !== d.box.x || d.next.y !== d.box.y)) {
+      const patches = studio.resizeNodePatches(d.id, d.box, d.next);
+      if (typeof patches === 'string') {
+        studio.notify('error', patches);
+        studio.cancelPreview();
+      } else void studio.patch(patches);
+      return;
+    }
+    if (d.kind === 'rotate' && d.angle !== d.startAngle) {
+      const patches = studio.rotatePatches(d.id, d.startAngle, d.angle, d.snap);
+      if (typeof patches === 'string') {
+        studio.notify('error', patches);
+        studio.cancelPreview();
+      } else void studio.patch(patches);
+      return;
+    }
+    studio.cancelPreview();
   };
 
   const startGuide = (axis: 'x' | 'y', e: PointerEvent<HTMLElement>, existing?: Guide): void => {
@@ -237,31 +329,64 @@ export function Preview(): ReactNode {
     setDrag({ kind: 'guide', guide });
   };
 
+  const addGuide = (): void => {
+    const pos = Number(guidePos);
+    if (guidePos.trim() === '' || !Number.isFinite(pos)) return;
+    setGuides((list) => [...list, { id: nextGuide.current++, axis: guideAxis, pos: Math.round(pos) }]);
+    setGuidePos('');
+  };
+
   const onKeyDown = (e: KeyboardEvent): void => {
+    // Tab wählt die nächste Node (Shift+Tab die vorherige); am Ende verlässt Tab die Bühne wie gewohnt.
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && selectable.length > 0) {
+      const order = selectable.map((n) => n.id);
+      const current = state.selection.length === 1 && state.selection[0] !== undefined ? order.indexOf(state.selection[0]) : -1;
+      const next = e.shiftKey ? (current === -1 ? order.length - 1 : current - 1) : current + 1;
+      const id = order[next];
+      if (id === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      studio.select([id]);
+      return;
+    }
     const arrows: Record<string, Delta> = { ArrowLeft: { dx: -1, dy: 0 }, ArrowRight: { dx: 1, dy: 0 }, ArrowUp: { dx: 0, dy: -1 }, ArrowDown: { dx: 0, dy: 1 } };
     const d = arrows[e.key];
     if (d === undefined || state.selection.length === 0 || e.ctrlKey || e.metaKey) return;
     e.preventDefault();
     e.stopPropagation();
     const f = e.shiftKey ? 10 : 1;
-    void studio.moveNodes(new Map(topLevel(state.comp, state.selection).map((id) => [id, { dx: d.dx * f, dy: d.dy * f }])));
+    // Kurz hintereinander gedrückte Pfeile ergeben einen Undo-Schritt (Story 20.3).
+    void studio.nudge(d.dx * f, d.dy * f);
   };
 
   const onDrop = (e: DragEvent): void => {
     const data = e.dataTransfer.getData(ASSET_DRAG_TYPE);
     if (data === '') return;
-    e.preventDefault();
     const parsed: unknown = JSON.parse(data);
     const asset = rec(parsed);
+    const type = str(asset['type'], '');
+    if (!STAGE_ASSET_TYPES.has(type)) {
+      studio.notify('info', type === 'audio' ? 'Drop audio on the Timeline to create an audio track.' : `Assets of type ${type} cannot be placed on the stage.`);
+      return;
+    }
+    e.preventDefault();
     const p = toComp(e.clientX, e.clientY);
-    const id = String(asset['id']);
-    void studio.addNode({ id, type: String(asset['type']), asset: id, x: Math.round(p.x), y: Math.round(p.y) });
+    const id = str(asset['id'], 'asset');
+    void studio.addNode({ id, type, asset: id, x: Math.round(p.x), y: Math.round(p.y) });
   };
 
   const liveGuides = drag?.kind === 'guide' ? [...guides.filter((g) => g.id !== drag.guide.id), drag.guide] : guides;
   const moveDelta = drag?.kind === 'move' ? drag.delta : undefined;
   const px = (v: number): string => `${String(v)}px`;
   const gridStep = tickStep(zoom) * zoom;
+  const marquee = drag?.kind === 'marquee' ? normalizeBox({ x: drag.start.x, y: drag.start.y, width: drag.end.x - drag.start.x, height: drag.end.y - drag.start.y }) : undefined;
+  const liveBox = (id: string, box: Box): Box => {
+    if (drag?.kind === 'resize' && drag.id === id) return drag.next;
+    if (moveDelta !== undefined && drag?.kind === 'move' && drag.ids.includes(id)) return { ...box, x: box.x + moveDelta.dx, y: box.y + moveDelta.dy };
+    return box;
+  };
+  const rotation = drag?.kind === 'rotate' ? drag.angle - drag.startAngle : 0;
+  const selectedLabel = state.selection.length === 0 ? 'No node selected' : `Selected: ${state.selection.join(', ')}`;
 
   return (
     <div className="preview">
@@ -287,6 +412,25 @@ export function Preview(): ReactNode {
         <span className="zoom" aria-live="polite">{Math.round(zoom * 100)} %</span>
         <button type="button" onClick={() => { zoomAt(1.25, size.width / 2, size.height / 2); }} aria-label="Zoom in">+</button>
         <button type="button" onClick={fit}>Fit</button>
+        <span className="guide-form" role="group" aria-label="Add guide">
+          <select aria-label="Guide direction" value={guideAxis} onChange={(e) => { setGuideAxis(e.currentTarget.value === 'y' ? 'y' : 'x'); }}>
+            <option value="x">Vertical guide at x</option>
+            <option value="y">Horizontal guide at y</option>
+          </select>
+          <input
+            type="number"
+            aria-label="Guide position in pixels"
+            placeholder="px"
+            value={guidePos}
+            onChange={(e) => { setGuidePos(e.currentTarget.value); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') addGuide();
+            }}
+          />
+          <button type="button" onClick={addGuide} disabled={guidePos.trim() === ''}>
+            Add guide
+          </button>
+        </span>
         {guides.length > 0 && (
           <button type="button" onClick={() => { setGuides([]); }}>
             Clear guides
@@ -313,7 +457,7 @@ export function Preview(): ReactNode {
             role="application"
             aria-label="Stage"
             aria-roledescription="canvas"
-            aria-describedby="stage-help"
+            aria-describedby="stage-help stage-selection"
             tabIndex={0}
             onKeyDown={onKeyDown}
             style={{ left: px(pan.x), top: px(pan.y), width: px(width * zoom), height: px(height * zoom) }}
@@ -327,24 +471,63 @@ export function Preview(): ReactNode {
               </>
             )}
             {selectedBoxes.map(({ id, box }) => {
-              const moving = moveDelta !== undefined && drag?.kind === 'move' && drag.ids.includes(id);
+              const b = liveBox(id, box);
+              const moving = (drag?.kind === 'move' && drag.ids.includes(id)) || (drag?.kind === 'resize' && drag.id === id) || (drag?.kind === 'rotate' && drag.id === id);
               return (
                 <div
                   key={id}
                   className={`selection${moving ? ' moving' : ''}`}
                   data-node-id={id}
                   style={{
-                    left: px((box.x + (moving ? moveDelta.dx : 0)) * zoom),
-                    top: px((box.y + (moving ? moveDelta.dy : 0)) * zoom),
-                    width: px(box.width * zoom),
-                    height: px(box.height * zoom),
+                    left: px(b.x * zoom),
+                    top: px(b.y * zoom),
+                    width: px(b.width * zoom),
+                    height: px(b.height * zoom),
+                    ...(drag?.kind === 'rotate' && drag.id === id ? { transform: `rotate(${String(rotation)}deg)` } : {}),
                   }}
                 >
                   <span className="selection-label">{id}</span>
                 </div>
               );
             })}
+            {single !== undefined && canTransform && (
+              <>
+                {blocker === undefined &&
+                  HANDLES.map((h) => {
+                    const pos = handlePosition(h, liveBox(single.id, single.box));
+                    return (
+                      <span
+                        key={h}
+                        className="handle"
+                        data-handle={h}
+                        role="presentation"
+                        title={`Resize (${h}); Shift keeps the aspect ratio, Alt resizes from the center`}
+                        style={{ left: px(pos.x * zoom), top: px(pos.y * zoom), cursor: CURSORS[h] }}
+                        onPointerDown={(e) => {
+                          startHandle(e, h);
+                        }}
+                      />
+                    );
+                  })}
+                {(() => {
+                  const b = liveBox(single.id, single.box);
+                  return (
+                    <span
+                      className="handle rotate"
+                      data-handle="rotate"
+                      role="presentation"
+                      title={blocker !== undefined && blocker !== 'rotated' ? blocker : 'Rotate; Shift snaps to 15°'}
+                      style={{ left: px((b.x + b.width / 2) * zoom), top: px(b.y * zoom - 24) }}
+                      onPointerDown={(e) => {
+                        startHandle(e, 'rotate');
+                      }}
+                    />
+                  );
+                })()}
+              </>
+            )}
           </div>
+          {marquee !== undefined && <div className="marquee" style={{ left: px(pan.x + marquee.x * zoom), top: px(pan.y + marquee.y * zoom), width: px(marquee.width * zoom), height: px(marquee.height * zoom) }} aria-hidden="true" />}
           {liveGuides.map((g) => (
             <div
               key={g.id}
@@ -361,7 +544,10 @@ export function Preview(): ReactNode {
         </div>
       </div>
       <p id="stage-help" className="sr-only">
-        Click a node to select it, drag to move it. Arrow keys move the selection by one pixel, Shift+arrow by ten. Hold Space and drag to pan, use the mouse wheel to zoom.
+        Click a node to select it, drag to move it, drag on an empty area to select several. Tab and Shift+Tab select the next or previous node. Arrow keys move the selection by one pixel, Shift+arrow by ten. Drag the handles to resize (Shift keeps the aspect ratio) or rotate (Shift snaps to 15 degrees). Hold Space and drag to pan, use the mouse wheel to zoom.
+      </p>
+      <p id="stage-selection" className="sr-only" aria-live="polite">
+        {selectedLabel}
       </p>
     </div>
   );

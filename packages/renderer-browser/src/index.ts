@@ -10,7 +10,7 @@
  * const image = await browser.renderLayer(request);
  * ```
  */
-export { createBrowserHost, CHROMIUM_ARGS, type BrowserHost, type BrowserHostOptions } from './host.js';
+export { createBrowserHost, CHROMIUM_ARGS, CHROMIUM_GRAPHICS_ARGS, chromiumEnv, probeOsSandbox, type BrowserHost, type BrowserHostOptions } from './host.js';
 export { createBrowserBackends, PIXI_NODE_TYPES, type BrowserBackends } from './backends.js';
 export { checkHtmlNode, HTML_CAPABILITIES } from './html-check.js';
 export type { BrowserLayerKind, BrowserLayerPayload, OpenVideoPageApi } from './protocol.js';

@@ -2,6 +2,7 @@
  * Render-Manifest (FR-8, A20): alle Eingaben und Versionen eines Renders.
  * Gleiche Eingaben liefern gleiche Frame-Hashes (FR-9).
  */
+import { createHash } from 'node:crypto';
 import Type, { type Static } from 'typebox';
 import { SCHEMA_VERSION, contentHash, validateValue, type Diagnostic, type RgbaImage } from '@agentic-video/core';
 
@@ -58,20 +59,22 @@ export const RenderManifestSchema = Type.Object(
 );
 export type RenderManifest = Static<typeof RenderManifestSchema>;
 
-/** Pixel-Hash eines Frames: SHA-256 über Breite, Höhe und vormultiplizierte RGBA-Daten. */
+/**
+ * Pixel-Hash eines Frames: SHA-256 über Breite, Höhe (je u32, Big Endian) und die vormultiplizierten
+ * RGBA-Daten. Rechnet inkrementell mit `node:crypto` (Story 18.5): kein zusammengesetzter Puffer,
+ * native Geschwindigkeit; der Wert ist identisch zu `contentHash(header ‖ data)`.
+ *
+ * @example
+ * ```ts
+ * const hash = imageHash(frame); // 'sha256:…'
+ * ```
+ */
 export function imageHash(image: RgbaImage): string {
   const header = new Uint8Array(8);
   const view = new DataView(header.buffer);
   view.setUint32(0, image.width);
   view.setUint32(4, image.height);
-  return contentHash(concat(header, image.data));
-}
-
-function concat(a: Uint8Array, b: Uint8Array): Uint8Array {
-  const out = new Uint8Array(a.length + b.length);
-  out.set(a, 0);
-  out.set(b, a.length);
-  return out;
+  return `sha256:${createHash('sha256').update(header).update(image.data).digest('hex')}`;
 }
 
 /** Hash eines Chunks über die Pixel-Hashes seiner Frames. */

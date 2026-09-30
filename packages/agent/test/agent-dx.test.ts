@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { OpenVideoError, PATCH_OPS, Registry, applyPatches, type AsrProvider } from '@agentic-video/core';
+import { OpenVideoError, PATCH_OPS, Registry, applyPatches, isRecord, type AsrProvider } from '@agentic-video/core';
 import { JobManager, OPERATIONS, PATCH_EXAMPLES, PATCH_SCHEMAS, PatchSchema, checkPatchList, invokeOperation, type AgentServices, type InvocationResult } from '@agentic-video/agent';
 import { smallProject, testEnvironment, testServices } from './helpers.js';
 
@@ -21,7 +21,13 @@ async function run(services: AgentServices, op: string, input: unknown): Promise
 async function ok(services: AgentServices, op: string, input: unknown): Promise<Record<string, unknown>> {
   const r = await run(services, op, input);
   if (!r.ok) throw new Error(`${op} failed: ${r.error.code} ${r.error.problem}`);
-  return r.result as Record<string, unknown>;
+  if (!isRecord(r.result)) throw new Error(`${op} returned no object`);
+  return r.result;
+}
+
+/** Länge einer Liste aus einem Ergebnis (−1, wenn es keine Liste ist). */
+function lengthOf(value: unknown): number {
+  return Array.isArray(value) ? value.length : -1;
 }
 
 function failure(r: InvocationResult) {
@@ -169,7 +175,7 @@ describe('Story 19.3: Selbstbeschreibung', () => {
   it('capabilities.get liefert Operationen, Node-Typen und Filter', async () => {
     const services = newServices();
     const all = await ok(services, 'capabilities.get', {});
-    expect((all['operations'] as unknown[]).length).toBe(OPERATIONS.size);
+    expect(lengthOf(all['operations'])).toBe(OPERATIONS.size);
     expect(all['patchOps']).toEqual([...PATCH_OPS]);
     const text = await ok(services, 'capabilities.get', { nodeType: 'text' });
     expect(text['properties']).toContain('fontSize');
@@ -233,7 +239,7 @@ describe('Story 19.5: frame.renderMany', () => {
     const id = await create(services);
     const r = await ok(services, 'frame.renderMany', { projectId: id, frames: [0, 5, '0.5s', 0], inline: false });
     expect(r['frames']).toEqual([0, 5]);
-    expect((r['images'] as unknown[]).length).toBe(2);
+    expect(lengthOf(r['images'])).toBe(2);
     expect(failure(await run(services, 'frame.renderMany', { projectId: id, frames: [20] })).code).toBe('OV_RANGE_INVALID');
   });
 });
@@ -257,7 +263,7 @@ describe('Story 19.5: project.import', () => {
     const r = await ok(services, 'project.import', { projectId: id, format: 'svg', content: '<svg xmlns="http://www.w3.org/2000/svg"><rect width="2" height="2"/></svg>', dryRun: true });
     expect(r['ok']).toBe(true);
     const comp = await ok(services, 'composition.get', { projectId: id });
-    expect((comp['nodes'] as unknown[]).length).toBe(1);
+    expect(lengthOf(comp['nodes'])).toBe(1);
   });
 
   it('übersetzt eine Anime.js-Timeline in Keyframes', async () => {

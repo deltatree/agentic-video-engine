@@ -11,6 +11,7 @@ import { basename, extname, isAbsolute, join, normalize, relative, resolve } fro
 import { ASSET_TYPES, OpenVideoError, contentHash, isRecord, sha256Hex, type AssetRecord, type AssetResolver, type Diagnostic, type RgbaImage } from '@agentic-video/core';
 import type { Cache } from '@agentic-video/cache';
 import { VideoFrameReader, locateFfmpeg, probeMedia, runProcess } from '@agentic-video/ffmpeg';
+import { toSfnt } from '@agentic-video/fonts';
 import { detectFormat, sniffFormat, type DetectedFormat } from './detect.js';
 import { fetchAsset, type FetchOptions } from './fetcher.js';
 import { assertFfmpegInput, inspectAsset, type AssetMetadata } from './inspect.js';
@@ -108,11 +109,30 @@ async function cachedMetadata(path: string, bytes: Uint8Array, hash: string, det
 }
 
 /**
- * Normalisiert Formate, die Renderer nicht direkt lesen: AVIF → PNG; animierte Bilder
+ * WOFF/WOFF2 → SFNT (Story 17.9): Renderer und Schrift-Loader bekommen eine TTF/OTF-Datei.
+ * Sammlungen (TTC) bleiben unverändert; die Schrift wählt `project.fonts[].faceIndex`.
+ */
+async function normalizedFont(path: string, hash: string, options: PipelineOptions, workDir: string): Promise<string> {
+  const sfnt = toSfnt(new Uint8Array(await readFile(path)));
+  const ext = String.fromCharCode(...sfnt.subarray(0, 4)) === 'OTTO' ? '.otf' : '.ttf';
+  const tier = options.cache.tier('asset');
+  const key = `norm-${hash.replace('sha256:', '')}${ext.replace('.', '-')}`;
+  const outFile = join(workDir, `${hash.replace('sha256:', '')}${ext}`);
+  if ((await tier.get(key)) === undefined) {
+    await tier.put(key, sfnt);
+    if (options.stats !== undefined) options.stats.normalized++;
+  }
+  if (!existsSync(outFile)) await writeFile(outFile, sfnt);
+  return outFile;
+}
+
+/**
+ * Normalisiert Formate, die Renderer nicht direkt lesen: WOFF/WOFF2 → TTF/OTF; AVIF → PNG; animierte Bilder
  * (GIF, AVIF-Sequenz, animiertes WebP) → verlustfreies Video (FFV1, RGBA) für frame-genauen Zugriff.
  * Ergebnis ist ein Dateipfad im Cache; identische Eingaben werden nie erneut verarbeitet.
  */
 async function normalizedPath(path: string, hash: string, detected: DetectedFormat, meta: AssetMetadata, options: PipelineOptions, workDir: string): Promise<string> {
+  if (detected.type === 'font' && (detected.format === 'woff' || detected.format === 'woff2')) return normalizedFont(path, hash, options, workDir);
   let target: { ext: string; args: string[] } | undefined;
   if (detected.type === 'image' && meta.animated === true) target = { ext: '.mkv', args: ['-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'bgra', '-fflags', '+bitexact', '-map_metadata', '-1'] };
   else if (detected.format === 'avif') target = { ext: '.png', args: ['-frames:v', '1', '-pix_fmt', 'rgba', '-fflags', '+bitexact'] };

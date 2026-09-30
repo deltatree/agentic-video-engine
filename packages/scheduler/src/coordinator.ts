@@ -9,11 +9,11 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { join } from 'node:path';
-import { OpenVideoError, isRecord, sha256Hex, type Diagnostic } from '@agentic-video/core';
+import { OpenVideoError, isRecord, type Diagnostic } from '@agentic-video/core';
 import { TieredStore, type ContentStore } from '@agentic-video/cache';
 import type { ChunkRequest, ChunkResult } from '@agentic-video/render';
 import { isSafeRelativePath } from './files.js';
-import { inputKey, jobFrameDigest, jobFramePrefix, keyDigest } from './keys.js';
+import { digestHex, inputKey, jobFrameDigest, jobFramePrefix, keyDigest } from './keys.js';
 import { isChunkRequest, isChunkResult, isDiagnostic } from './protocol.js';
 
 /** Rollen am Koordinator (Story 16.3): API reicht Jobs ein, Worker rendern, KEDA liest die Queue. */
@@ -21,7 +21,7 @@ export type CoordinatorRole = 'submit' | 'worker' | 'metrics';
 
 /** Getrennte Bearer-Tokens je Rolle. */
 export interface CoordinatorTokens {
-  /** `POST /v1/jobs`, `GET /v1/jobs/<id>`, `GET /v1/queue` (Agent API). */
+  /** `POST /v1/jobs`, `GET /v1/jobs/<id>`, `DELETE /v1/jobs/<id>`, `GET /v1/queue` (Agent API). */
   readonly submit?: string;
   /** `POST /v1/lease|heartbeat|complete|fail` (Worker). */
   readonly worker?: string;
@@ -134,6 +134,8 @@ interface Job {
   readonly diagnostics: Diagnostic[];
   /** Zeitpunkt, an dem der Job fertig oder gescheitert ist (für die TTL). */
   finishedAt?: number;
+  /** Vom Einreicher abgebrochen (`DELETE /v1/jobs/<id>`, Story 18.8). */
+  cancelled?: boolean;
 }
 
 /** Prüft, ob ein Wert eine {@link Lease} ist. */
@@ -263,7 +265,7 @@ export function assertStrongToken(role: string, token: string): void {
 /** Welche Rollen ein Endpunkt annimmt. */
 function rolesFor(method: string | undefined, path: string): readonly CoordinatorRole[] | undefined {
   if (method === 'GET' && path === '/v1/queue') return ['metrics', 'submit'];
-  if (method === 'GET' && path.startsWith('/v1/jobs/')) return ['submit'];
+  if ((method === 'GET' || method === 'DELETE') && path.startsWith('/v1/jobs/')) return ['submit'];
   if (method === 'POST' && path === '/v1/jobs') return ['submit'];
   if (method === 'POST' && (path === '/v1/lease' || path === '/v1/heartbeat' || path === '/v1/complete' || path === '/v1/fail')) return ['worker'];
   return undefined;
@@ -273,7 +275,11 @@ function rolesFor(method: string | undefined, path: string): readonly Coordinato
  * Startet den HTTP-Koordinator.
  *
  * Endpunkte: `POST /v1/jobs`, `POST /v1/lease`, `POST /v1/heartbeat`, `POST /v1/complete`,
- * `POST /v1/fail`, `GET /v1/jobs/<id>`, `GET /v1/queue`, `GET /metrics` (Prometheus-Text).
+ * `POST /v1/fail`, `GET /v1/jobs/<id>`, `DELETE /v1/jobs/<id>` (Abbruch), `GET /v1/queue`,
+ * `GET /metrics` (Prometheus-Text).
+ *
+ * Gescheiterte oder abgebrochene Jobs vergeben keine Chunks mehr und zählen nicht zur Queue;
+ * ihre noch offenen Leases verfallen (Heartbeat `410`), die Worker hören auf.
  *
  * Sicherheit (Epic 16): getrennte Tokens je Rolle, Pflicht-Token außerhalb von Loopback,
  * `complete`/`fail` nur mit gültiger Lease, Ergebnis-Frames nur unter `jobs/<jobId>/frames/`,
@@ -338,10 +344,30 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     journalLines++;
   };
 
-  const jobState = (job: Job): JobStatus['state'] => (job.chunks.some((c) => c.state === 'failed') ? 'failed' : job.chunks.every((c) => c.state === 'done') ? 'done' : 'running');
+  const jobState = (job: Job): JobStatus['state'] => (job.cancelled === true || job.chunks.some((c) => c.state === 'failed') ? 'failed' : job.chunks.every((c) => c.state === 'done') ? 'done' : 'running');
+
+  /**
+   * Beendet alle offenen Chunks eines gescheiterten oder abgebrochenen Jobs (Befund M5): keine neuen
+   * Leases, laufende Leases verfallen, nichts zählt mehr zur Queue.
+   */
+  const closeOpenChunks = (job: Job): void => {
+    for (const c of job.chunks) {
+      if (c.state === 'done' || c.state === 'failed') continue;
+      c.state = 'failed';
+      delete c.lease;
+    }
+  };
+
+  const cancelJob = (job: Job, at: number, diagnostic: Diagnostic | undefined): void => {
+    job.cancelled = true;
+    if (diagnostic !== undefined) job.diagnostics.push(diagnostic);
+    closeOpenChunks(job);
+    job.finishedAt ??= at;
+  };
 
   /** Merkt den Abschluss eines Jobs für die TTL. */
   const markFinished = (job: Job, at: number, record: boolean): void => {
+    if (jobState(job) === 'failed') closeOpenChunks(job);
     if (job.finishedAt !== undefined || jobState(job) === 'running') return;
     job.finishedAt = at;
     if (record) journal({ e: 'finished', jobId: job.id, at });
@@ -384,6 +410,10 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     const diagnostics = Array.isArray(j['diagnostics']) ? j['diagnostics'].filter(isDiagnostic) : [];
     const job: Job = { id: j['id'], projectKey: j['projectKey'], files: stored, ...(typeof tp === 'string' ? { traceparent: tp } : {}), chunks: entries, diagnostics };
     if (typeof j['finishedAt'] === 'number') job.finishedAt = j['finishedAt'];
+    if (j['cancelled'] === true) {
+      job.cancelled = true;
+      closeOpenChunks(job);
+    }
     return job;
   };
 
@@ -403,6 +433,9 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
       if ((e['e'] === 'job' || e['e'] === 'snapshot') && isRecord(e['job'])) {
         const job = restoreJob(e['job']);
         if (job !== undefined) jobs.set(job.id, job);
+      } else if (e['e'] === 'cancel' && typeof e['jobId'] === 'string' && typeof e['at'] === 'number') {
+        const job = jobs.get(e['jobId']);
+        if (job !== undefined) cancelJob(job, e['at'], isDiagnostic(e['diagnostic']) ? e['diagnostic'] : undefined);
       } else if (e['e'] === 'finished' && typeof e['jobId'] === 'string' && typeof e['at'] === 'number') {
         const job = jobs.get(e['jobId']);
         if (job !== undefined) job.finishedAt = e['at'];
@@ -438,6 +471,7 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
         chunks: job.chunks.map((c) => ({ request: c.request, state: c.state === 'done' ? 'done' : 'open', attempts: c.attempts, ...(c.result !== undefined ? { result: c.result } : {}) })),
         diagnostics: job.diagnostics,
         ...(job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {}),
+        ...(job.cancelled === true ? { cancelled: true } : {}),
       };
       lines.push(JSON.stringify({ e: 'snapshot', job: snapshot }));
       job.chunks.forEach((c, index) => {
@@ -462,14 +496,38 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     }
   };
 
+  /** Löscht nicht mehr genutzte Eingaben aus dem gemeinsamen Speicher (auch der entfernten Stufe). */
+  const removeInputs = async (keys: readonly string[]): Promise<void> => {
+    const target = options.store instanceof TieredStore ? options.store.remote : options.store;
+    for (const key of keys) {
+      try {
+        await target.delete(key);
+        if (target !== options.store) await options.store.delete(key);
+      } catch (error) {
+        process.emitWarning(`Could not remove input ${key}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  };
+
   /** Entfernt fertige Jobs nach Ablauf der TTL und kompaktiert das Journal (M2). */
   const sweep = (): void => {
     const t = now();
     const expired: string[] = [];
     for (const job of jobs.values()) if (job.finishedAt !== undefined && t - job.finishedAt >= ttlMs) expired.push(job.id);
+    const inputsOf = (job: Job): string[] => [job.projectKey, ...job.files.map((f) => f.key)];
+    const dropped: string[] = [];
     for (const id of expired) {
+      const job = jobs.get(id);
       jobs.delete(id);
+      if (job !== undefined) dropped.push(...inputsOf(job));
       void removeJobData(id);
+    }
+    // Eingaben (`inputs/sha256-…`) per Referenzzählung aufräumen (Befund m8): nur, was kein
+    // verbliebener Job mehr nutzt. Der Remote-Runner lädt fehlende Eingaben beim nächsten Job neu hoch.
+    if (dropped.length > 0) {
+      const used = new Set<string>();
+      for (const job of jobs.values()) for (const key of inputsOf(job)) used.add(key);
+      void removeInputs([...new Set(dropped)].filter((key) => !used.has(key)));
     }
     // Viele Anhänge seit der letzten Momentaufnahme: ebenfalls kompaktieren.
     if (expired.length > 0 || journalLines > 10_000) compact();
@@ -526,14 +584,19 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     let leased = 0;
     let running = 0;
     for (const job of jobs.values()) {
-      if (jobState(job) === 'running') running++;
+      // Gescheiterte und abgebrochene Jobs zählen nicht (Befund M5): KEDA skaliert sonst für Arbeit, die keiner mehr will.
+      if (jobState(job) !== 'running') continue;
+      running++;
       for (const c of job.chunks) {
         if (c.state === 'queued') queued++;
         if (c.state === 'leased') leased++;
       }
     }
-    return { queueLength: queued, leasesActive: leased, jobsRunning: running };
+    return { queueLength: queued, leasesActive: leased, jobsRunning: running + reserved };
   };
+
+  /** Plätze laufender Einreichungen (Befund m8): vor dem ersten `await` reserviert, damit parallele Submits `maxActiveJobs` einhalten. */
+  let reserved = 0;
 
   const submit = async (body: unknown): Promise<unknown> => {
     if (!isRecord(body) || !isRecord(body['project']) || !Array.isArray(body['chunks']) || !Array.isArray(body['files'])) {
@@ -547,17 +610,29 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     if (counts().jobsRunning >= maxActive) {
       throw httpError(429, 'OV_COORDINATOR_BUSY', `${String(maxActive)} jobs are already running.`, ['Retry when running jobs have finished.', 'Scale the workers or raise maxActiveJobs.']);
     }
-    const projectBytes = new TextEncoder().encode(JSON.stringify(body['project']));
-    const projectKey = inputKey(sha256Hex(projectBytes));
+    reserved++;
+    try {
+      return await storeJob(body, chunks);
+    } finally {
+      reserved--;
+    }
+  };
+
+  const storeJob = async (body: Readonly<Record<string, unknown>>, chunks: readonly ChunkRequest[]): Promise<unknown> => {
+    const project = body['project'];
+    const listed = body['files'];
+    if (!Array.isArray(listed)) throw badRequest('A job needs "files".', 'Send "files": [].');
+    const projectBytes = new TextEncoder().encode(JSON.stringify(project));
+    const projectKey = inputKey(digestHex(projectBytes));
     await options.store.put(projectKey, projectBytes);
     const files: StoredFile[] = [];
-    for (const f of body['files']) {
+    for (const f of listed) {
       if (!isRecord(f) || typeof f['path'] !== 'string' || !isSafeRelativePath(f['path'])) {
         throw badRequest('Each file needs a safe relative "path" and base64 "data" or a store "key".', 'Use paths like "assets/logo.png" without "..".');
       }
       if (typeof f['data'] === 'string') {
         const bytes = new Uint8Array(Buffer.from(f['data'], 'base64'));
-        const key = inputKey(sha256Hex(bytes));
+        const key = inputKey(digestHex(bytes));
         await options.store.put(key, bytes);
         files.push({ path: f['path'], key });
       } else if (typeof f['key'] === 'string' && keyDigest(f['key']) !== undefined && f['key'] === inputKey(keyDigest(f['key']) ?? '')) {
@@ -580,6 +655,7 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     const worker = typeof body['worker'] === 'string' ? body['worker'].slice(0, 200) : 'unknown';
     let best: { job: Job; index: number; since: number } | undefined;
     for (const job of jobs.values()) {
+      if (jobState(job) !== 'running') continue;
       job.chunks.forEach((c, index) => {
         if (c.state === 'queued' && (best === undefined || c.queuedSince < best.since)) best = { job, index, since: c.queuedSince };
       });
@@ -609,7 +685,7 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
     const url = new URL(req.url ?? '/', 'http://coordinator');
     const path = url.pathname;
     if (req.method === 'GET' && path === '/metrics') {
-      expireLeases();
+      // Nur lesen (Befund m7): abgelaufene Leases räumt der Timer auf, /metrics schreibt kein Journal.
       const q = counts();
       const lines = [
         '# HELP openvideo_queue_length Chunks waiting for a worker.',
@@ -640,9 +716,26 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
       send(res, 200, counts());
       return;
     }
-    if (req.method === 'GET') {
-      const job = jobs.get(decodeURIComponent(path.slice('/v1/jobs/'.length)));
+    if (req.method === 'GET' || req.method === 'DELETE') {
+      let id: string;
+      try {
+        id = decodeURIComponent(path.slice('/v1/jobs/'.length));
+      } catch (error) {
+        // Kaputte Prozent-Kodierung ist ein Fehler der Anfrage, kein Serverfehler (Befund m7).
+        throw badRequest(`The job id in ${path.slice(0, 200)} is not valid percent-encoding: ${error instanceof Error ? error.message : String(error)}`, 'Use the jobId from POST /v1/jobs.');
+      }
+      const job = jobs.get(id);
       if (job === undefined) throw httpError(404, 'OV_COORDINATOR_JOB_UNKNOWN', 'Unknown job.', ['Submit the job again with POST /v1/jobs.', 'Finished jobs are removed after jobTtlSeconds.']);
+      if (req.method === 'DELETE') {
+        if (jobState(job) === 'running') {
+          const at = now();
+          const diagnostic: Diagnostic = { code: 'OV_RENDER_CANCELLED', severity: 'error', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] };
+          journal({ e: 'cancel', jobId: job.id, at, diagnostic });
+          cancelJob(job, at, diagnostic);
+        }
+        send(res, 200, { ok: true, state: jobState(job) });
+        return;
+      }
       expireLeases();
       const status: JobStatus = {
         id: job.id,
@@ -669,6 +762,8 @@ export async function startCoordinator(options: CoordinatorOptions): Promise<Coo
       return;
     }
     if (path === '/v1/heartbeat') {
+      // Abgelaufene Leases zuerst verfallen lassen (Befund m7): ein später Heartbeat verlängert sie nicht mehr.
+      expireLeases();
       const hit = findLease(body['leaseId']);
       if (hit?.chunk.lease === undefined) {
         // Lease unbekannt oder abgelaufen: das Ergebnis dieses Workers wird nicht mehr angenommen.

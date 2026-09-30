@@ -30,7 +30,7 @@ import {
   type RgbaImage,
 } from '@agentic-video/core';
 import { hasNodeFilters } from '@agentic-video/compositor';
-import { decodeRawFrame, encodeRawFrameAsync } from '@agentic-video/png';
+import { decodeRawFrameAsync, encodeRawFrameAsync } from '@agentic-video/png';
 import { MOTION_STATES_CAPABILITY, evaluateMotionStates, type BlenderLayerRequest, type MotionState } from '@agentic-video/renderer-blender';
 import type { CompositorNode, RenderEnvironment } from './environment.js';
 
@@ -44,6 +44,14 @@ export interface RenderFrameOptions {
   /** Frame-Cache nutzen (Standard `true`). */
   readonly useCache?: boolean;
   readonly signal?: { readonly aborted: boolean };
+  /**
+   * Layer-Cache-Politik im Video-Render (Story 18.3): Mit einer Historie (Layer-ID → letzter
+   * Schlüssel, von {@link renderChunk} über alle Frames eines Chunks geführt) schreibt der
+   * Render nur zeitinvariante Layer in den Layer-Cache und keine, deren Schlüssel sich seit dem
+   * vorigen Frame geändert hat. Zeitabhängige Layer (Video, Lottie, Shader …) umgehen den
+   * Layer-Cache dann ganz. Ohne Historie (Einzelframe, Vorschau) wird jeder Layer gecacht.
+   */
+  readonly layerHistory?: Map<string, string>;
 }
 
 /** Ergebnis eines Frame-Renders. */
@@ -83,6 +91,73 @@ export function outputSize(scene: { readonly width: number; readonly height: num
 
 function stripNode(node: EvaluatedNode): unknown {
   return { id: node.id, type: node.type, props: node.props, children: node.children.map(stripNode), mask: node.mask === undefined ? undefined : { ...node.mask, node: stripNode(node.mask.node) }, reveal: node.reveal, time: node.time.localFrame };
+}
+
+/** Wie {@link stripNode}, aber ohne lokale Zeit: für zeitinvariante Layer (Story 18.3). */
+function stripNodeTimeless(node: EvaluatedNode): unknown {
+  return { id: node.id, type: node.type, props: node.props, children: node.children.map(stripNodeTimeless), mask: node.mask === undefined ? undefined : { ...node.mask, node: stripNodeTimeless(node.mask.node) }, reveal: node.reveal };
+}
+
+/**
+ * Node-Typen, die das Skia-Backend nur aus ihren (schon ausgewerteten) Properties zeichnet, ohne
+ * die lokale Zeit zu lesen. Text nur ohne `textAnimation`. Video, Sprite, Lottie, Shader und
+ * Partikel lesen die Zeit und fehlen darum.
+ */
+const TIME_INVARIANT_TYPES: ReadonlySet<string> = new Set(['group', 'rect', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'image', 'svg', 'text', 'rich-text']);
+
+/**
+ * Ist ein Layer zeitinvariant, d. h. hängen seine Pixel nur von den Properties ab (Story 18.3)?
+ * Nur für das Skia-Backend belegt; andere Backends (HTML mit CSS-Animationen, Three.js, Blender)
+ * gelten als zeitabhängig.
+ *
+ * @example
+ * ```ts
+ * isTimeInvariantLayer('skia', [rectNode]); // true
+ * isTimeInvariantLayer('skia', [videoNode]); // false
+ * ```
+ */
+export function isTimeInvariantLayer(backendId: string, nodes: readonly EvaluatedNode[]): boolean {
+  if (backendId !== 'skia') return false;
+  const ok = (n: EvaluatedNode): boolean =>
+    TIME_INVARIANT_TYPES.has(n.type) && !((n.type === 'text' || n.type === 'rich-text') && n.props['textAnimation'] !== undefined) && n.children.every(ok) && (n.mask === undefined || ok(n.mask.node));
+  return nodes.every(ok);
+}
+
+/**
+ * Dekodierte zeitinvariante Layer im Arbeitsspeicher (Story 18.3), je Umgebung: Ein statischer
+ * Hintergrund wird im Video-Render einmal gerendert und danach weder neu gezeichnet noch aus dem
+ * komprimierten Cache entpackt. LRU mit höchstens {@link MEMORY_LAYER_BYTES} Bytes je Umgebung
+ * (4K: vier Layer, 1080p: 16).
+ */
+const memoryLayers = new WeakMap<RenderEnvironment, Map<string, RgbaImage>>();
+const MEMORY_LAYER_BYTES = 136 * 1024 * 1024;
+
+function rememberLayer(env: RenderEnvironment, key: string, image: RgbaImage): void {
+  if (image.data.length > MEMORY_LAYER_BYTES) return;
+  let m = memoryLayers.get(env);
+  if (m === undefined) {
+    m = new Map();
+    memoryLayers.set(env, m);
+  }
+  m.delete(key);
+  m.set(key, image);
+  let total = 0;
+  for (const v of m.values()) total += v.data.length;
+  for (const [k, v] of m) {
+    if (total <= MEMORY_LAYER_BYTES) break;
+    m.delete(k);
+    total -= v.data.length;
+  }
+}
+
+function recallLayer(env: RenderEnvironment, key: string): RgbaImage | undefined {
+  const m = memoryLayers.get(env);
+  const hit = m?.get(key);
+  if (m !== undefined && hit !== undefined) {
+    m.delete(key);
+    m.set(key, hit);
+  }
+  return hit;
 }
 
 /**
@@ -126,6 +201,8 @@ interface PlanContext {
   readonly compositionId: string | undefined;
   readonly counters: { rendered: number; cached: number };
   readonly signal: { readonly aborted: boolean } | undefined;
+  /** Layer-Historie des Video-Renders (siehe {@link RenderFrameOptions.layerHistory}). */
+  readonly layerHistory: Map<string, string> | undefined;
   /** Laufende Cache-Schreibvorgänge; {@link renderFrame} wartet am Ende auf alle. */
   readonly writes: CacheWrites;
   /** Diagnosen aus dem Zusammensetzen. */
@@ -191,15 +268,31 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
     });
   }
   const motionStates = motionStatesFor(ctx, backend.capabilities, nodes);
-  const key = contentHash({ backend: backendId, versions: backend.versions(), nodes: nodes.map(stripNode), ...(motionStates !== undefined ? { motion: motionStates.map((m) => ({ offset: m.offset, nodes: m.nodes.map(stripNode) })) } : {}), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
+  const invariant = isTimeInvariantLayer(backendId, nodes);
+  const history = ctx.layerHistory;
+  // Video-Render: zeitabhängige Layer treffen nie; weder lesen noch komprimieren (Story 18.3).
+  const bypass = history !== undefined && !invariant;
+  const key = contentHash({ backend: backendId, versions: backend.versions(), nodes: nodes.map(invariant ? stripNodeTimeless : stripNode), ...(invariant ? { timeless: true } : {}), ...(motionStates !== undefined ? { motion: motionStates.map((m) => ({ offset: m.offset, nodes: m.nodes.map(stripNode) })) } : {}), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
   const tier = ctx.env.cache.tier('layer');
-  const hit = await tier.get(key);
-  if (hit !== undefined) {
-    ctx.counters.cached++;
-    ctx.env.telemetry.metrics.cacheHit('layer');
-    return decodeRawFrame(hit);
+  const previous = history?.get(layerId);
+  history?.set(layerId, key);
+  if (!bypass) {
+    const remembered = invariant ? recallLayer(ctx.env, key) : undefined;
+    if (remembered !== undefined) {
+      ctx.counters.cached++;
+      ctx.env.telemetry.metrics.cacheHit('layer');
+      return remembered;
+    }
+    const hit = await tier.get(key);
+    if (hit !== undefined) {
+      ctx.counters.cached++;
+      ctx.env.telemetry.metrics.cacheHit('layer');
+      const image = await decodeRawFrameAsync(hit);
+      if (invariant) rememberLayer(ctx.env, key, image);
+      return image;
+    }
+    ctx.env.telemetry.metrics.cacheMiss('layer');
   }
-  ctx.env.telemetry.metrics.cacheMiss('layer');
   if (ctx.signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
   const request: BlenderLayerRequest = {
     layerId,
@@ -224,7 +317,10 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
     });
   }
   ctx.counters.rendered++;
-  ctx.writes.add(image, (bytes) => tier.put(key, bytes));
+  // Im Video-Render nur schreiben, was wieder treffen kann: zeitinvariant und seit dem vorigen Frame unverändert.
+  const animated = previous !== undefined && previous !== key;
+  if (!bypass && !animated) ctx.writes.add(image, (bytes) => tier.put(key, bytes));
+  if (invariant && !animated) rememberLayer(ctx.env, key, image);
   return image;
 }
 
@@ -373,7 +469,7 @@ async function motionBlurGroup(ctx: PlanContext, node: EvaluatedNode, samples: n
   const images: RgbaImage[] = [];
   for (let i = 0; i < samples; i++) {
     const offset = (i / (samples - 1) - 0.5) * shutter;
-    const sub = offset === 0 ? ctx.scene : resolveAnimatedImages(ctx.env.assets, evaluateScene(ctx.project, ctx.compositionId, ctx.scene.frame + offset, { registry: ctx.env.registry }));
+    const sub = offset === 0 ? ctx.scene : resolveAnimatedImages(ctx.env.assets, evaluateScene(ctx.project, ctx.compositionId, ctx.scene.frame + offset, { registry: ctx.env.registry, motionKey: false }));
     const subNode = findNode(sub.nodes, node.id);
     if (subNode === undefined) continue;
     const subCtx: PlanContext = { ...ctx, scene: sub };
@@ -413,14 +509,14 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
     const hit = await time('frameCache', () => tier.get(key));
     if (hit !== undefined) {
       env.telemetry.metrics.cacheHit('frame');
-      return { image: decodeRawFrame(hit), key, cached: true, scene, bounds, diagnostics, timings, layers: { rendered: 0, cached: 0 } };
+      return { image: await decodeRawFrameAsync(hit), key, cached: true, scene, bounds, diagnostics, timings, layers: { rendered: 0, cached: 0 } };
     }
     env.telemetry.metrics.cacheMiss('frame');
   }
   const plan = await time('framePlan', () => planFrame(scene, env.registry, { renderer2d: renderer2dOf(project) }));
   const counters = { rendered: 0, cached: 0 };
   const writes = new CacheWrites();
-  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal, writes, diagnostics };
+  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal, layerHistory: options.layerHistory, writes, diagnostics };
   let image: RgbaImage;
   try {
     const tree = await time('renderers', () => buildTree(ctx, plan));

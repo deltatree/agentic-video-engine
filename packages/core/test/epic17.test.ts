@@ -270,10 +270,51 @@ describe('sequence (17.10, T9)', () => {
     expect(scene.nodes[0]?.children.map((n) => n.id)).toEqual(['b']);
   });
 
+  it('nutzt transitions[i] der IR auch nach übersprungenen Kindern (Review m5)', () => {
+    // Kind x hat keine Dauer und fällt weg; transitions[1] liegt zwischen b und c.
+    const p = project([
+      {
+        id: 'seq',
+        type: 'sequence',
+        transitions: [{ type: 'cut' }, { type: 'cut' }, { type: 'fade', duration: 10, ease: 'linear' }],
+        children: [clip('a', '1s'), { id: 'x', type: 'rect', width: 1, height: 1 }, clip('b', '1s'), clip('c', '1s')],
+      },
+    ]);
+    // a → b: transitions[0] (cut, b ab Frame 30); b → c: transitions[2] (fade 10, c ab Frame 50).
+    expect(evaluateScene(p, 'main', 45).nodes[0]?.children.map((n) => n.id)).toEqual(['b']);
+    expect(evaluateScene(p, 'main', 55).nodes[0]?.children.map((n) => n.id)).toEqual(['b', 'c']);
+  });
+
   it('ist im Schema gültig und lehnt falsche Übergänge ab', () => {
     const ok = project([{ id: 'seq', type: 'sequence', between: { type: 'fade', duration: '0.5s' }, transitions: [{ type: 'cut' }], children: [clip('a', '1s'), clip('b', '1s')] }]);
     expect(validateProject(ok).diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
     const bad = project([{ id: 'seq', type: 'sequence', between: { type: 'fade' }, children: [] }]);
     expect(validateProject(bad).diagnostics.filter((d) => d.severity === 'error').length).toBeGreaterThan(0);
+  });
+});
+
+describe('Frame-Schlüssel mit Motion-Blur-Subframes (Review M6)', () => {
+  const blender = (position: unknown) => ({ id: 'b', type: 'blender', width: 10, height: 10, motionBlur: true, children: [{ id: 'm', type: 'mesh3d', position }] });
+
+  it('unterscheidet gleiche Zustände am Frame mit anderer Bewegung', () => {
+    const moving = project([blender({ $keyframes: [{ t: 0, v: [-3, 0, 0] }, { t: 10, v: [3, 0, 0] }] })]);
+    const still = project([blender([0, 0, 0])]);
+    const a = evaluateScene(moving, 'main', 5);
+    const b = evaluateScene(still, 'main', 5);
+    expect(a.nodes[0]?.children[0]?.props['position']).toEqual(b.nodes[0]?.children[0]?.props['position']);
+    expect(a.motionKey).toBeDefined();
+    expect(frameKey(a, {}, {}, { width: 10, height: 10 })).not.toBe(frameKey(b, {}, {}, { width: 10, height: 10 }));
+  });
+
+  it('lässt Szenen ohne Motion Blur und Subframe-Auswertungen ohne motionKey', () => {
+    expect(evaluateScene(project([{ id: 'r', type: 'rect', width: 1, height: 1 }]), 'main', 0).motionKey).toBeUndefined();
+    expect(evaluateScene(project([blender([0, 0, 0])]), 'main', 5, { motionKey: false }).motionKey).toBeUndefined();
+  });
+
+  it('berücksichtigt layer.motionBlur', () => {
+    const layer = (x: unknown) => project([{ id: 'l', type: 'layer', motionBlur: { samples: 3, shutter: 0.5 }, children: [{ id: 'r', type: 'rect', width: 1, height: 1, x }] }]);
+    const a = evaluateScene(layer({ $keyframes: [{ t: 0, v: 0 }, { t: 10, v: 100 }] }), 'main', 5);
+    const b = evaluateScene(layer(50), 'main', 5);
+    expect(frameKey(a, {}, {}, { width: 10, height: 10 })).not.toBe(frameKey(b, {}, {}, { width: 10, height: 10 }));
   });
 });

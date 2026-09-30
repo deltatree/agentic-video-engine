@@ -32,8 +32,14 @@ async function check(name: string, fn: () => Promise<Omit<DoctorCheck, 'name'>>)
   }
 }
 
+/**
+ * Prüft Chromium, WebGL2 und WebGPU auf einer eigenen, statischen Probe-Seite. Die unsicheren
+ * Grafik-Schalter (`CHROMIUM_GRAPHICS_ARGS`: SwiftShader, WebGPU) gelten nur hier, wo WebGL/WebGPU
+ * geprüft wird; sonst dieselben Schalter und dieselbe minimale Umgebung wie der Render-Host.
+ */
 async function browserProbe(): Promise<{ version: string; webgl2: string; webgpu: string }> {
   const { chromium } = await import('playwright-core');
+  const { CHROMIUM_ARGS, CHROMIUM_GRAPHICS_ARGS, chromiumEnv } = await import('@agentic-video/renderer-browser');
   const http = await import('node:http');
   const server = http.createServer((_req, res) => {
     res.setHeader('content-type', 'text/html');
@@ -42,7 +48,7 @@ async function browserProbe(): Promise<{ version: string; webgl2: string; webgpu
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   const address = server.address();
   const port = typeof address === 'object' && address !== null ? address.port : 0;
-  const browser = await chromium.launch({ executablePath: process.env['OPENVIDEO_CHROMIUM'] ?? chromium.executablePath(), args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--enable-unsafe-webgpu'] });
+  const browser = await chromium.launch({ executablePath: process.env['OPENVIDEO_CHROMIUM'] ?? chromium.executablePath(), args: [...CHROMIUM_ARGS, ...CHROMIUM_GRAPHICS_ARGS], env: chromiumEnv(process.env) });
   try {
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${String(port)}/`);
@@ -93,6 +99,18 @@ export async function runDoctor(options: { readonly projectDir: string }): Promi
     }),
   );
   if (out[out.length - 1]?.status === 'fail') out[out.length - 1] = { ...(out[out.length - 1] ?? { name: 'browser', status: 'fail', detail: '' }), fix: 'Run `npx playwright install chromium`, or set OPENVIDEO_CHROMIUM to a Chromium binary.' };
+  if (probe !== undefined) {
+    out.push(
+      await check('browser-sandbox', async () => {
+        // Ohne unsichere Schalter (Story 16.1): startet Chromium mit der OS-Sandbox?
+        const { probeOsSandbox } = await import('@agentic-video/renderer-browser');
+        const sandboxed = await probeOsSandbox(process.env['OPENVIDEO_CHROMIUM']);
+        return sandboxed
+          ? { status: 'ok', detail: 'Chromium starts with the OS sandbox; HTML scripts can be enabled with --trusted.' }
+          : { status: 'warn', detail: 'Chromium starts only without the OS sandbox; HTML scripts stay disabled.', fix: 'Allow unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1) and do not run as root.' };
+      }),
+    );
+  }
   out.push({ name: 'webgl', status: probe === undefined ? 'fail' : probe.webgl2 === 'unavailable' ? 'fail' : 'ok', detail: probe?.webgl2 ?? 'browser unavailable', ...(probe?.webgl2 === 'unavailable' ? { fix: 'Update graphics drivers, or keep the SwiftShader flags (CPU rendering).' } : {}) });
   out.push({ name: 'webgpu', status: probe === undefined || probe.webgpu === 'unavailable' ? 'warn' : 'ok', detail: probe?.webgpu ?? 'browser unavailable', ...(probe?.webgpu === 'unavailable' ? { fix: 'WebGPU falls back to WebGL2; set scene3d.backend to "webgl2" to silence this.' } : {}) });
   out.push(

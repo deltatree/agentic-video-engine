@@ -31,7 +31,7 @@ import { OpenVideoError, type ColorSpace, type OutputFormat, type RgbaImage, typ
 import { probeCapabilities, type FfmpegCapabilities, type HardwareFamily } from './capabilities.js';
 import { locateFfmpeg, type FfmpegLocateOptions } from './locate.js';
 import { unpremultiplyInto } from './pixels.js';
-import { appendLimited, processError, runProcess, spawnError, timeoutError, waitForExit } from './process.js';
+import { appendLimited, ffmpegEnv, processError, runProcess, spawnError, timeoutError, waitForExit } from './process.js';
 import { toRational } from './probe.js';
 
 /** Hardware-Wahl: `auto` nutzt Hardware nur nach erfolgreicher Probe, sonst immer CPU. */
@@ -373,6 +373,7 @@ export function createEncoder(options: EncoderOptions): Encoder {
   let starting: Promise<void> | undefined;
   let built: ReturnType<typeof buildArgs> | undefined;
   let stderr = '';
+  let stdinError = '';
   let exited: string | undefined;
   let exitPromise: Promise<string> | undefined;
   let spawnFailure: unknown;
@@ -380,7 +381,10 @@ export function createEncoder(options: EncoderOptions): Encoder {
   let state: 'open' | 'finished' | 'aborted' = 'open';
 
   const failure = (): OpenVideoError =>
-    spawnFailure !== undefined ? spawnError(bins.ffmpeg, spawnFailure) : processError(bins.ffmpeg, built?.args ?? [], stderr, exited ?? 'stdin closed', ['Check details.lastStderr for the FFmpeg message.', 'Check the codec, size and audio options.']);
+    spawnFailure !== undefined
+      ? spawnError(bins.ffmpeg, spawnFailure)
+      : // Die Meldung von FFmpeg zuerst; ein Schreibfehler auf stdin (EPIPE) ist nur die Folge davon.
+        processError(bins.ffmpeg, built?.args ?? [], stderr.trim() !== '' ? stderr : stdinError, exited ?? 'stdin closed', ['Check details.lastStderr for the FFmpeg message.', 'Check the codec, size and audio options.']);
 
   const start = async (): Promise<void> => {
     const caps = await probeCapabilities({ ffmpegPath: bins.ffmpeg, ffprobePath: bins.ffprobe });
@@ -397,11 +401,11 @@ export function createEncoder(options: EncoderOptions): Encoder {
         cause: error,
       });
     }
-    const proc = spawn(bins.ffmpeg, built.args, { stdio: ['pipe', 'ignore', 'pipe'] });
+    const proc = spawn(bins.ffmpeg, built.args, { stdio: ['pipe', 'ignore', 'pipe'], env: ffmpegEnv() });
     child = proc;
     proc.stderr.setEncoding('utf8');
     proc.stderr.on('data', (c: string) => { stderr = appendLimited(stderr, c); });
-    proc.stdin.on('error', (error) => { stderr = appendLimited(stderr, `\nstdin: ${error.message}`); });
+    proc.stdin.on('error', (error) => { stdinError = `stdin: ${error.message}`; });
     proc.on('error', (error) => { spawnFailure = error; });
     // Synchron vermerken, damit spätere `close`-Beobachter den Exit-Status schon sehen.
     proc.once('close', (code: number | null, signal: NodeJS.Signals | null) => {

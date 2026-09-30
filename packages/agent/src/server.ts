@@ -20,6 +20,7 @@ import { extname } from 'node:path';
 import { OpenVideoError, type Diagnostic } from '@agentic-video/core';
 import { invokeOperation, type OperationDefinition } from './operation.js';
 import { OPERATIONS, readProjectFile } from './operations.js';
+import { assertProjectAccess } from './project-access.js';
 import { RevisionWatcher, revisionOf, sseMessage } from './server-events.js';
 import type { AgentServices } from './services.js';
 
@@ -42,6 +43,8 @@ export interface AgentServerOptions {
   readonly maxQueuedRequests?: number;
   /** Zusätzliche Operationen (z. B. Agent-Tools aus Plugins). */
   readonly extraOperations?: ReadonlyMap<string, OperationDefinition>;
+  /** Höchstzahl gleichzeitig offener Ereignis-Streams (`/v1/events`, Standard 32). */
+  readonly maxEventStreams?: number;
   /** Weitere Routen (z. B. Studio-Dateien); liefert `true`, wenn die Anfrage behandelt wurde. */
   readonly fallback?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 }
@@ -197,6 +200,7 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
   const revisions = new RevisionWatcher();
   /** Offene Ereignis-Streams; `close()` beendet sie, sonst wartet `server.close` ewig. */
   const streams = new Set<ServerResponse>();
+  const maxStreams = options.maxEventStreams ?? 32;
   const allowedHosts = new Set<string>();
 
   const hostOk = (req: IncomingMessage): boolean => typeof req.headers.host === 'string' && allowedHosts.has(req.headers.host.toLowerCase());
@@ -333,12 +337,47 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
       send(res, 404, apiError('OV_PROJECT_UNKNOWN', `Project "${projectId}" does not exist.`, ['List projects with project.inspect.']), cors);
       return;
     }
-    res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no', ...SECURITY_HEADERS, ...cors });
+    try {
+      await assertProjectAccess(services, projectId);
+    } catch (error) {
+      if (!(error instanceof OpenVideoError)) throw error;
+      send(res, 403, { error: error.diagnostic }, cors);
+      return;
+    }
+    if (streams.size >= maxStreams) {
+      send(res, 503, apiError('OV_API_BUSY', `Too many open event streams (${String(maxStreams)}).`, ['Close other Studio tabs, or retry in a moment.']), { ...cors, 'retry-after': '5' });
+      return;
+    }
+    // Platz sofort belegen und das Schließen vor dem ersten await beobachten, sonst leckt ein früh
+    // getrennter Client seinen Watcher.
     streams.add(res);
+    // Veränderlicher Zustand in einem Objekt: der close-Listener setzt ihn zwischen den awaits.
+    const life: { closed: boolean; unsubscribe?: () => void; heartbeat?: ReturnType<typeof setInterval> } = { closed: false };
+    res.on('close', () => {
+      life.closed = true;
+      if (life.heartbeat !== undefined) clearInterval(life.heartbeat);
+      life.unsubscribe?.();
+      streams.delete(res);
+    });
     const push = (revision: string): void => {
       res.write(sseMessage('revision', { projectId, revision }));
     };
-    const unsubscribe = await revisions.subscribe(dir, push);
+    let unsubscribe: () => void;
+    try {
+      unsubscribe = await revisions.subscribe(dir, push);
+    } catch (error) {
+      streams.delete(res);
+      services.telemetry.logger.error('event stream failed', { project: projectId, error: error instanceof Error ? error.message : String(error) });
+      if (!isClosed() && !res.headersSent) send(res, 500, apiError('OV_API_EVENTS', 'Live updates are not available for this project.', ['Reload the page; the Studio works without live updates.']), cors);
+      return;
+    }
+    if (isClosed() || res.destroyed) {
+      unsubscribe();
+      streams.delete(res);
+      return;
+    }
+    life.unsubscribe = unsubscribe;
+    res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no', ...SECURITY_HEADERS, ...cors });
     const current = revisions.current(dir);
     // Erste Nachricht: der Stand beim Verbinden (der Client vergleicht mit dem, was er geladen hat).
     res.write(`retry: 2000\n\n${current !== undefined ? sseMessage('revision', { projectId, revision: current }) : ''}`);
@@ -347,11 +386,11 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
       res.write(': keep-alive\n\n');
     }, 15_000);
     heartbeat.unref();
-    res.on('close', () => {
-      clearInterval(heartbeat);
-      unsubscribe();
-      streams.delete(res);
-    });
+    life.heartbeat = heartbeat;
+
+    function isClosed(): boolean {
+      return life.closed;
+    }
   }
 
   async function sendFile(res: ServerResponse, ctx: Parameters<typeof readProjectFile>[0], projectId: string, rawPath: string, cors: Record<string, string>): Promise<void> {

@@ -7,9 +7,8 @@
  * deklarative JSON-Form an und führt sie mit `@agentic-video/anime` bzw.
  * `@agentic-video/motion-canvas-adapter` aus – ohne fremden Code auszuführen.
  */
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, extname } from 'node:path';
+import { lstat, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { dirname, extname, isAbsolute, relative } from 'node:path';
 import Type from 'typebox';
 import { createTimeline, type AnimationParams, type TimelineOptions } from '@agentic-video/anime';
 import { OpenVideoError, applyPatches, contentHash, findComposition, isRecord, type Diagnostic, type Patch } from '@agentic-video/core';
@@ -63,7 +62,7 @@ export function formatFromPath(path: string): ImportFormat | undefined {
  * Baut eine Anime.js-Timeline aus JSON: `{ defaults?, entries: [{ targets, params, position? } | { label, position? }] }`.
  * Funktionswerte und Callbacks gibt es in JSON nicht; alles andere entspricht `createTimeline().add()`.
  */
-function animeTimeline(content: unknown) {
+function animeTimeline(content: unknown, prefix: string | undefined) {
   if (!isRecord(content) || !Array.isArray(content['entries'])) {
     throw importError('OV_IMPORT_INPUT', 'An anime import needs { "entries": [ { "targets": "headline", "params": { … }, "position": … } ] }.', [
       '{ "defaults": { "duration": 600, "ease": "outCubic" }, "entries": [ { "targets": "headline", "params": { "opacity": [0, 1], "y": [40, 0] } } ] }',
@@ -86,9 +85,33 @@ function animeTimeline(content: unknown) {
       throw importError('OV_IMPORT_INPUT', `entries[${String(i)}] needs "targets" (node id or list) and "params" (object).`, ['{ "targets": ["a", "b"], "params": { "x": 100, "duration": 500 } }']);
     }
     const params: AnimationParams = { ...entry['params'] };
-    timeline.add(list, params, position);
+    timeline.add(typeof list === 'string' ? prefixTarget(list, prefix) : list.map((t) => prefixTarget(t, prefix)), params, position);
   });
   return timeline;
+}
+
+/**
+ * Ziel-ID einer Anime-Animation mit `idPrefix` (Review m4): `title` → `logo-title`, sofern das Ziel
+ * nicht schon mit dem Präfix beginnt. So passt eine Timeline zu Nodes eines früheren Imports mit gleichem Präfix.
+ */
+function prefixTarget(target: string, prefix: string | undefined): string {
+  if (prefix === undefined || target === prefix || target.startsWith(`${prefix}-`)) return target;
+  return `${prefix}-${target}`;
+}
+
+/** Setzt `idPrefix` vor die IDs importierter Nodes (auch Kinder und Masken) und ihre Asset-Verweise. */
+function prefixNodes(nodes: readonly JsonNode[], prefix: string, assets: ReadonlyMap<string, string>): JsonNode[] {
+  const visit = (node: Readonly<Record<string, unknown>>): Record<string, unknown> => {
+    const out: Record<string, unknown> = { ...node };
+    if (typeof node['id'] === 'string') out['id'] = prefixTarget(node['id'], prefix);
+    const asset = node['asset'];
+    if (typeof asset === 'string') out['asset'] = assets.get(asset) ?? asset;
+    if (Array.isArray(node['children'])) out['children'] = node['children'].filter(isRecord).map(visit);
+    const mask = node['mask'];
+    if (isRecord(mask) && isRecord(mask['node'])) out['mask'] = { ...mask, node: visit(mask['node']) };
+    return out;
+  };
+  return nodes.map(visit);
 }
 
 function pickDefaults(d: Readonly<Record<string, unknown>>): NonNullable<TimelineOptions['defaults']> {
@@ -357,7 +380,7 @@ const ImportInput = Type.Object(
     css: Type.Optional(Type.String({ description: 'Extra CSS for html imports.' })),
     compositionId: CompositionId,
     parentId: Type.Optional(Type.Union([Type.String({ minLength: 1 }), Type.Null()], { description: 'Parent node for the imported nodes; null/absent = top level.' })),
-    idPrefix: Type.Optional(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,40}$', description: 'Prefix of the new node and asset ids.' })),
+    idPrefix: Type.Optional(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]{0,40}$', description: 'Prefix of the new node and asset ids; for anime, the prefix of the target node ids (e.g. the idPrefix of an earlier SVG import).' })),
     lottieMode: Type.Optional(Type.Union([Type.Literal('native'), Type.Literal('embed')], { description: 'native: convert to IR shapes (may be lossy); embed: one lottie node (lossless). Default native.' })),
     dryRun: Type.Optional(Type.Boolean({ description: 'Return the result and diagnostics without saving.' })),
   },
@@ -396,6 +419,8 @@ async function runImport(format: ImportFormat, dir: string, input: Readonly<Reco
   let assets: ImportedAsset[] = [];
   const diagnostics: Diagnostic[] = [];
   const patches: Patch[] = [];
+  /** Deklarierte (nicht kopierte) Assets, z. B. Bilder aus Motion-Canvas-Img-Knoten. */
+  const declared: string[] = [];
   const textOf = (what: string): string => {
     if (src.text !== undefined) return src.text;
     throw importError('OV_IMPORT_INPUT', `The ${what} import needs text (content as string or a file path).`, ['Pass "content": "<…>" or "path".']);
@@ -430,7 +455,7 @@ async function runImport(format: ImportFormat, dir: string, input: Readonly<Reco
       break;
     }
     case 'anime': {
-      const timeline = animeTimeline(jsonOf('anime'));
+      const timeline = animeTimeline(jsonOf('anime'), prefix);
       const compiled = timeline.compile(project);
       patches.push(...compiled.patches);
       diagnostics.push(...compiled.diagnostics);
@@ -440,21 +465,28 @@ async function runImport(format: ImportFormat, dir: string, input: Readonly<Reco
       const r = motionCanvasProject(jsonOf('motion-canvas'), size);
       diagnostics.push(...r.diagnostics);
       const first = Array.isArray(r.project['compositions']) ? r.project['compositions'].find(isRecord) : undefined;
-      nodes = first !== undefined && Array.isArray(first['nodes']) ? first['nodes'].filter(isRecord) : [];
+      const mcAssets = Array.isArray(r.project['assets']) ? r.project['assets'].filter(isRecord) : [];
+      const renamed = new Map(mcAssets.map((a) => [String(a['id']), prefix !== undefined ? prefixTarget(String(a['id']), prefix) : String(a['id'])]));
+      const mcNodes = first !== undefined && Array.isArray(first['nodes']) ? first['nodes'].filter(isRecord) : [];
+      nodes = prefix !== undefined ? prefixNodes(mcNodes, prefix, renamed) : mcNodes;
       const markers: unknown[] = first !== undefined && Array.isArray(first['markers']) ? Array.from<unknown>(first['markers']) : [];
       if (markers.length > 0) {
         const existing: unknown[] = Array.isArray(comp['markers']) ? Array.from<unknown>(comp['markers']) : [];
         patches.push({ op: 'setCompositionProperty', compositionId, property: 'markers', value: [...existing, ...markers] });
       }
       // Bilder aus Img-Knoten sind Pfade im Projekt; sie werden deklariert, nicht kopiert.
-      for (const a of Array.isArray(r.project['assets']) ? r.project['assets'].filter(isRecord) : []) patches.push({ op: 'addAsset', asset: a });
+      for (const a of mcAssets) {
+        const id = renamed.get(String(a['id'])) ?? String(a['id']);
+        declared.push(id);
+        patches.push({ op: 'addAsset', asset: { ...a, id } });
+      }
       break;
     }
   }
   for (const a of assets) patches.push({ op: 'addAsset', asset: { ...a.asset } });
   const parentId = input.parentId ?? null;
   for (const node of nodes) patches.push({ op: 'addNode', parentId, node, compositionId });
-  return { patches, files: assets.map((a) => ({ src: a.asset.src, bytes: a.bytes })), nodeIds: nodes.map((n) => String(n['id'])), assetIds: [...assets.map((a) => a.asset.id)], diagnostics };
+  return { patches, files: assets.map((a) => ({ src: a.asset.src, bytes: a.bytes })), nodeIds: nodes.map((n) => String(n['id'])), assetIds: [...assets.map((a) => a.asset.id), ...declared], diagnostics };
 }
 
 /**
@@ -483,17 +515,34 @@ export const projectImport = defineOperation({
       const base = { nodes: r.nodeIds, assets: r.assetIds, patches: r.patches.length };
       if (!result.ok) return { ok: false, ...base, inverse: [], diagnostics: plainDiagnostics([...r.diagnostics, ...result.diagnostics]) };
       if (input.dryRun === true) return { ok: true, ...base, inverse, diagnostics: plainDiagnostics(r.diagnostics) };
-      // Dateien erst nach erfolgreicher Prüfung schreiben; eine andere Datei gleichen Namens wird nie überschrieben.
+      // Dateien erst nach erfolgreicher Prüfung schreiben; eine andere Datei gleichen Namens wird nie überschrieben,
+      // und keinem vorhandenen Symlink wird gefolgt (Review m4).
+      const pending: { file: string; bytes: Uint8Array; src: string }[] = [];
       for (const f of r.files) {
         const file = safeJoin(loaded.dir, f.src);
-        if (existsSync(file) && contentHash(new Uint8Array(await readFile(file))) !== contentHash(f.bytes)) {
-          throw importError('OV_IMPORT_FILE_EXISTS', `The file ${f.src} already exists with other content; nothing was imported.`, ['Pass another "idPrefix" so the new assets get their own files.']);
+        const existing = await lstat(file).catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined;
+          throw error;
+        });
+        if (existing?.isSymbolicLink() === true || (existing !== undefined && !existing.isFile())) {
+          throw importError('OV_IMPORT_FILE_EXISTS', `${f.src} already exists and is not a regular file; nothing was imported.`, ['Remove the link, or pass another "idPrefix" so the new assets get their own files.']);
         }
+        if (existing !== undefined) {
+          if (contentHash(new Uint8Array(await readFile(file))) !== contentHash(f.bytes)) {
+            throw importError('OV_IMPORT_FILE_EXISTS', `The file ${f.src} already exists with other content; nothing was imported.`, ['Pass another "idPrefix" so the new assets get their own files.']);
+          }
+          continue;
+        }
+        pending.push({ file, bytes: f.bytes, src: f.src });
       }
-      for (const f of r.files) {
-        const file = safeJoin(loaded.dir, f.src);
-        await mkdir(dirname(file), { recursive: true });
-        await writeFile(file, f.bytes);
+      const root = await realpath(loaded.dir);
+      for (const f of pending) {
+        await mkdir(dirname(f.file), { recursive: true });
+        // Auch ein Ordner auf dem Weg darf nicht per Symlink aus dem Projekt führen.
+        const parent = relative(root, await realpath(dirname(f.file)));
+        if (parent.startsWith('..') || isAbsolute(parent)) throw importError('OV_PATH_OUTSIDE', `${f.src} would be written outside the project directory.`, ['Remove symbolic links inside the assets folder.']);
+        // `wx`: exklusiv anlegen, folgt keinem (auch keinem später entstandenen) Symlink.
+        await writeFile(f.file, f.bytes, { flag: 'wx' });
       }
       await ctx.services.workspace.save(input.projectId, result.project);
       const checks = checkProject(env, result.project).filter((d) => d.severity !== 'info');

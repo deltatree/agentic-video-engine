@@ -7,8 +7,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from 'playwright-core';
-import { OpenVideoError, type AssetResolver, type Diagnostic, type FontResolver, type RgbaImage } from '@agentic-video/core';
-import { decodePng, premultiply } from '@agentic-video/png';
+import { OpenVideoError, minimalChildEnv, premultiplyInPlace, type AssetResolver, type Diagnostic, type FontResolver, type RgbaImage } from '@agentic-video/core';
+import { decodePng } from '@agentic-video/png';
 import type { BrowserLayerKind, BrowserLayerPayload } from './protocol.js';
 import { startHostServer, type HostServer } from './server.js';
 
@@ -65,13 +65,9 @@ export const CHROMIUM_ARGS: readonly string[] = [
 export const CHROMIUM_GRAPHICS_ARGS: readonly string[] = ['--enable-unsafe-swiftshader', '--enable-unsafe-webgpu'];
 
 /**
- * Umgebungsvariablen, die Chromium vom Elternprozess erbt (N1). Alles andere, vor allem
- * Tokens und S3-Schlüssel (`OPENVIDEO_*`, `AWS_*`), bleibt draußen.
- */
-const CHILD_ENV_NAMES: readonly string[] = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'LD_LIBRARY_PATH', 'FONTCONFIG_FILE', 'FONTCONFIG_PATH', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_RUNTIME_DIR', 'SYSTEMROOT', 'WINDIR'];
-
-/**
- * Minimale Umgebung für den Chromium-Prozess (N1): nur die Variablen aus einer festen Liste.
+ * Minimale Umgebung für den Chromium-Prozess (N1): nur die Variablen aus `CHILD_ENV_NAMES`
+ * (`minimalChildEnv` in `@agentic-video/core`). Tokens und S3-Schlüssel (`OPENVIDEO_*`,
+ * `AWS_*`) bleiben draußen.
  *
  * @example
  * ```ts
@@ -79,17 +75,17 @@ const CHILD_ENV_NAMES: readonly string[] = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TE
  * ```
  */
 export function chromiumEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const name of CHILD_ENV_NAMES) {
-    const value = source[name];
-    if (value !== undefined) out[name] = value;
-  }
-  return out;
+  return minimalChildEnv(source);
 }
 
 /**
  * Prüft, ob Chromium mit der Sandbox des Betriebssystems startet (z. B. nicht als root ohne
  * User Namespaces). Ohne sie verweigert der Host HTML-Skripte (Story 16.1).
+ *
+ * Unterscheidet (Befund m9): Fehlt das Programm, wirft die Funktion `OV_BROWSER_CHROMIUM_MISSING`;
+ * startet Chromium auch ohne Sandbox nicht, wirft sie `OV_BROWSER_LAUNCH`. Nur wenn Chromium ohne,
+ * aber nicht mit Sandbox startet, ist das Ergebnis `false`. Gestartet wird ohne die unsicheren
+ * Grafik-Schalter ({@link CHROMIUM_GRAPHICS_ARGS}).
  *
  * @example
  * ```ts
@@ -97,14 +93,59 @@ export function chromiumEnv(source: Readonly<Record<string, string | undefined>>
  * ```
  */
 export async function probeOsSandbox(executablePath?: string): Promise<boolean> {
-  try {
-    const browser = await chromium.launch({ executablePath: resolveExecutable(executablePath), headless: true, chromiumSandbox: true, args: [...CHROMIUM_ARGS], env: chromiumEnv(process.env), ignoreDefaultArgs: [...CHROMIUM_GRAPHICS_ARGS] });
-    await browser.close();
-    return true;
-  } catch {
-    // Ein Startfehler mit Sandbox heißt hier: keine OS-Sandbox verfügbar.
-    return false;
+  const path = resolveExecutable(executablePath);
+  const attempt = async (sandbox: boolean): Promise<unknown> => {
+    try {
+      const browser = await chromium.launch({ executablePath: path, headless: true, chromiumSandbox: sandbox, args: [...CHROMIUM_ARGS], env: chromiumEnv(process.env), ignoreDefaultArgs: [...CHROMIUM_GRAPHICS_ARGS] });
+      await browser.close();
+      return undefined;
+    } catch (error) {
+      return error;
+    }
+  };
+  if ((await attempt(true)) === undefined) return true;
+  const plain = await attempt(false);
+  if (plain !== undefined) {
+    throw hostError('OV_BROWSER_LAUNCH', `Chromium could not start from "${path}", even without the OS sandbox.`, ['Check system libraries with `npx playwright install-deps chromium`.', 'Check that Chromium matches playwright-core (`npx playwright install chromium`).'], plain);
   }
+  return false;
+}
+
+/** Aufnahmebereich eines HTML-Layers (Story 18.4). */
+type HtmlArea = { readonly kind: 'empty' } | { readonly kind: 'full' } | { readonly kind: 'clip'; readonly x: number; readonly y: number; readonly w: number; readonly h: number };
+
+/**
+ * Läuft in der Seite: Rechteck aller sichtbaren Node-Container unter `#ov-root` in ganzen Pixeln
+ * (ein Pixel Rand), begrenzt auf den Viewport. `full`, sobald ein Container über seine Box hinaus
+ * zeichnen kann (`filter`, `box-shadow`, `outline`), `empty` ohne sichtbaren Container.
+ */
+function htmlContentArea(size: { readonly width: number; readonly height: number }): HtmlArea {
+  const root = document.getElementById('ov-root');
+  if (root === null) return { kind: 'full' };
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const el of Array.from(root.children)) {
+    if (!(el instanceof HTMLElement)) continue;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if (cs.filter !== 'none' || cs.boxShadow !== 'none' || cs.outlineStyle !== 'none') return { kind: 'full' };
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) continue;
+    x0 = Math.min(x0, r.left);
+    y0 = Math.min(y0, r.top);
+    x1 = Math.max(x1, r.right);
+    y1 = Math.max(y1, r.bottom);
+  }
+  if (!(x1 > x0 && y1 > y0)) return { kind: 'empty' };
+  if (!Number.isFinite(x0) || !Number.isFinite(y0) || !Number.isFinite(x1) || !Number.isFinite(y1)) return { kind: 'full' };
+  const cx0 = Math.max(0, Math.floor(x0) - 1);
+  const cy0 = Math.max(0, Math.floor(y0) - 1);
+  const cx1 = Math.min(size.width, Math.ceil(x1) + 1);
+  const cy1 = Math.min(size.height, Math.ceil(y1) + 1);
+  if (cx1 <= cx0 || cy1 <= cy0) return { kind: 'empty' };
+  return { kind: 'clip', x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 };
 }
 
 /** WebRTC-Schnittstellen, die das Init-Skript aus jedem Dokument entfernt (D3). */
@@ -267,6 +308,8 @@ interface Session {
   /** Seiten je Ausgabegröße in LRU-Reihenfolge (zuletzt benutzt am Ende). */
   readonly pages: Map<string, Promise<PageEntry>>;
   alive: boolean;
+  /** Laufende Aufträge, die einen Slot dieser Sitzung halten (Befund m9: der Grafik-Neustart wartet darauf). */
+  readonly inflight: Set<Promise<void>>;
 }
 
 /**
@@ -357,7 +400,7 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       });
       await context.addInitScript({ content: NO_WEBRTC_JS });
       await context.addInitScript({ content: clockJs });
-      const session: Session = { browser, context, pages: new Map(), alive: true };
+      const session: Session = { browser, context, pages: new Map(), alive: true, inflight: new Set() };
       browser.on('disconnected', () => {
         // Absturz oder Ende: Cache leeren; die nächste Anfrage startet Chromium neu.
         session.alive = false;
@@ -389,20 +432,29 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
    * Startet Chromium einmalig mit {@link CHROMIUM_GRAPHICS_ARGS} neu, sobald ein WebGL-/WebGPU-Layer
    * kommt. Laufende Aufträge der alten Seiten laufen vorher zu Ende.
    */
-  const ensureGraphics = async (): Promise<void> => {
-    if (graphics) return;
+  /** Laufender Neustart für Grafik-Layer; `generation` zählt Neustarts (Befund m9). */
+  let restart: Promise<void> = Promise.resolve();
+  let generation = 0;
+
+  const ensureGraphics = (): Promise<void> => {
+    if (graphics) return restart;
     graphics = true;
+    generation++;
     const old = current;
     current = undefined;
-    const s = await old?.then(
-      (value) => value,
-      () => undefined,
-    );
-    if (s === undefined) return;
-    await Promise.all([...s.pages.values()].map((p) => p.then((e) => e.queue, () => undefined)));
-    s.alive = false;
-    s.pages.clear();
-    await s.browser.close();
+    restart = (async () => {
+      const s = await old?.then(
+        (value) => value,
+        () => undefined,
+      );
+      if (s === undefined) return;
+      // Erst alle Aufträge, die schon einen Slot der alten Sitzung halten, zu Ende laufen lassen.
+      await Promise.all([...s.inflight]);
+      s.alive = false;
+      s.pages.clear();
+      await s.browser.close();
+    })();
+    return restart;
   };
 
   const openPage = async (s: Session, width: number, height: number): Promise<PageEntry> => {
@@ -416,8 +468,24 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
     return { page, cdp, queue: Promise.resolve() };
   };
 
-  const pageFor = async (width: number, height: number): Promise<{ readonly session: Session; readonly key: string; readonly entry: Promise<PageEntry> }> => {
-    const s = await session();
+  const pageFor = async (width: number, height: number): Promise<{ readonly session: Session; readonly key: string; readonly entry: Promise<PageEntry>; readonly release: () => void }> => {
+    let s: Session;
+    for (;;) {
+      const gen = generation;
+      s = await session();
+      // Hat inzwischen ein Grafik-Neustart begonnen, gehört diese Sitzung schon zur alten Generation.
+      if (gen === generation) break;
+    }
+    // Slot sofort (ohne `await` dazwischen) anmelden, damit ein Neustart auf diesen Auftrag wartet.
+    let release: () => void = () => undefined;
+    const hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    s.inflight.add(hold);
+    const done = (): void => {
+      s.inflight.delete(hold);
+      release();
+    };
     const key = `${String(width)}x${String(height)}`;
     let entry = s.pages.get(key);
     if (entry === undefined) {
@@ -438,14 +506,14 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
         () => undefined,
       );
     }
-    return { session: s, key, entry };
+    return { session: s, key, entry, release: done };
   };
 
   let libraryVersions: Readonly<Record<string, string>>;
   let chromiumVersion: string;
   try {
     const first = await pageFor(options.width, options.height);
-    const entry = await first.entry;
+    const entry = await first.entry.finally(first.release);
     chromiumVersion = first.session.browser.version();
     libraryVersions = await entry.page.evaluate(() => window.__ovRuntime?.versions() ?? {});
   } catch (error) {
@@ -454,13 +522,34 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
     throw error instanceof OpenVideoError ? error : hostError('OV_BROWSER_LAUNCH', 'The render page could not be opened.', ['Rebuild the runtime with `npm run build:extra -w @agentic-video/renderer-browser`.'], error);
   }
 
+  /**
+   * Nimmt den HTML-Layer auf (Story 18.4): nur das Rechteck, in dem die sichtbaren Node-Container
+   * liegen (`getBoundingClientRect` mit Transform, plus ein Pixel Rand für Kantenglättung), als PNG
+   * mit `clip`; der Rest des Layers ist transparent. Container mit `filter`, `box-shadow` oder
+   * `outline` zeichnen über ihre Box hinaus; dann wird wie bisher das ganze Bild aufgenommen.
+   * Ohne sichtbaren Container entfällt die Aufnahme ganz.
+   */
   const capture = async (entry: PageEntry, width: number, height: number): Promise<RgbaImage> => {
-    const shot = await entry.cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false, optimizeForSpeed: true });
+    const area = await entry.page.evaluate(htmlContentArea, { width, height });
+    if (area.kind === 'empty') return { width, height, data: new Uint8Array(width * height * 4) };
+    const clip = area.kind === 'clip' ? area : { x: 0, y: 0, w: width, h: height };
+    const full = clip.x === 0 && clip.y === 0 && clip.w === width && clip.h === height;
+    const shot = await entry.cdp.send('Page.captureScreenshot', {
+      format: 'png',
+      fromSurface: true,
+      captureBeyondViewport: false,
+      optimizeForSpeed: true,
+      ...(full ? {} : { clip: { x: clip.x, y: clip.y, width: clip.w, height: clip.h, scale: 1 } }),
+    });
     const image = decodePng(new Uint8Array(Buffer.from(shot.data, 'base64')));
-    if (image.width !== width || image.height !== height) {
-      throw hostError('OV_BROWSER_CAPTURE', `Screenshot has size ${String(image.width)}×${String(image.height)}, expected ${String(width)}×${String(height)}.`, ['Check that no device scale factor is forced on the render host.']);
+    if (image.width !== clip.w || image.height !== clip.h) {
+      throw hostError('OV_BROWSER_CAPTURE', `Screenshot has size ${String(image.width)}×${String(image.height)}, expected ${String(clip.w)}×${String(clip.h)}.`, ['Check that no device scale factor is forced on the render host.']);
     }
-    return image;
+    if (full) return image;
+    const data = new Uint8Array(width * height * 4);
+    const rowBytes = clip.w * 4;
+    for (let y = 0; y < clip.h; y++) data.set(image.data.subarray(y * rowBytes, (y + 1) * rowBytes), ((clip.y + y) * width + clip.x) * 4);
+    return { width, height, data };
   };
 
   const renderOn = async (entry: PageEntry, kind: BrowserLayerKind, payload: BrowserLayerPayload): Promise<RgbaImage> => {
@@ -486,7 +575,8 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
         },
         [kind, payload, upload.url] as const,
       );
-      return { width, height, data: premultiply(await upload.bytes) };
+      // Der Upload-Puffer gehört uns: in place vormultiplizieren (Story 18.4), keine Kopie.
+      return { width, height, data: premultiplyInPlace(await upload.bytes) };
     } catch (error) {
       // Niemand wartet mehr auf den Upload; seine Ablehnung ist erwartet und darf nicht unbehandelt bleiben.
       upload.bytes.catch(() => undefined);
@@ -512,23 +602,27 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       checkSize(payload);
       if (kind !== 'html') await ensureGraphics();
       const slot = await pageFor(payload.width, payload.height);
-      const entry = await slot.entry;
-      const run = () => withTimeout(renderOn(entry, kind, payload), timeoutMs, `Rendering the ${kind} layer`);
-      const job = entry.queue.then(run, run);
-      entry.queue = job.catch((error: unknown) => error);
       try {
-        return await job;
-      } catch (error) {
-        if (error instanceof OpenVideoError) {
-          if (error.diagnostic.code === 'OV_BROWSER_TIMEOUT') {
-            // Eine hängende Seite ist verbraucht; die nächste Anfrage öffnet eine neue.
-            // Nur den eigenen Eintrag entfernen: eine andere Anfrage kann schon eine neue Seite halten.
-            if (slot.session.pages.get(slot.key) === slot.entry) slot.session.pages.delete(slot.key);
-            await closePage(entry.page, closeFailures);
+        const entry = await slot.entry;
+        const run = () => withTimeout(renderOn(entry, kind, payload), timeoutMs, `Rendering the ${kind} layer`);
+        const job = entry.queue.then(run, run);
+        entry.queue = job.catch((error: unknown) => error);
+        try {
+          return await job;
+        } catch (error) {
+          if (error instanceof OpenVideoError) {
+            if (error.diagnostic.code === 'OV_BROWSER_TIMEOUT') {
+              // Eine hängende Seite ist verbraucht; die nächste Anfrage öffnet eine neue.
+              // Nur den eigenen Eintrag entfernen: eine andere Anfrage kann schon eine neue Seite halten.
+              if (slot.session.pages.get(slot.key) === slot.entry) slot.session.pages.delete(slot.key);
+              await closePage(entry.page, closeFailures);
+            }
+            throw error;
           }
-          throw error;
+          throw pageError(kind, error);
         }
-        throw pageError(kind, error);
+      } finally {
+        slot.release();
       }
     },
     async close() {

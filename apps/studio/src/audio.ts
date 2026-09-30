@@ -113,7 +113,14 @@ export function scheduleClip(clip: Pick<ClipPlan, 'start' | 'offset' | 'duration
   return { delay: Math.max(0, clip.start - from), offset, length: total !== undefined ? total - elapsed : undefined, elapsed };
 }
 
-/** Sichtbare Länge eines Clips in Sekunden (für die Timeline). */
+/**
+ * Sichtbare Länge eines Clips in Sekunden (für die Timeline); ohne bekannte Dateilänge 0.
+ *
+ * @example
+ * ```ts
+ * clipLength({ offset: 1, duration: undefined, rate: 1, loop: false }, 5); // 4
+ * ```
+ */
 export function clipLength(clip: Pick<ClipPlan, 'offset' | 'duration' | 'rate' | 'loop'>, fileDuration: number | undefined): number {
   if (clip.duration !== undefined) return clip.duration;
   if (fileDuration === undefined || clip.loop) return 0;
@@ -213,14 +220,15 @@ export function editClip(clip: Readonly<Rec>, edit: ClipEdit, time: ReturnType<t
   }
   if (edit.trimEnd !== undefined) next['duration'] = Math.max(1, Math.round(length + edit.trimEnd));
   const finalLength = typeof next['duration'] === 'number' ? next['duration'] : length;
+  const removed = new Set<string>();
   for (const key of ['fadeIn', 'fadeOut'] as const) {
     const change = edit[key];
     if (change === undefined) continue;
     const value = Math.max(0, Math.min(finalLength, Math.round(frames(clip[key], time, 0) + change)));
-    if (value === 0) delete next[key];
+    if (value === 0) removed.add(key);
     else next[key] = value;
   }
-  return next;
+  return removed.size === 0 ? next : Object.fromEntries(Object.entries(next).filter(([k]) => !removed.has(k)));
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +257,14 @@ export function decodeAudio(projectId: string, src: string): Promise<AudioBuffer
   return pending;
 }
 
-/** Verwirft zwischengespeicherte Dekodierungen (nach Fremdänderung einer Datei). */
+/**
+ * Verwirft zwischengespeicherte Dekodierungen (nach einer Fremdänderung können Dateien anders sein).
+ *
+ * @example
+ * ```ts
+ * forgetDecodedAudio();
+ * ```
+ */
 export function forgetDecodedAudio(): void {
   decoded.clear();
 }
@@ -358,7 +373,14 @@ export class AudioPlayer {
   }
 }
 
-/** Liest eine Audio-Asset-ID aus Drag-Daten der Assets-Liste (oder `undefined`). */
+/**
+ * Liest eine Audio-Asset-ID aus Drag-Daten der Assets-Liste (oder `undefined`).
+ *
+ * @example
+ * ```ts
+ * audioAssetOf('{"id":"voice","type":"audio"}'); // 'voice'
+ * ```
+ */
 export function audioAssetOf(data: string): string | undefined {
   if (data === '') return undefined;
   try {

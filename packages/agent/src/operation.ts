@@ -3,8 +3,9 @@
  * HTTP-Server, MCP-Server und CLI nutzen dieselben Definitionen.
  */
 import type { Static, TSchema } from 'typebox';
-import { OpenVideoError, closest, validateValue, type Diagnostic } from '@agentic-video/core';
+import { OpenVideoError, closest, isRecord, validateValue, type Diagnostic } from '@agentic-video/core';
 import { formatSegments } from './patch-schema.js';
+import { assertProjectAccess } from './project-access.js';
 import type { AgentServices } from './services.js';
 
 /** Kontext eines Operationsaufrufs. */
@@ -85,6 +86,8 @@ export async function invokeOperation(operations: ReadonlyMap<string, OperationD
     };
   }
   try {
+    // Eingebundene Projekte bei jedem Aufruf gegen die aktuellen Wurzeln prüfen (Review M3).
+    if (isRecord(input) && typeof input['projectId'] === 'string') await assertProjectAccess(ctx.services, input['projectId']);
     const run = () => op.handler(input ?? {}, ctx);
     const result = await ctx.services.telemetry.withRemoteParent(ctx.traceparent, () => ctx.services.telemetry.withSpan(`op.${name}`, { via: ctx.via }, run));
     return { ok: true, result };

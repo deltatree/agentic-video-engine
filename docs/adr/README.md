@@ -21,3 +21,4 @@
 | 0017 | [Eigener Schema-Interpreter für Fehlermeldungen](0017-eigener-schema-interpreter-fuer-fehlermeldungen.md) |
 | 0023 | [Remote-Worker schreiben nur unter `jobs/<jobId>/`, getrennte Rollen und S3-Identitäten](0023-remote-worker-schreiben-nur-unter-jobs-praefix.md) |
 | 0024 | [Der Compositor wendet Eigenschaften über Backend-Grenzen an](0024-compositor-wendet-grenzueberschreitende-eigenschaften-an.md) |
+| 0025 | [Live-Sync des Studios über Inhaltsrevisionen und Server-Sent Events](0025-live-sync-ueber-inhaltsrevisionen.md) |

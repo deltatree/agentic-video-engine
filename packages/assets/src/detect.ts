@@ -39,6 +39,8 @@ const BY_EXTENSION: Readonly<Record<string, DetectedFormat>> = {
   '.otf': { type: 'font', format: 'otf', mimeType: 'font/otf' },
   '.woff': { type: 'font', format: 'woff', mimeType: 'font/woff' },
   '.woff2': { type: 'font', format: 'woff2', mimeType: 'font/woff2' },
+  '.ttc': { type: 'font', format: 'ttc', mimeType: 'font/collection' },
+  '.otc': { type: 'font', format: 'ttc', mimeType: 'font/collection' },
   '.srt': { type: 'subtitle', format: 'srt', mimeType: 'application/x-subrip' },
   '.vtt': { type: 'subtitle', format: 'vtt', mimeType: 'text/vtt' },
   '.ass': { type: 'subtitle', format: 'ass', mimeType: 'text/x-ssa' },
@@ -105,6 +107,7 @@ export function sniffFormat(fileName: string, bytes: Uint8Array): DetectedFormat
   if (ascii(bytes, 0, 4) === 'OTTO') return BY_EXTENSION['.otf'];
   if (ascii(bytes, 0, 4) === 'wOFF') return BY_EXTENSION['.woff'];
   if (ascii(bytes, 0, 4) === 'wOF2') return BY_EXTENSION['.woff2'];
+  if (ascii(bytes, 0, 4) === 'ttcf') return BY_EXTENSION['.ttc'];
   if (ascii(bytes, 0, 10) === '#?RADIANCE' || ascii(bytes, 0, 6) === '#?RGBE') return BY_EXTENSION['.hdr'];
   if (startsWith(bytes, [0x76, 0x2f, 0x31, 0x01])) return BY_EXTENSION['.exr'];
   return undefined;

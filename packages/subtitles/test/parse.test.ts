@@ -109,10 +109,12 @@ describe('parseAss', () => {
   const result = parseAss(fixture('karaoke.ass'));
 
   it('liest Stile mit Farben', () => {
+    // Story 17.8: auch Ränder, Kontur, Hintergrund und BorderStyle; dazu die Skript-Auflösung.
     expect(result.styles).toEqual([
-      { name: 'Default', fontFamily: 'Inter', fontSize: 64, color: '#FFFFFF', bold: true, italic: false, alignment: 2 },
-      { name: 'Sign', fontFamily: 'Roboto', fontSize: 48, color: '#FFD400BF', bold: false, italic: true, alignment: 8 },
+      { name: 'Default', fontFamily: 'Inter', fontSize: 64, color: '#FFFFFF', bold: true, italic: false, alignment: 2, marginL: 10, marginR: 10, marginV: 40, outlineColor: '#000000', outline: 2, backColor: '#0000007F', borderStyle: 1 },
+      { name: 'Sign', fontFamily: 'Roboto', fontSize: 48, color: '#FFD400BF', bold: false, italic: true, alignment: 8, marginL: 10, marginR: 10, marginV: 40, outlineColor: '#000000', outline: 2, backColor: '#000000', borderStyle: 1 },
     ]);
+    expect(result.playRes).toEqual({ x: 1920, y: 1080 });
   });
 
   it('liest Karaoke-Tags als Wortzeiten', () => {

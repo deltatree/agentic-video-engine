@@ -104,7 +104,8 @@ export class RevisionWatcher {
     active.listeners.add(listener);
     return () => {
       active.listeners.delete(listener);
-      if (active.listeners.size === 0) this.close(dir);
+      // Nur den eigenen Watcher schließen: Nach einem Fehler kann für denselben Ordner schon ein neuer laufen.
+      if (active.listeners.size === 0 && this.watched.get(dir) === active) this.close(dir);
     };
   }
 

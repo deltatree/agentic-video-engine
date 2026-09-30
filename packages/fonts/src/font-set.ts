@@ -8,6 +8,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EMOJI_FONT_FAMILY, OpenVideoError, contentHash, isOpenVideoError, type Diagnostic, type Font, type FontFace, type FontResolver } from '@agentic-video/core';
 import { parseFontInfo, type FontAxis } from './sfnt.js';
+import { toSfnt } from './woff.js';
 
 /** Schrift-Registrierung aus der IR (`project.fonts[]`). */
 export type IrFont = Font;
@@ -125,7 +126,10 @@ export class FontSet implements FontResolver {
   }
 }
 
-function faceFrom(bytes: Uint8Array, path: string, family: string, bundled: boolean, override?: IrFont): LoadedFontFace {
+function faceFrom(original: Uint8Array, path: string, family: string, bundled: boolean, override?: IrFont): LoadedFontFace {
+  // WOFF/WOFF2 und Sammlungen werden zu einer SFNT-Datei (Story 17.9); Skia bekommt nur SFNT.
+  // Der Hash gilt der umgewandelten Schrift, damit jedes Face einer Sammlung einen eigenen hat.
+  const bytes = toSfnt(original, override?.faceIndex ?? 0);
   const info = parseFontInfo(bytes);
   const wght = info.axes.find((a) => a.tag === 'wght');
   const weight = parseWeight(override?.weight) ?? (wght !== undefined ? ([wght.min, wght.max] as const) : info.weight);
@@ -152,7 +156,7 @@ function diagnosticOf(error: unknown, family: string, source: string, pointer: s
         severity: 'error' as const,
         errorClass: 'FontError',
         problem: error instanceof Error ? error.message : String(error),
-        suggestions: ['Provide a valid .ttf or .otf file.'],
+        suggestions: ['Provide a valid .ttf, .otf, .ttc, .woff or .woff2 file.'],
       };
   return { ...base, problem: `Font "${family}" (${source}): ${base.problem}`, details: { family, source }, ...(pointer !== undefined ? { pointer } : {}) };
 }
@@ -248,12 +252,12 @@ export async function loadFontSet(options: LoadFontSetOptions = {}): Promise<Fon
  * const set = fontSetFromBytes([{ family: 'Inter', bytes, path: 'Inter.ttf' }]);
  * ```
  */
-export function fontSetFromBytes(entries: readonly { readonly family: string; readonly bytes: Uint8Array; readonly path: string }[]): FontSet {
+export function fontSetFromBytes(entries: readonly { readonly family: string; readonly bytes: Uint8Array; readonly path: string; readonly faceIndex?: number }[]): FontSet {
   const faces: LoadedFontFace[] = [];
   const diagnostics: Diagnostic[] = [];
   for (const e of entries) {
     try {
-      faces.push(faceFrom(e.bytes, e.path, e.family, false));
+      faces.push(faceFrom(e.bytes, e.path, e.family, false, e.faceIndex !== undefined ? { family: e.family, faceIndex: e.faceIndex } : undefined));
     } catch (error: unknown) {
       diagnostics.push(diagnosticOf(error, e.family, e.path, undefined));
     }

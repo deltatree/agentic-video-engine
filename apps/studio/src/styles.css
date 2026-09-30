@@ -154,6 +154,7 @@ kbd {
 }
 
 .tab {
+  white-space: nowrap;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -1021,5 +1022,318 @@ kbd {
   .toolbar .group {
     border-left: none;
     padding-left: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- Epic 20 */
+
+.tabbar {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  flex: none;
+}
+
+.tabbar .tablist {
+  flex: 1;
+  border-bottom: none;
+}
+
+.collapse {
+  flex: none;
+  color: var(--muted);
+}
+
+.rail {
+  align-items: center;
+  padding-top: 4px;
+}
+
+.splitter.collapsed {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.live {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.live.live > span {
+  color: var(--ok);
+}
+
+.live.offline > span {
+  color: var(--error);
+}
+
+.status-text:empty {
+  display: none;
+}
+
+.boot {
+  max-width: 640px;
+  margin: 60px auto;
+  padding: 0 16px;
+}
+
+.conflict {
+  margin: 0 8px 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  color: var(--warning);
+}
+
+.new-project {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  margin: 12px 0 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.new-project h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.picker input[type='search'],
+.components input[type='search'] {
+  width: 100%;
+  max-width: 360px;
+}
+
+.guide-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.guide-form input {
+  width: 70px;
+}
+
+/* Transform-Griffe (Story 20.4) */
+.handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  z-index: 5;
+  touch-action: none;
+}
+
+.handle.rotate {
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: grab;
+}
+
+.marquee {
+  position: absolute;
+  border: 1px dashed var(--accent);
+  background: rgb(90 162 255 / 12%);
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Timeline (Story 20.6, 20.7) */
+.tl-range {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgb(126 226 168 / 18%);
+  border-left: 2px solid var(--ok);
+  border-right: 2px solid var(--ok);
+  pointer-events: none;
+}
+
+.tl-marker-rename {
+  position: absolute;
+  top: 1px;
+  width: 120px;
+  min-height: 20px;
+  z-index: 2;
+}
+
+.tl-diamond.dragging {
+  color: var(--focus);
+}
+
+.tl-snap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--ok);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.tl-audio-row .tl-track,
+.tl-audio-track {
+  height: 36px;
+}
+
+.tl-clip {
+  position: absolute;
+  top: 2px;
+  height: 32px;
+  background: #1d4a3a;
+  border: 1px solid #5fcf9f;
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  color: #8fe8c0;
+}
+
+.tl-clip.missing {
+  background: var(--panel-2);
+  border-style: dashed;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 6px;
+  width: 160px;
+}
+
+.tl-clip .tl-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.tl-clip .tl-handle.start {
+  left: 0;
+}
+
+.tl-clip .tl-handle.end {
+  right: 0;
+}
+
+.tl-wave {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tl-fades {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  fill: rgb(0 0 0 / 45%);
+}
+
+.tl-clip-label {
+  position: absolute;
+  left: 8px;
+  top: 1px;
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.tl-fade-handle {
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: ew-resize;
+}
+
+.tl-drop-row {
+  min-height: 30px;
+}
+
+.tl-drop-hint {
+  padding-left: 8px;
+}
+
+.drop-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.waveform canvas {
+  width: 100%;
+  min-width: 200px;
+  color: #6fb1ff;
+}
+
+.waveform {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Schmale Fenster: Toolbar-Gruppen umbrechen, Felder stapeln. */
+@media (max-width: 1100px) {
+  .toolbar {
+    gap: 6px;
+  }
+
+  .toolbar .project,
+  .toolbar .brand {
+    display: none;
+  }
+}
+
+/* Weniger Bewegung (Story 20.8). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Erzwungene Farben (Windows-Kontrastmodus): Systemfarben statt eigener Hintergründe. */
+@media (forced-colors: active) {
+  .selection,
+  .marquee,
+  .tl-bar,
+  .tl-clip,
+  .handle,
+  .guide,
+  .snap,
+  .tl-snap,
+  .tl-playhead {
+    forced-color-adjust: none;
+    border-color: Highlight;
+  }
+
+  .handle,
+  .tl-playhead,
+  .guide,
+  .snap,
+  .tl-snap {
+    background: Highlight;
+  }
+
+  .tab[aria-selected='true'],
+  .tree-row.selected {
+    outline: 2px solid Highlight;
+  }
+
+  .splitter {
+    background: CanvasText;
   }
 }

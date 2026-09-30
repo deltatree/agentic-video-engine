@@ -9,9 +9,9 @@
  */
 import { hostname } from 'node:os';
 import { TieredStore, createCache, storeFromEnv, type ContentStore } from '@agentic-video/cache';
-import { OpenVideoError, isRecord, sha256Hex, type Diagnostic } from '@agentic-video/core';
+import { OpenVideoError, isRecord, type Diagnostic } from '@agentic-video/core';
 import { createNodeEnvironment, renderChunk, type ChunkResult, type NodeEnvironment } from '@agentic-video/render';
-import { assertContentMatches, jobFrameKey, isJobId, isLease, type Lease, type ProjectFile } from '@agentic-video/scheduler';
+import { assertContentMatches, digestHex, jobFrameKey, isJobId, isLease, type Lease, type ProjectFile } from '@agentic-video/scheduler';
 import type { Telemetry } from '@agentic-video/telemetry';
 import { toDiagnostic, workerTelemetry, writeTempProject, type TempProject } from './workspace.js';
 
@@ -173,8 +173,10 @@ export async function runWorkerHttp(options: HttpWorkerOptions): Promise<HttpWor
     for (const key of result.keys) {
       const bytes = await env.cache.tier('frame').get(key);
       if (bytes === undefined) throw new OpenVideoError({ code: 'OV_WORKER_FRAME_MISSING', errorClass: 'WorkerError', problem: `The rendered frame ${key} is missing from the local cache.`, suggestions: ['Check free disk space of the worker cache (OPENVIDEO_CACHE_DIR).'] });
-      const target = jobFrameKey(jobId, sha256Hex(bytes));
-      if (!(await shared.has(target))) await shared.put(target, bytes);
+      const target = jobFrameKey(jobId, digestHex(bytes));
+      // Immer schreiben (Befund M4): Ein vorab unter diesem Schlüssel abgelegter, vergifteter Inhalt
+      // würde sonst stehen bleiben und den Job an der Hash-Prüfung der API scheitern lassen.
+      await shared.put(target, bytes);
       keys.push(target);
     }
     return { ...result, keys };
@@ -182,11 +184,22 @@ export async function runWorkerHttp(options: HttpWorkerOptions): Promise<HttpWor
 
   const work = async (lease: Lease): Promise<void> => {
     const ids = { leaseId: lease.leaseId, jobId: lease.jobId, index: lease.index };
+    // Abbruch auf Chunk-Ebene (Story 18.8): Herunterfahren oder verlorene Lease (abgelaufen,
+    // Job abgebrochen oder gescheitert) beenden das Rendern nach dem laufenden Frame.
+    const lost = { value: false };
+    const chunkSignal = {
+      get aborted(): boolean {
+        return lost.value || signal?.aborted === true;
+      },
+    };
     const beat = setInterval(
       () => {
         post('/v1/heartbeat', { leaseId: lease.leaseId }).then(
           (res) => {
-            if (res.status === 410) telemetry.logger.warn('lease lost; finishing chunk anyway', { worker, ...ids });
+            if (res.status === 410 && !lost.value) {
+              lost.value = true;
+              telemetry.logger.warn('lease lost; stopping chunk', { worker, ...ids });
+            }
           },
           (error: unknown) => {
             telemetry.logger.warn('heartbeat failed', { worker, ...ids, reason: error instanceof Error ? error.message : String(error) });
@@ -199,7 +212,7 @@ export async function runWorkerHttp(options: HttpWorkerOptions): Promise<HttpWor
       const result = await telemetry.withRemoteParent(lease.traceparent, () =>
         telemetry.withSpan('worker.chunk', { worker, job: lease.jobId, start: lease.request.start, end: lease.request.end }, async () => {
           const s = await openJob(lease);
-          const r = await renderChunk(s.env, s.project, lease.request, signal);
+          const r = await renderChunk(s.env, s.project, lease.request, chunkSignal);
           telemetry.logger.info('chunk rendered', { worker, job: lease.jobId, start: r.start, end: r.end, rendered: r.rendered, fromCache: r.fromCache });
           return publishFrames(s.env, lease.jobId, r);
         }),
@@ -208,7 +221,11 @@ export async function runWorkerHttp(options: HttpWorkerOptions): Promise<HttpWor
       else summary.rejected++;
     } catch (error) {
       const diagnostic: Diagnostic = toDiagnostic(error);
-      if (signal?.aborted === true) {
+      if (lost.value) {
+        // Der Koordinator nimmt für diese Lease nichts mehr an; nichts melden.
+        telemetry.logger.info('chunk abandoned after losing the lease', { worker, ...ids });
+        summary.rejected++;
+      } else if (signal?.aborted === true) {
         telemetry.logger.info('releasing chunk on shutdown', { worker, ...ids });
         await deliver('/v1/fail', { ...ids, released: true, diagnostic });
         summary.released++;

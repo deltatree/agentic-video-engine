@@ -10,7 +10,7 @@
  * Projekte mit `zIndex` verhalten sich trotzdem so, wie es der Szenenbaum zeigt. Animiertes `zIndex`
  * wird nicht überschrieben (Meldung statt Patch).
  */
-import { isAnimated, isRecord } from '@agentic-video/core';
+import { isAnimated } from '@agentic-video/core';
 import { findNode } from './ir.js';
 import { records, str, type PatchJson, type Rec } from './json.js';
 
@@ -34,9 +34,9 @@ export type LayerCommand = 'front' | 'back' | 'forward' | 'backward';
  * zOf({ id: 'a', type: 'rect', zIndex: 3 }); // 3
  * ```
  */
-export function zOf(node: Readonly<Rec>, resolve?: (value: unknown) => unknown): number {
+export function zOf(node: Readonly<Rec>, resolve?: (value: unknown, node: Readonly<Rec>) => unknown): number {
   const v = node['zIndex'];
-  const r = isAnimated(v) && resolve !== undefined ? resolve(v) : v;
+  const r = isAnimated(v) && resolve !== undefined ? resolve(v, node) : v;
   return typeof r === 'number' && Number.isFinite(r) ? r : 0;
 }
 
@@ -63,7 +63,7 @@ export function sortByZ<T extends { readonly z: number }>(list: readonly T[]): T
  * siblingsOf(comp, 'title').map((s) => s.id); // ['bg', 'title', 'logo']
  * ```
  */
-export function siblingsOf(comp: Readonly<Rec> | undefined, id: string, resolve?: (value: unknown) => unknown): Sibling[] {
+export function siblingsOf(comp: Readonly<Rec> | undefined, id: string, resolve?: (value: unknown, node: Readonly<Rec>) => unknown): Sibling[] {
   const loc = findNode(comp, id);
   if (loc === undefined) return [];
   const parent = loc.parentId === null ? undefined : findNode(comp, loc.parentId)?.node;
@@ -171,12 +171,7 @@ export function ungroupPatches(comp: Readonly<Rec> | undefined, groupId: string)
  * orderedChildren(comp['nodes']).map((n) => n['id']);
  * ```
  */
-export function orderedChildren(list: unknown, resolve?: (value: unknown) => unknown): Rec[] {
+export function orderedChildren(list: unknown, resolve?: (value: unknown, node: Readonly<Rec>) => unknown): Rec[] {
   const items = records(list).map((node) => ({ node, z: zOf(node, resolve) }));
   return sortByZ(items).map((e) => e.node);
-}
-
-/** Ist ein Wert ein IR-Objekt mit Kindern? */
-export function hasChildren(node: Readonly<Rec>): boolean {
-  return Array.isArray(node['children']) && node['children'].some(isRecord);
 }

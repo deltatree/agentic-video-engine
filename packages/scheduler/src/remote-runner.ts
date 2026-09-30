@@ -3,12 +3,12 @@
  */
 import { setTimeout as sleep } from 'node:timers/promises';
 import { TieredStore, type ContentStore } from '@agentic-video/cache';
-import { OpenVideoError, sha256Hex, type Diagnostic } from '@agentic-video/core';
+import { OpenVideoError, type Diagnostic } from '@agentic-video/core';
 import type { ChunkRequest, ChunkResult, ChunkRunner } from '@agentic-video/render';
 import type { Telemetry } from '@agentic-video/telemetry';
 import { isJobStatus, type JobStatus } from './coordinator.js';
 import { collectProjectFiles } from './files.js';
-import { assertContentMatches, inputKey, jobFrameDigest, jobFramePrefix } from './keys.js';
+import { assertContentMatches, digestHex, inputKey, jobFrameDigest, jobFramePrefix } from './keys.js';
 
 /** Optionen für {@link createRemoteChunkRunner}. */
 export interface RemoteChunkRunnerOptions {
@@ -109,7 +109,8 @@ export function createRemoteChunkRunner(options: RemoteChunkRunnerOptions): Chun
   const call = (path: string, init: RequestInit = {}): Promise<Response> => fetch(`${base}${path}`, { ...init, headers, signal: AbortSignal.timeout(timeoutMs) });
 
   const inlineLimit = options.inlineFileLimit ?? 4 * 1024 * 1024;
-  const run: ChunkRunner = async (chunks, onDone) => {
+  const run: ChunkRunner = async (chunks, onDone, runOptions) => {
+    const signal = runOptions?.signal;
     const files = await collectProjectFiles(options.projectDir);
     const traceparent = options.telemetry?.traceparent();
     const listed: { path: string; data?: string; key?: string }[] = [];
@@ -119,7 +120,7 @@ export function createRemoteChunkRunner(options: RemoteChunkRunnerOptions): Chun
         continue;
       }
       // Große Dateien nicht im Job-Body (Body-Limit des Koordinators), sondern inhaltsadressiert im Speicher.
-      const key = inputKey(sha256Hex(f.bytes));
+      const key = inputKey(digestHex(f.bytes));
       if (!(await options.store.has(key))) await options.store.put(key, f.bytes);
       listed.push({ path: f.path, key });
     }
@@ -146,6 +147,15 @@ export function createRemoteChunkRunner(options: RemoteChunkRunnerOptions): Chun
     const pollMs = options.pollIntervalMs ?? 500;
     const maxDown = options.unreachableTimeoutMs ?? 120_000;
     for (;;) {
+      if (signal?.aborted === true) {
+        // Abbruch (Story 18.8): Job am Koordinator beenden; Worker verlieren ihre Leases und hören auf.
+        try {
+          await call(`/v1/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+        } catch (error) {
+          options.telemetry?.logger.warn('cancelling the remote job failed', { coordinator: base, jobId, reason: error instanceof Error ? error.message : String(error) });
+        }
+        throw new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
+      }
       let status: JobStatus | undefined;
       try {
         const res = await call(`/v1/jobs/${encodeURIComponent(jobId)}`);
@@ -188,9 +198,9 @@ export function createRemoteChunkRunner(options: RemoteChunkRunnerOptions): Chun
     return chunks.map((_, i) => results.get(i)).filter((r): r is ChunkResult => r !== undefined);
   };
 
-  return (chunks, onDone) => {
+  return (chunks, onDone, runOptions) => {
     const telemetry = options.telemetry;
-    if (telemetry === undefined) return run(chunks, onDone);
-    return telemetry.withSpan('scheduler.remote', { chunks: chunks.length, coordinator: base }, () => run(chunks, onDone));
+    if (telemetry === undefined) return run(chunks, onDone, runOptions);
+    return telemetry.withSpan('scheduler.remote', { chunks: chunks.length, coordinator: base }, () => run(chunks, onDone, runOptions));
   };
 }

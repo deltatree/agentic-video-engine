@@ -97,10 +97,11 @@ describe('watchProject', () => {
 });
 
 describe('openvideo dev', () => {
-  async function dev(args: readonly string[]): Promise<{ stdout: () => string; opened: string[]; stop: () => Promise<number>; dir: string }> {
+  async function dev(args: readonly string[]): Promise<{ stdout: () => string; stderr: () => string; opened: string[]; stop: () => Promise<number>; dir: string }> {
     const root = tmp();
     await runCli(['create', 'demo'], { stdout: () => undefined, stderr: () => undefined, cwd: root, env: {} });
     let stdout = '';
+    let stderr = '';
     let stop: () => void = () => undefined;
     const stopped = new Promise<void>((r) => {
       stop = r;
@@ -110,7 +111,7 @@ describe('openvideo dev', () => {
     writeFileSync(join(studio, 'index.html'), '<!doctype html><title>Studio</title>');
     const done = runCli(['dev', join(root, 'demo'), '--port', '0', ...args], {
       stdout: (t) => (stdout += t),
-      stderr: () => undefined,
+      stderr: (t) => (stderr += t),
       cwd: root,
       env: { OPENVIDEO_STUDIO_DIR: studio },
       stop: stopped,
@@ -122,6 +123,7 @@ describe('openvideo dev', () => {
     await until(() => stdout.includes('Watching'), 30_000);
     return {
       stdout: () => stdout,
+      stderr: () => stderr,
       opened,
       dir: join(root, 'demo'),
       stop: () => {
@@ -136,10 +138,10 @@ describe('openvideo dev', () => {
     try {
       expect(run.opened.length).toBe(1);
       expect(run.opened[0]).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/\?project=demo#token=[A-Za-z0-9_-]{32,}$/u);
+      // Kaputtes JSON aus dem Editor meldet der Watcher im Terminal; gültige Änderungen bleiben still.
       const file = join(run.dir, 'project.json');
-      const project: unknown = JSON.parse(readFileSync(file, 'utf8'));
-      writeFileSync(file, `${JSON.stringify(project, null, 1)}\n`);
-      await until(() => run.stdout().includes('project.json changed'));
+      writeFileSync(file, '{ "broken": ');
+      await until(() => run.stderr().includes('project.json is not valid JSON'));
     } finally {
       expect(await run.stop()).toBe(0);
     }

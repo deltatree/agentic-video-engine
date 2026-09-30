@@ -37,6 +37,7 @@
     "@agentic-video/fonts": "0.1.0",
     "@agentic-video/ffmpeg": "0.1.0",
     "@agentic-video/renderer-blender": "0.1.0",
+    "@agentic-video/renderer-browser": "0.1.0",
     "@agentic-video/sandbox": "0.1.0",
     "@agentic-video/mcp": "0.1.0",
     "playwright-core": "1.63.0",

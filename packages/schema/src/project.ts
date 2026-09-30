@@ -78,8 +78,9 @@ export const Font = Type.Object(
     weight: Type.Optional(Type.Union([Type.Number({ minimum: 1, maximum: 1000 }), Type.String({ pattern: '^[0-9]+ [0-9]+$', description: 'Variable range, e.g. "100 900".' })])),
     style: Type.Optional(Type.Union([Type.Literal('normal'), Type.Literal('italic')])),
     hash: Type.Optional(Hash),
+    faceIndex: Type.Optional(Type.Integer({ minimum: 0, description: 'Face in a font collection (.ttc, .otc, WOFF2 collection). Default 0.' })),
   },
-  { additionalProperties: false },
+  { additionalProperties: false, description: 'Font file: .ttf, .otf, .ttc/.otc (with faceIndex), .woff or .woff2.' },
 );
 export type Font = Static<typeof Font>;
 

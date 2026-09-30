@@ -330,8 +330,8 @@ describe('Job-Datei an Blender (ohne Blender, mit Test-Programm)', () => {
     });
     const req = request(moving, 5);
     const motionStates = evaluateMotionStates(moving, 'main', 5, ['b']);
-    const image = await backend.renderLayer({ ...req, motionStates });
-    expect([image.width, image.height]).toEqual([W, H]);
+    const [image] = await backend.renderFrames([{ ...req, motionStates }]);
+    expect([image?.width, image?.height]).toEqual([W, H]);
     const states = statesOf(lastJob(fake.captured));
     expect(states.map((st) => st.offset)).toEqual([0, -0.25, 0.25]);
     const cubeX = states.map((st) => {
@@ -353,7 +353,7 @@ describe('Job-Datei an Blender (ohne Blender, mit Test-Programm)', () => {
     const fake = fakeBlender();
     const backend = createBlenderBackend({ workDir, blenderPath: fake.path, threads: 1 });
     const still = project({ children: [{ id: 'cube', type: 'mesh3d' }] });
-    await backend.renderLayer({ ...request(still, 5), motionStates: evaluateMotionStates(still, 'main', 5, ['b']) });
+    await backend.renderFrames([{ ...request(still, 5), motionStates: evaluateMotionStates(still, 'main', 5, ['b']) }]);
     expect(statesOf(lastJob(fake.captured)).map((st) => st.offset)).toEqual([0]);
   });
 });
