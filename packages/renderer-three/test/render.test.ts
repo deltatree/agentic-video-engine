@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Browser, Page } from 'playwright';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { probeWebGPU } from '../src/webgpu-probe.js';
 import { THREE_CASES } from './fixtures/three-cases.js';
 import { bundle, fromPage, hashImage, matchGolden, openPage, serve, writeContactSheet, type Rgba } from './harness.js';
 
@@ -78,8 +79,10 @@ describe('Semantik', () => {
     }
   });
 
-  it('wählt mit auto WebGPU und fällt für GLSL auf WebGL2 zurück', async () => {
-    expect((await renderCase(page, 'geometry-box', 'auto')).backend).toBe('webgpu');
+  it('wählt mit auto WebGPU (nur wenn der Mini-Render gelingt) und fällt für GLSL auf WebGL2 zurück', async () => {
+    // Politur P1: Ein Adapter mit unvollständiger API (altes Chromium ohne `swizzle` als Text) zählt nicht.
+    const usable = (await page.evaluate(probeWebGPU)).available;
+    expect((await renderCase(page, 'geometry-box', 'auto')).backend).toBe(usable ? 'webgpu' : 'webgl2');
     const shader = await page.evaluate(() =>
       (window as unknown as { ovRender: (n: string, b: string) => Promise<PageResult> }).ovRender('shader-material', 'auto').then((r) => r.backend),
     );
