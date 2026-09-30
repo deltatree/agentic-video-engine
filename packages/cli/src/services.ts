@@ -273,7 +273,9 @@ export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<st
  * ```
  */
 export function processRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, workers: number, trusted: boolean): ChunkRunner {
-  const pool = createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted });
+  // Chunk-Timeout (Story 18.8): hängende Worker nach OPENVIDEO_CHUNK_TIMEOUT_MS beenden, Chunk wiederholen.
+  const timeout = Number(process.env['OPENVIDEO_CHUNK_TIMEOUT_MS'] ?? '');
+  const pool = createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted, ...(Number.isFinite(timeout) && timeout > 0 ? { chunkTimeoutMs: timeout } : {}) });
   // Ein einzelner Chunk lohnt keinen Worker-Start (Node, Skia, Chromium): dann im eigenen Prozess.
   return async (chunks, onDone, run) => {
     if (chunks.length > 1) return pool(chunks, onDone, run);
