@@ -1,0 +1,5 @@
+{
+  "name": "product-launch",
+  "entry": "project.json",
+  "outDir": "out"
+}
