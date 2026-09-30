@@ -1,0 +1,850 @@
+{
+  "variant": {
+    "name": "full",
+    "width": 3840,
+    "height": 2160,
+    "fps": 30,
+    "seconds": 60,
+    "voiceProvider": "espeak-ng"
+  },
+  "host": {
+    "cpus": 16,
+    "cpuModel": "Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz",
+    "memoryGiB": 63,
+    "node": "v22.23.3",
+    "platform": "linux x64"
+  },
+  "steps": [
+    {
+      "step": 1,
+      "name": "project.create",
+      "projectId": "dod-full",
+      "compositions": [
+        "main"
+      ]
+    },
+    {
+      "step": 2,
+      "name": "asset.import",
+      "assets": [
+        {
+          "id": "logo",
+          "type": "svg",
+          "src": "assets/logo.svg",
+          "hash": "sha256:817bcbbd50e144771edae3cf4956505fee68f3cfbc43329bde0562a407ffdad7"
+        },
+        {
+          "id": "product",
+          "type": "model",
+          "src": "assets/product.glb",
+          "hash": "sha256:ff8b1f884939d3da41e15334d20431681edcf8e24d8c0510f249d0dd10bcdae8"
+        },
+        {
+          "id": "photo",
+          "type": "image",
+          "src": "assets/photo.png",
+          "hash": "sha256:791d344b70619dc7c97fcffc12d7e11b6ac4bd47fb2e141665c02d8a224448d5"
+        },
+        {
+          "id": "clip",
+          "type": "video",
+          "src": "assets/clip.mp4",
+          "hash": "sha256:1d6937db3a34690f25ba636534a2b635cb3f04b4d995aeb6758b58d5e54f8278"
+        },
+        {
+          "id": "music",
+          "type": "audio",
+          "src": "assets/music.wav",
+          "hash": "sha256:8024ef8d7d7207a9b040b02a71a5a1da66a8cbf4934c9e26502a43bddae6fb2e"
+        },
+        {
+          "id": "whoosh",
+          "type": "audio",
+          "src": "assets/whoosh.wav",
+          "hash": "sha256:d912a23f5f49fd93fe6bc5a5e4b0f691843f91d798d67f3b8f209e010a9d7fff"
+        }
+      ]
+    },
+    {
+      "step": 3,
+      "name": "composition.patch",
+      "calls": 9
+    },
+    {
+      "step": 4,
+      "name": "composition.validate",
+      "ok": true,
+      "errors": 0,
+      "warnings": []
+    },
+    {
+      "step": 5,
+      "name": "frame.render + frame.inspect",
+      "checkpoints": [
+        {
+          "scene": "intro",
+          "frame": 135,
+          "visibleNodes": 10,
+          "scenesVisible": [
+            "scene-intro"
+          ],
+          "issues": [],
+          "renderDiagnostics": [],
+          "description": "Frame 135 (4.50 s) of composition main, 3840×2160, background #0B0D12. - layer \"grade\" at (0, 0) size 3840×2160   - rect \"bg\" at (0, 0) size 3840×2160",
+          "pixelHash": "sha256:a1ccacc1bda894a8057bb3e84480d97ad3d075babb3c9746c0cc59e260fda9dc"
+        },
+        {
+          "scene": "motion",
+          "frame": 441,
+          "visibleNodes": 14,
+          "scenesVisible": [
+            "scene-motion"
+          ],
+          "issues": [],
+          "renderDiagnostics": [],
+          "description": "Frame 441 (14.70 s) of composition main, 3840×2160, background #0B0D12. - layer \"grade\" at (0, 0) size 3840×2160   - rect \"bg\" at (0, 0) size 3840×2160",
+          "pixelHash": "sha256:06afb4437e4d97e8bb0bf25091a1ef19fec20b473784691b3f3c417e2b365523"
+        },
+        {
+          "scene": "data",
+          "frame": 765,
+          "visibleNodes": 57,
+          "scenesVisible": [
+            "scene-data"
+          ],
+          "issues": [
+            "OV_SAFE_AREA data-line/label-4: Text \"data-line/label-4\" leaves the title-safe area."
+          ],
+          "renderDiagnostics": [
+            "OV_SAFE_AREA: Text \"data-line/label-4\" leaves the title-safe area."
+          ],
+          "description": "Frame 765 (25.50 s) of composition main, 3840×2160, background #0B0D12. - layer \"grade\" at (0, 0) size 3840×2160   - rect \"bg\" at (0, 0) size 3840×2160",
+          "pixelHash": "sha256:9f88dff4364a0a698c96bc2b34a00408ade6d077eb4d1ae59e690bb88296946e"
+        },
+        {
+          "scene": "media",
+          "frame": 1035,
+          "visibleNodes": 10,
+          "scenesVisible": [
+            "scene-media"
+          ],
+          "issues": [],
+          "renderDiagnostics": [],
+          "description": "Frame 1035 (34.50 s) of composition main, 3840×2160, background #0B0D12. - layer \"grade\" at (0, 0) size 3840×2160   - rect \"bg\" at (0, 0) size 3840×2160",
+          "pixelHash": "sha256:7a10bf43081f355c98e951f04b8f6ab76b1d0667ed099749ed15974e38db4df5"
+        },
+        {
+          "scene": "three",
+          "frame": 1350,
+          "visibleNodes": 14,
+          "scenesVisible": [
+            "scene-3d"
+          ],
+          "issues": [],
+          "renderDiagnostics": [],
+          "description": "Frame 1350 (45.00 s) of composition main, 3840×2160, background #0B0D12. - layer \"grade\" at (0, 0) size 3840×2160   - rect \"bg\" at (0, 0) size 3840×2160",
+          "pixelHash": "sha256:3bc2be2ed896769af722d8bae999df6c40cbd282b4c1efeced4e8b5649cc17fa"
+        },
+        {
+          "scene": "outro",
+          "frame": 1665,
+          "visibleNodes": 8,
+          "scenesVisible": [
+            "scene-outro"
+          ],
+          "issues": [],
+          "renderDiagnostics": [],
+          "description": "Frame 1665 (55.50 s) of composition main, 3840×2160, background #0B0D12. - layer \"grade\" at (0, 0) size 3840×2160   - rect \"bg\" at (0, 0) size 3840×2160",
+          "pixelHash": "sha256:54fb143976b44539ae86870bb8e63c0b04f76aedda376e2c0a5ab5448a0b5ec3"
+        }
+      ]
+    },
+    {
+      "step": 6,
+      "name": "composition.patch (targeted)",
+      "patch": {
+        "op": "setProperty",
+        "nodeId": "intro-title",
+        "property": "fill",
+        "value": "#FFD23F"
+      },
+      "inverse": [
+        {
+          "op": "setProperty",
+          "nodeId": "intro-title",
+          "property": "fill",
+          "value": "#F5F7FF",
+          "compositionId": "main"
+        }
+      ]
+    },
+    {
+      "step": 7,
+      "name": "frame.render (after patch)",
+      "frames": [
+        {
+          "scene": "intro",
+          "frame": 135,
+          "changed": true,
+          "expectedChange": true,
+          "keyChanged": true,
+          "cached": false
+        },
+        {
+          "scene": "motion",
+          "frame": 441,
+          "changed": false,
+          "expectedChange": false,
+          "keyChanged": false,
+          "cached": true
+        },
+        {
+          "scene": "data",
+          "frame": 765,
+          "changed": false,
+          "expectedChange": false,
+          "keyChanged": false,
+          "cached": true
+        },
+        {
+          "scene": "media",
+          "frame": 1035,
+          "changed": false,
+          "expectedChange": false,
+          "keyChanged": false,
+          "cached": true
+        },
+        {
+          "scene": "three",
+          "frame": 1350,
+          "changed": false,
+          "expectedChange": false,
+          "keyChanged": false,
+          "cached": true
+        },
+        {
+          "scene": "outro",
+          "frame": 1665,
+          "changed": false,
+          "expectedChange": false,
+          "keyChanged": false,
+          "cached": true
+        }
+      ],
+      "onlyAffectedChanged": true
+    },
+    {
+      "step": 8,
+      "name": "video.render (A)",
+      "workers": 6,
+      "jobs": [
+        {
+          "jobId": "job-a8b427d5-ef50-4d7b-aef7-9edfe3f98239",
+          "framesRendered": 1650,
+          "framesFromCache": 150
+        }
+      ],
+      "frames": 1800,
+      "warnings": 330,
+      "output": {
+        "bytes": 29699516,
+        "hash": "sha256:8c4e572d6b3b6a039eebde31dbacdea599224706efad732bd7ddafc4b8c32f18"
+      }
+    },
+    {
+      "step": 9,
+      "name": "video.render (B, 2 worker processes)",
+      "workers": 2,
+      "jobs": [
+        {
+          "jobId": "job-2ac1ee27-3b37-4dba-acc3-bac19fed3ee5",
+          "framesRendered": 1655,
+          "framesFromCache": 145
+        }
+      ],
+      "frames": 1800
+    }
+  ],
+  "components": [
+    {
+      "n": 1,
+      "name": "animiertes Intro",
+      "ok": true,
+      "where": [
+        "node grade › scene-intro (type group)",
+        "node grade › scene-intro › intro-logo .scale (type svg)"
+      ],
+      "note": "Szene 0–15 %: Logo mit Feder-Animation, Titel Zeichen für Zeichen"
+    },
+    {
+      "n": 2,
+      "name": "professionelle Typografie",
+      "ok": true,
+      "where": [
+        "node grade › scene-intro › intro-title .textAnimation (type text)",
+        "node grade › scene-intro › intro-tagline .letterSpacing (type text)"
+      ],
+      "note": "Inter 800/500, Tracking, OpenType-Features, JetBrains Mono"
+    },
+    {
+      "n": 3,
+      "name": "SVG Logo",
+      "ok": true,
+      "where": [
+        "node grade › scene-intro › intro-logo .asset (type svg)",
+        "node grade › scene-outro › outro-logo (type svg)"
+      ],
+      "note": "Asset logo (image/svg+xml)"
+    },
+    {
+      "n": 4,
+      "name": "2D Motion Graphics",
+      "ok": true,
+      "where": [
+        "node grade › scene-motion › motion-wave .trimEnd (type path)",
+        "node grade › scene-motion › motion-hexagon (type polygon)",
+        "node grade › scene-motion › motion-orbit .motionPath (type ellipse)"
+      ],
+      "note": "Pfad mit Trim, Polygon mit Expression, Bewegungspfad, Federn"
+    },
+    {
+      "n": 5,
+      "name": "Datenvisualisierung",
+      "ok": true,
+      "where": [
+        "node grade › scene-data › data-bars .component (type component)",
+        "node grade › scene-data › data-line (type component)"
+      ],
+      "note": "BarChart und LineChart"
+    },
+    {
+      "n": 6,
+      "name": "HTML/CSS UI Animation",
+      "ok": true,
+      "where": [
+        "node grade › scene-motion › ui-card .css (type html)"
+      ],
+      "note": "html-Node, CSS-@keyframes auf virtueller Zeit"
+    },
+    {
+      "n": 7,
+      "name": "Three.js 3D Szene",
+      "ok": true,
+      "where": [
+        "node grade › scene-3d › stage (type scene3d)"
+      ],
+      "note": "scene3d (Three.js, WebGL2/SwiftShader)"
+    },
+    {
+      "n": 8,
+      "name": "glTF Modell",
+      "ok": true,
+      "where": [
+        "node grade › scene-3d › stage › gem .asset (type model3d)"
+      ],
+      "note": "model3d mit Clip \"spin\" aus product.glb"
+    },
+    {
+      "n": 9,
+      "name": "Kameraanimation",
+      "ok": true,
+      "where": [
+        "node grade › scene-3d › stage › cam .position (type camera3d)"
+      ],
+      "note": "camera3d mit Keyframes"
+    },
+    {
+      "n": 10,
+      "name": "Licht",
+      "ok": true,
+      "where": [
+        "node grade › scene-3d › stage › light-key (type light3d)",
+        "node grade › scene-3d › stage › light-rim (type light3d)",
+        "node grade › scene-3d › stage › light-ambient (type light3d)"
+      ],
+      "note": "directional, point, ambient"
+    },
+    {
+      "n": 11,
+      "name": "Partikel",
+      "ok": true,
+      "where": [
+        "node grade › scene-3d › stage › sparks (type particles3d)",
+        "node grade › scene-intro › intro-particles (type particles)"
+      ],
+      "note": "particles3d und particles (2D)"
+    },
+    {
+      "n": 12,
+      "name": "Shader/Postprocessing",
+      "ok": true,
+      "where": [
+        "node grade › scene-intro › intro-shader .sksl (type shader)",
+        "node grade › scene-3d › stage .postprocessing (type scene3d)"
+      ],
+      "note": "SkSL-Hintergrund, Bloom und Vignette in 3D"
+    },
+    {
+      "n": 13,
+      "name": "eingebettetes Video",
+      "ok": true,
+      "where": [
+        "node grade › scene-media › media-video .asset (type video)"
+      ],
+      "note": "video-Node mit clip.mp4"
+    },
+    {
+      "n": 14,
+      "name": "Bilder",
+      "ok": true,
+      "where": [
+        "node grade › scene-media › media-photo .asset (type image)"
+      ],
+      "note": "image-Node mit photo.png, Ken-Burns-Zoom"
+    },
+    {
+      "n": 15,
+      "name": "Voiceover",
+      "ok": true,
+      "where": [
+        "track voice (audio/voiceover, 6 Einträge)",
+        "audio vo-intro (voice espeak-ng)"
+      ],
+      "note": "Sprachsynthese (voice-Quelle) auf Spur voice"
+    },
+    {
+      "n": 16,
+      "name": "Musik",
+      "ok": true,
+      "where": [
+        "track music-track (audio/music, 1 Einträge)"
+      ],
+      "note": "music.wav mit Ducking unter der Stimme"
+    },
+    {
+      "n": 17,
+      "name": "Soundeffekte",
+      "ok": true,
+      "where": [
+        "track sfx (audio/sfx, 5 Einträge)"
+      ],
+      "note": "whoosh.wav an jedem Szenenwechsel"
+    },
+    {
+      "n": 18,
+      "name": "animierte Untertitel",
+      "ok": true,
+      "where": [
+        "node captions .style (type subtitles)",
+        "track subs (subtitle, 6 Einträge)"
+      ],
+      "note": "subtitles-Node, Stil word-highlight"
+    },
+    {
+      "n": 19,
+      "name": "Übergänge",
+      "ok": true,
+      "where": [
+        "node grade › scene-motion .transition (type group)",
+        "node grade › scene-data .transition (type group)"
+      ],
+      "note": "slide, wipe, iris, zoom, blur, fade"
+    },
+    {
+      "n": 20,
+      "name": "Color Grading",
+      "ok": true,
+      "where": [
+        "node grade .effects (type layer)"
+      ],
+      "note": "layer mit color-grade und vignette über allen Szenen"
+    },
+    {
+      "n": 21,
+      "name": "Outro",
+      "ok": true,
+      "where": [
+        "node grade › scene-outro (type group)"
+      ],
+      "note": "Szene 85–100 % mit Logo, Titel, URL, Ausblendung"
+    }
+  ],
+  "reproduction": {
+    "sameIr": true,
+    "framesA": 1800,
+    "framesB": 1800,
+    "frameHashesEqual": true,
+    "differingFrames": [],
+    "differingCount": 0,
+    "frameHashListA": "sha256:2715a98cc13dff960cffc843f2a12833f96728b8f25c07ff66712a72f3aaedb1",
+    "frameHashListB": "sha256:2715a98cc13dff960cffc843f2a12833f96728b8f25c07ff66712a72f3aaedb1",
+    "chunksA": [
+      {
+        "start": 0,
+        "end": 60,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 60,
+        "end": 120,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 120,
+        "end": 180,
+        "worker": "process-3.0"
+      },
+      {
+        "start": 180,
+        "end": 240,
+        "worker": "process-4.0"
+      },
+      {
+        "start": 240,
+        "end": 300,
+        "worker": "process-5.0"
+      },
+      {
+        "start": 300,
+        "end": 360,
+        "worker": "process-6.0"
+      },
+      {
+        "start": 360,
+        "end": 420,
+        "worker": "process-6.0"
+      },
+      {
+        "start": 420,
+        "end": 480,
+        "worker": "process-5.0"
+      },
+      {
+        "start": 480,
+        "end": 540,
+        "worker": "process-6.0"
+      },
+      {
+        "start": 540,
+        "end": 600,
+        "worker": "process-3.0"
+      },
+      {
+        "start": 600,
+        "end": 660,
+        "worker": "process-4.0"
+      },
+      {
+        "start": 660,
+        "end": 720,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 720,
+        "end": 780,
+        "worker": "process-5.0"
+      },
+      {
+        "start": 780,
+        "end": 840,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 840,
+        "end": 900,
+        "worker": "process-6.0"
+      },
+      {
+        "start": 900,
+        "end": 960,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 960,
+        "end": 1020,
+        "worker": "process-6.0"
+      },
+      {
+        "start": 1020,
+        "end": 1080,
+        "worker": "process-4.0"
+      },
+      {
+        "start": 1080,
+        "end": 1140,
+        "worker": "process-3.0"
+      },
+      {
+        "start": 1140,
+        "end": 1200,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1200,
+        "end": 1260,
+        "worker": "process-5.0"
+      },
+      {
+        "start": 1260,
+        "end": 1320,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1320,
+        "end": 1380,
+        "worker": "process-6.0"
+      },
+      {
+        "start": 1380,
+        "end": 1440,
+        "worker": "process-4.0"
+      },
+      {
+        "start": 1440,
+        "end": 1500,
+        "worker": "process-3.0"
+      },
+      {
+        "start": 1500,
+        "end": 1560,
+        "worker": "process-5.0"
+      },
+      {
+        "start": 1560,
+        "end": 1620,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1620,
+        "end": 1680,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1680,
+        "end": 1740,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1740,
+        "end": 1800,
+        "worker": "process-6.0"
+      }
+    ],
+    "chunksB": [
+      {
+        "start": 0,
+        "end": 60,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 60,
+        "end": 120,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 120,
+        "end": 180,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 180,
+        "end": 240,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 240,
+        "end": 300,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 300,
+        "end": 360,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 360,
+        "end": 420,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 420,
+        "end": 480,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 480,
+        "end": 540,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 540,
+        "end": 600,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 600,
+        "end": 660,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 660,
+        "end": 720,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 720,
+        "end": 780,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 780,
+        "end": 840,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 840,
+        "end": 900,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 900,
+        "end": 960,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 960,
+        "end": 1020,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1020,
+        "end": 1080,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1080,
+        "end": 1140,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1140,
+        "end": 1200,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1200,
+        "end": 1260,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1260,
+        "end": 1320,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1320,
+        "end": 1380,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1380,
+        "end": 1440,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1440,
+        "end": 1500,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1500,
+        "end": 1560,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1560,
+        "end": 1620,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1620,
+        "end": 1680,
+        "worker": "process-2.0"
+      },
+      {
+        "start": 1680,
+        "end": 1740,
+        "worker": "process-1.0"
+      },
+      {
+        "start": 1740,
+        "end": 1800,
+        "worker": "process-2.0"
+      }
+    ],
+    "cacheB": {
+      "hitRatio": 0.9928532160527762,
+      "framesRendered": 1655,
+      "framesFromCache": 145
+    },
+    "videoHashA": "sha256:8c4e572d6b3b6a039eebde31dbacdea599224706efad732bd7ddafc4b8c32f18",
+    "videoHashB": "sha256:8c4e572d6b3b6a039eebde31dbacdea599224706efad732bd7ddafc4b8c32f18",
+    "videoBytesEqual": true,
+    "manifestA": {
+      "compositionHash": "sha256:c5664a23d8a502d4f9d0acbef73ec4a6bb37bab68b2ddb848831fa623fac74c0",
+      "projectHash": "sha256:d2a4730352de547cc1c5a64d7c94df3036a684a9aa53909d2c0150362c02bfff",
+      "renderBackend": [
+        "skia",
+        "browser",
+        "three",
+        "pixi",
+        "blender"
+      ],
+      "resolution": {
+        "width": 3840,
+        "height": 2160
+      },
+      "fps": 30,
+      "chromiumVersion": "153.0.8010.12",
+      "threeVersion": "0.186",
+      "skiaVersion": "0.42.0",
+      "ffmpegVersion": "7.0.2-static",
+      "stages": {
+        "renderFrames": 4442.460778799,
+        "audioPipeline": 3.578394289999269,
+        "ffmpeg": 429.63980144700037
+      },
+      "audio": {
+        "path": "/home/deltatree/git/agentic-video-engine/examples/dod/out/full/workspace-a/projects/dod-full/out/dod.mp4.audio.wav",
+        "durationSeconds": 60,
+        "loudness": -24.071258776304955
+      }
+    },
+    "manifestB": {
+      "compositionHash": "sha256:c5664a23d8a502d4f9d0acbef73ec4a6bb37bab68b2ddb848831fa623fac74c0",
+      "projectHash": "sha256:d2a4730352de547cc1c5a64d7c94df3036a684a9aa53909d2c0150362c02bfff",
+      "stages": {
+        "renderFrames": 10693.415080044999,
+        "audioPipeline": 3.2919564370010046,
+        "ffmpeg": 415.1521511230003
+      }
+    }
+  },
+  "ok": true,
+  "timings": {
+    "assets.generate": 0,
+    "project.create": 0.667,
+    "asset.import": 0.668,
+    "composition.patch (build)": 0.841,
+    "composition.validate": 0.038,
+    "frame.render + frame.inspect": 81.558,
+    "composition.patch (targeted)": 0.014,
+    "frame.render (after patch)": 25.134,
+    "video.render (A)": 4878.545,
+    "project.create (B)": 0.593,
+    "asset.import (B)": 0.688,
+    "project.update (B)": 0.795,
+    "video.render (B)": 11115.368
+  },
+  "totalSeconds": 16112.382
+}
