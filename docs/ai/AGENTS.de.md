@@ -326,7 +326,7 @@ export default composition({
 });
 ```
 
-- TSX ist Code. OpenVideo kompiliert und führt ihn in einem Docker-Container ohne Netz aus; `--trusted` führt dein **eigenes** Projekt auf dem Host aus.
+- TSX ist Code. OpenVideo kompiliert und führt ihn in einem Docker-Container ohne Netz aus; `--trusted` führt dein **eigenes** Projekt auf dem Host aus. Läuft `openvideo` selbst in einem Container (Standard von `npm run setup`; `openvideo doctor` nennt die Laufzeit), gibt es darin kein Docker: Für dein eigenes Projekt `--trusted` nutzen – es läuft in diesem Container, der nur die eingehängten Ordner sieht.
 - Werte, die sich je Frame ändern (`frame * 4`), werden `$sampled`. Die Helfer `animate`, `keyframes`, `spring({ from, to, … })`, `expr` und `ref` erzeugen `$keyframes`, `$spring`, `$expr` und `$ref` (kleinere IR, mit `addKeyframe` änderbar); `spring({ frame, … })` (Remotion-Form) liefert eine Zahl und wird deshalb `$sampled`; `stagger` und `sequence` berechnen Start-Frames.
 - `composition.patch` ändert die TSX-Quelle über den AST (`sourceUpdated: true`); gib jedem Element, das du ändern willst, ein `id`-Attribut. Ein Patch, der sich nicht zurückschreiben lässt, wird abgelehnt; die Quelle bleibt unverändert.
 - `openvideo dev` kompiliert beim Speichern neu; Kompilierfehler stehen im Terminal, das Studio behält den letzten guten Stand.

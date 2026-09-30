@@ -89,7 +89,9 @@ export interface ProjectContext {
  * ```
  */
 export async function projectContext(options: { readonly project?: string | undefined; readonly workspace?: string | undefined; readonly cwd: string; readonly env: Readonly<Record<string, string | undefined>> }): Promise<ProjectContext> {
-  const explicitWorkspace = options.workspace ?? options.env['OPENVIDEO_WORKSPACE'];
+  // Leeres OPENVIDEO_WORKSPACE gilt als nicht gesetzt (das Image openvideo-local setzt es leer, ADR 0029).
+  const fromEnv = options.env['OPENVIDEO_WORKSPACE'];
+  const explicitWorkspace = options.workspace ?? (fromEnv !== undefined && fromEnv !== '' ? fromEnv : undefined);
   if (options.project === undefined) {
     return { workspaceDir: resolve(options.cwd, explicitWorkspace ?? '.openvideo-workspace'), link: () => Promise.resolve(undefined) };
   }

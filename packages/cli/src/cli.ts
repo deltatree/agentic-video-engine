@@ -39,7 +39,7 @@ import { createLocalServices, dockerRunner, dockerSettingsFromEnv, htmlScriptsAl
 import { createSourceService } from './sources.js';
 import { LEGACY_CACHE_TIERS, cacheTierByName, clearCache } from './cache-clear.js';
 import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
-import { watchProject, type WatchEvent } from './watch.js';
+import { watchPollMsFromEnv, watchProject, type WatchEvent } from './watch.js';
 import { stdinClosed } from './stdin.js';
 
 /** Ein- und Ausgabe der CLI (für Tests austauschbar). */
@@ -170,6 +170,8 @@ interface ServeOptions {
   readonly open?: boolean;
   /** `X-Forwarded-Proto` jeder Gegenstelle vertrauen (`--trust-proxy`, `OPENVIDEO_TRUST_PROXY=1`). */
   readonly trustProxy?: boolean;
+  /** Dateien zusätzlich abfragen (`OPENVIDEO_WATCH_POLL_MS`, Bind-Mounts ohne inotify, ADR 0029). */
+  readonly watchPollMs?: number | undefined;
   /** Projektordner beobachten und TSX neu kompilieren (`openvideo dev`). */
   readonly watch?: { readonly dir: string; readonly entry: string; readonly sources: SourceServiceOf };
 }
@@ -188,12 +190,14 @@ function watchMessage(event: WatchEvent): string {
 
 async function serveServices(services: AgentServices, io: CliIo, options: ServeOptions): Promise<void> {
   const studio = studioDir(io.env);
+  const watchPollMs = options.watchPollMs ?? watchPollMsFromEnv(io.env);
   const server = await startAgentServer({
     services,
     port: options.port,
     host: options.host,
     allowedHosts: options.allowedHosts,
     trustProxy: options.trustProxy === true,
+    ...(watchPollMs !== undefined ? { watchPollMs } : {}),
     ...(options.token !== undefined ? { token: options.token } : {}),
     fallback: async (req, res) => {
       if (studio === undefined || req.method !== 'GET') return false;
@@ -209,14 +213,16 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
   const query = new URLSearchParams(options.projectId !== undefined ? { project: options.projectId } : {}).toString();
   // Das Token steht im Fragment: Der Browser sendet es nie an einen Server, auch nicht im Referer.
   const fragment = options.showToken === true && options.token !== undefined ? `#token=${encodeURIComponent(options.token)}` : '';
-  const link = `${server.url}/${query !== '' ? `?${query}` : ''}${fragment}`;
-  io.stdout(`${PRODUCT_NAME} API: ${server.url}/v1/operations\n`);
+  const base = publicBaseUrl(server.url, io.env);
+  const link = `${base}/${query !== '' ? `?${query}` : ''}${fragment}`;
+  io.stdout(`${PRODUCT_NAME} API: ${base}/v1/operations\n`);
   if (options.showToken === true && options.token !== undefined) io.stdout(`API token (send as "Authorization: Bearer <token>"): token=${options.token}\n`);
   io.stdout(studio !== undefined ? `${PRODUCT_NAME} Studio: ${link}\n` : 'Studio files not found (build apps/studio or set OPENVIDEO_STUDIO_DIR).\n');
   const watcher =
     options.watch !== undefined
       ? watchProject({
           ...options.watch,
+          ...(watchPollMs !== undefined ? { pollMs: watchPollMs } : {}),
           onEvent: (event) => {
             const text = watchMessage(event);
             if (text !== '') (event.kind === 'error' ? io.stderr : io.stdout)(text);
@@ -240,6 +246,31 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
       process.once('SIGTERM', stop);
     }
   });
+}
+
+/**
+ * Adresse für die ausgegebenen Links von `serve`, `dev` und `studio`. Im Container bindet der Server an
+ * `0.0.0.0`, erreichbar ist er vom Host aber über die veröffentlichte Loopback-Adresse: Der Wrapper aus
+ * `npm run setup` setzt dafür `OPENVIDEO_PUBLIC_URL` (z. B. `http://127.0.0.1:7788`, ADR 0029).
+ * Ungültige Werte (kein http/https, Pfad oder Query) werden ignoriert.
+ *
+ * @example
+ * ```ts
+ * publicBaseUrl('http://0.0.0.0:7788', { OPENVIDEO_PUBLIC_URL: 'http://127.0.0.1:7788' }); // 'http://127.0.0.1:7788'
+ * publicBaseUrl('http://127.0.0.1:7788', {}); // 'http://127.0.0.1:7788'
+ * ```
+ */
+export function publicBaseUrl(serverUrl: string, env: Readonly<Record<string, string | undefined>>): string {
+  const given = env['OPENVIDEO_PUBLIC_URL'];
+  if (given === undefined || given === '') return serverUrl;
+  try {
+    const u = new URL(given);
+    if ((u.protocol !== 'http:' && u.protocol !== 'https:') || (u.pathname !== '/' && u.pathname !== '') || u.search !== '' || u.hash !== '' || u.username !== '' || u.password !== '') return serverUrl;
+    return `${u.protocol}//${u.host}`;
+  } catch (error) {
+    if (error instanceof TypeError) return serverUrl;
+    throw error;
+  }
 }
 
 /** Cache-Obergrenze aus `OPENVIDEO_CACHE_MAX_BYTES` als Render-Option (Story 18.9). */
@@ -667,7 +698,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         }
       }
       case 'doctor': {
-        const checks = await runDoctor({ projectDir: io.cwd });
+        const checks = await runDoctor({ projectDir: io.cwd, runtimeInfo: io.env['OPENVIDEO_RUNTIME_INFO'] });
         const failed = checks.filter((c) => c.status === 'fail').length;
         out({ ok: failed === 0, checks }, checks.map((c) => `${c.status === 'ok' ? '✓' : c.status === 'warn' ? '!' : '✗'} ${c.name.padEnd(18)} ${c.detail}${c.fix !== undefined ? `\n    → ${c.fix}` : ''}`).join('\n'));
         return failed === 0 ? 0 : 1;

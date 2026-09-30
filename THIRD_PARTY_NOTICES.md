@@ -23,7 +23,7 @@ Contents of the official images built from `deploy/docker/Dockerfile` (one targe
 
 ### openvideo-base (target `base`)
 
-- Node.js 22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
+- Node.js 22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
 - Debian base system Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …). Per-package notices in /usr/share/doc/*/copyright. Corresponding source: https://snapshot.debian.org/
 - tini 0.19.0-3+b8 – MIT. Init process (Debian package).
 - fontconfig 2.15.0-2.3 – HPND-sell-variant. Debian package.
@@ -33,7 +33,7 @@ Contents of the official images built from `deploy/docker/Dockerfile` (one targe
 
 ### openvideo-render-cpu (target `render-cpu`)
 
-- Node.js 22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
+- Node.js 22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
 - Debian base system Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …). Per-package notices in /usr/share/doc/*/copyright. Corresponding source: https://snapshot.debian.org/
 - tini 0.19.0-3+b8 – MIT. Init process (Debian package).
 - fontconfig 2.15.0-2.3 – HPND-sell-variant. Debian package.
@@ -46,7 +46,7 @@ Contents of the official images built from `deploy/docker/Dockerfile` (one targe
 
 ### openvideo-render-gpu (target `render-gpu`)
 
-- Node.js 22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
+- Node.js 22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
 - Debian base system Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …). Per-package notices in /usr/share/doc/*/copyright. Corresponding source: https://snapshot.debian.org/
 - tini 0.19.0-3+b8 – MIT. Init process (Debian package).
 - fontconfig 2.15.0-2.3 – HPND-sell-variant. Debian package.
@@ -60,7 +60,7 @@ Contents of the official images built from `deploy/docker/Dockerfile` (one targe
 
 ### openvideo-blender (target `blender`)
 
-- Node.js 22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
+- Node.js 22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
 - Debian base system Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …). Per-package notices in /usr/share/doc/*/copyright. Corresponding source: https://snapshot.debian.org/
 - tini 0.19.0-3+b8 – MIT. Init process (Debian package).
 - fontconfig 2.15.0-2.3 – HPND-sell-variant. Debian package.
@@ -75,7 +75,7 @@ Contents of the official images built from `deploy/docker/Dockerfile` (one targe
 
 ### openvideo-studio (target `studio`)
 
-- Node.js 22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
+- Node.js 22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
 - Debian base system Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …). Per-package notices in /usr/share/doc/*/copyright. Corresponding source: https://snapshot.debian.org/
 - tini 0.19.0-3+b8 – MIT. Init process (Debian package).
 - fontconfig 2.15.0-2.3 – HPND-sell-variant. Debian package.
@@ -86,7 +86,7 @@ Contents of the official images built from `deploy/docker/Dockerfile` (one targe
 
 ### openvideo-worker (target `worker`)
 
-- Node.js 22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
+- Node.js 22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
 - Debian base system Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …). Per-package notices in /usr/share/doc/*/copyright. Corresponding source: https://snapshot.debian.org/
 - tini 0.19.0-3+b8 – MIT. Init process (Debian package).
 - fontconfig 2.15.0-2.3 – HPND-sell-variant. Debian package.
@@ -96,6 +96,21 @@ Contents of the official images built from `deploy/docker/Dockerfile` (one targe
 - FFmpeg 7:7.1.5-0+deb13u1 – GPL-2.0-or-later. Debian package, built with --enable-gpl (libx264, libx265); the render manifest records the license reported by the binary; notices in /usr/share/doc/ffmpeg/copyright. Corresponding source: https://snapshot.debian.org/package/ffmpeg/
 - Chromium (Chrome for Testing) 153.0.8010.12 (revision 1243) – BSD-3-Clause AND others (LGPL-2.1, MPL-2.0, Apache-2.0, … of bundled third-party code). Archives verified by SHA-256 (8aac35011c18f6e2d10696154af89a5728ac2ddd6dc6fad24ffdf243c3fcfd5a); full notices via chrome://credits in the bundled browser. Corresponding source: https://chromium.googlesource.com/chromium/src
 - Chromium system libraries Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (LGPL-2.1-or-later, MIT, BSD, …). Installed by `playwright install-deps chromium` from the same Debian snapshot.
+
+### openvideo-local (target `local`)
+
+- Node.js 22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4) – MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …). Base image node:22-trixie-slim; notices in /usr/local/share/doc/node and the Node.js LICENSE file.
+- Debian base system Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …). Per-package notices in /usr/share/doc/*/copyright. Corresponding source: https://snapshot.debian.org/
+- tini 0.19.0-3+b8 – MIT. Init process (Debian package).
+- fontconfig 2.15.0-2.3 – HPND-sell-variant. Debian package.
+- DejaVu fonts (fonts-dejavu-core) Debian package – Bitstream-Vera AND LicenseRef-DejaVu-public-domain. Fallback system font.
+- ca-certificates Debian package – MPL-2.0 AND GPL-2.0-or-later. CA bundle (MPL-2.0 data, GPL-2.0-or-later scripts).
+- OpenVideo and npm dependencies see "npm dependencies" – Apache-2.0 and the licenses listed below. dist/ of all packages plus production node_modules.
+- FFmpeg 7:7.1.5-0+deb13u1 – GPL-2.0-or-later. Debian package, built with --enable-gpl (libx264, libx265); the render manifest records the license reported by the binary; notices in /usr/share/doc/ffmpeg/copyright. Corresponding source: https://snapshot.debian.org/package/ffmpeg/
+- Chromium (Chrome for Testing) 153.0.8010.12 (revision 1243) – BSD-3-Clause AND others (LGPL-2.1, MPL-2.0, Apache-2.0, … of bundled third-party code). Archives verified by SHA-256 (8aac35011c18f6e2d10696154af89a5728ac2ddd6dc6fad24ffdf243c3fcfd5a); full notices via chrome://credits in the bundled browser. Corresponding source: https://chromium.googlesource.com/chromium/src
+- Chromium system libraries Debian 13 (trixie), apt snapshot 20260918T000000Z – Various (LGPL-2.1-or-later, MIT, BSD, …). Installed by `playwright install-deps chromium` from the same Debian snapshot.
+- OpenVideo Studio bundle apps/studio/dist – Apache-2.0 AND MIT (React, Monaco Editor). Pre-built browser bundle.
+- Blender 4.2.23 – GPL-3.0-or-later (not bundled). Only with `npm run setup -- --with-blender` (target blender as base, ARG LOCAL_BASE); then as in openvideo-blender. Built locally, never published (ADR 0029).
 
 ## npm dependencies
 

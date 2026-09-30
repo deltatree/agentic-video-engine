@@ -21,7 +21,7 @@ Coding Agents. Veröffentlichung als öffentliches Projekt unter github.com/delt
 Epics 1–22 umgesetzt. Nach dem Deep-Dive-Audit vom 2026-09-30 (sieben BMAD-Rollen, `planning-artifacts/audit-2026-09-30/`)
 wurden die Epics 16–22 (`planning-artifacts/epics-2026-09-30.md`) geplant, umgesetzt und in drei adversarialen Reviews
 (`implementation-artifacts/reviews/`) geprüft; alle Befunde sind behoben. Offen ist nur, was der Maintainer auslösen muss:
-Branch-Schutz setzen (docs/guide/maintainers.md). GitHub Pages ist aktiv. npm-Veröffentlichung vorerst nicht (T3a): Installation aus dem Quellcode über SETUP.md und `npm run setup`.
+Branch-Schutz setzen (docs/guide/maintainers.md). GitHub Pages ist aktiv. npm-Veröffentlichung vorerst nicht (T3a): Installation aus dem Quellcode über SETUP.md und `npm run setup` – seit T15 standardmäßig im Container (Docker, Podman oder Kubernetes, Image lokal gebaut; ADR 0029).
 
 ## Entscheidungen
 
@@ -44,6 +44,7 @@ Branch-Schutz setzen (docs/guide/maintainers.md). GitHub Pages ist aktiv. npm-Ve
 | T1–T12 | Team-Entscheidungen der Epics 16–22 | siehe `planning-artifacts/epics-2026-09-30.md` |
 | T13 | Encoder standardmäßig fest 4 Threads; `OPENVIDEO_ENCODER_THREADS=auto` ist Opt-in | Videodatei bleibt über Maschinen bitgleich (§20); ADR 0026 |
 | T14 | Output-Cache-Schlüssel über alle Frame-Schlüssel, Encoder und Runner | Review-Befunde M1/M2 (final) |
+| T15 | Setup standardmäßig im Container: Docker, Podman oder Kubernetes (erkannt oder mit `--runtime`), Image `openvideo-local` lokal mit der jeweiligen Technik gebaut, `openvideo` als Wrapper; native nur als Rückfall | Anforderung des Product Owners 2026-09-30; ADR 0029 |
 
 ## Umgebung
 

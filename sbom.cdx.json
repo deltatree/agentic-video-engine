@@ -1550,7 +1550,7 @@
     {
       "type": "application",
       "name": "Node.js",
-      "version": "22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4)",
+      "version": "22 (docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4)",
       "licenses": [
         {
           "expression": "MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …)"
@@ -1559,7 +1559,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1575,7 +1575,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1591,7 +1591,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1607,7 +1607,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1623,7 +1623,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1639,7 +1639,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1655,7 +1655,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker"
+          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1671,7 +1671,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker"
+          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker, openvideo-local"
         }
       ]
     },
@@ -1687,7 +1687,7 @@
       "properties": [
         {
           "name": "openvideo:images",
-          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker"
+          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker, openvideo-local"
         }
       ]
     },

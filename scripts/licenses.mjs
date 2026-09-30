@@ -59,7 +59,7 @@ function dockerArgs(root) {
 }
 
 /**
- * Inhalt je Container-Image (deploy/docker/Dockerfile, Ziele base … worker). Versionen kommen aus
+ * Inhalt je Container-Image (deploy/docker/Dockerfile, Ziele base … worker und local). Versionen kommen aus
  * den ARG-Werten; ändert sich das Dockerfile, ist das Inventar veraltet (`--check`).
  */
 export function imageInventory(root = ROOT) {
@@ -101,6 +101,15 @@ export function imageInventory(root = ROOT) {
     },
     { image: 'openvideo-studio', target: 'studio', contents: [...base, { name: 'OpenVideo Studio bundle', version: 'apps/studio/dist', license: 'Apache-2.0 AND MIT (React, Monaco Editor)', bundled: true, note: 'Pre-built browser bundle.' }] },
     { image: 'openvideo-worker', target: 'worker', contents: renderCpu },
+    {
+      image: 'openvideo-local',
+      target: 'local',
+      contents: [
+        ...renderCpu,
+        { name: 'OpenVideo Studio bundle', version: 'apps/studio/dist', license: 'Apache-2.0 AND MIT (React, Monaco Editor)', bundled: true, note: 'Pre-built browser bundle.' },
+        { name: 'Blender', version: a.BLENDER_VERSION, license: 'GPL-3.0-or-later', bundled: false, note: 'Only with `npm run setup -- --with-blender` (target blender as base, ARG LOCAL_BASE); then as in openvideo-blender. Built locally, never published (ADR 0029).' },
+      ],
+    },
   ];
 }
 

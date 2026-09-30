@@ -35,6 +35,7 @@ Frame 471 is bit-identical whether or not frame 470 was rendered before.
 ## Quick start
 
 OpenVideo is not published on npm; you build it from this repository in a few minutes.
+By default it runs in a container – Docker, Podman or Kubernetes, whichever is available or whichever you name – with an image built locally by that technology.
 
 **The easy way – let your coding assistant do it.** Tell Claude Code, Cursor, Codex or any other assistant:
 
@@ -42,15 +43,15 @@ OpenVideo is not published on npm; you build it from this repository in a few mi
 Read https://raw.githubusercontent.com/deltatree/agentic-video-engine/main/SETUP.md and follow it to set up OpenVideo for me.
 ```
 
-[SETUP.md](SETUP.md) walks the assistant through prerequisites, build, verification and MCP registration.
+[SETUP.md](SETUP.md) walks the assistant through choosing the runtime, build, verification and MCP registration.
 
-**By hand** (requirements: git, Node.js 22.13 or newer, FFmpeg):
+**By hand** (requirements: git, Node.js 22.13 or newer, and Docker, Podman or a Kubernetes cluster; without them OpenVideo installs natively and also needs FFmpeg):
 
 ```bash
 git clone https://github.com/deltatree/agentic-video-engine.git ~/openvideo
 cd ~/openvideo
-npm run setup          # npm ci, build, Chromium, links the `openvideo` command, runs `openvideo doctor`
-cd /tmp && openvideo create hello && cd hello
+npm run setup          # detects docker/podman/kubernetes (or --runtime <name>), builds the image, installs the `openvideo` wrapper
+mkdir -p ~/openvideo-scratch && cd ~/openvideo-scratch && openvideo create hello && cd hello
 openvideo render-frame --frame 2s --out out/frame.png
 openvideo render --format mp4
 ```
@@ -89,7 +90,7 @@ Coding agents that work **on this repository** start with [AGENTS.md](AGENTS.md)
 | [Examples](examples/README.md) | Five example projects with README, assets and test |
 | [Render semantics](docs/reference/node-semantics.md) | Binding meaning and one JSON example of every node type |
 | [Render manifest](docs/reference/render-manifest.md) | Fields of the render manifest and of the short manifest for frames |
-| [Architecture decisions](docs/adr/README.md) | ADR 0001–0028 (German) |
+| [Architecture decisions](docs/adr/README.md) | ADR 0001–0029 (German) |
 | [Operations with Docker and Kubernetes](deploy/README.md) | Images, scaling, high availability, updates |
 
 ## Packages

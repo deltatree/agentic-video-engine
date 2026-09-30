@@ -35,6 +35,7 @@ Frame 471 ist bitgleich, egal ob Frame 470 vorher gerendert wurde.
 ## Schnellstart
 
 OpenVideo wird nicht auf npm veröffentlicht; du baust es in wenigen Minuten aus diesem Repository.
+Standardmäßig läuft es in einem Container – Docker, Podman oder Kubernetes, je nachdem, was verfügbar ist oder was du angibst –, mit einem Image, das lokal mit genau dieser Technik gebaut wird.
 
 **Am einfachsten – dein Coding Assistant macht es.** Sag Claude Code, Cursor, Codex oder einem anderen Assistant:
 
@@ -42,15 +43,15 @@ OpenVideo wird nicht auf npm veröffentlicht; du baust es in wenigen Minuten aus
 Read https://raw.githubusercontent.com/deltatree/agentic-video-engine/main/SETUP.md and follow it to set up OpenVideo for me.
 ```
 
-[SETUP.md](SETUP.md) ([deutsch](SETUP.de.md)) führt den Assistant durch Voraussetzungen, Build, Prüfung und MCP-Anmeldung.
+[SETUP.md](SETUP.md) ([deutsch](SETUP.de.md)) führt den Assistant durch Wahl der Laufzeit, Build, Prüfung und MCP-Anmeldung.
 
-**Von Hand** (Voraussetzungen: git, Node.js 22.13 oder neuer, FFmpeg):
+**Von Hand** (Voraussetzungen: git, Node.js 22.13 oder neuer und Docker, Podman oder ein Kubernetes-Cluster; ohne sie installiert sich OpenVideo nativ und braucht zusätzlich FFmpeg):
 
 ```bash
 git clone https://github.com/deltatree/agentic-video-engine.git ~/openvideo
 cd ~/openvideo
-npm run setup          # npm ci, build, Chromium, links the `openvideo` command, runs `openvideo doctor`
-cd /tmp && openvideo create hello && cd hello
+npm run setup          # detects docker/podman/kubernetes (or --runtime <name>), builds the image, installs the `openvideo` wrapper
+mkdir -p ~/openvideo-scratch && cd ~/openvideo-scratch && openvideo create hello && cd hello
 openvideo render-frame --frame 2s --out out/frame.png
 openvideo render --format mp4
 ```
@@ -91,7 +92,7 @@ Englisch zuerst; deutsche Fassungen liegen als `*.de.md` daneben, wo es sie gibt
 | [Beispiele](examples/README.md) | Fünf Beispielprojekte mit README, Assets und Test (Englisch) |
 | [Render-Semantik](docs/reference/node-semantics.de.md) | Verbindliche Bedeutung und ein JSON-Beispiel jedes Node-Typs |
 | [Render-Manifest](docs/reference/render-manifest.de.md) | Felder des Render-Manifests und des Kurzmanifests für Frames |
-| [Architektur-Entscheidungen](docs/adr/README.md) | ADR 0001–0028 |
+| [Architektur-Entscheidungen](docs/adr/README.md) | ADR 0001–0029 |
 | [Betrieb mit Docker und Kubernetes](deploy/README.de.md) | Images, Skalierung, Hochverfügbarkeit, Updates |
 
 ## Pakete

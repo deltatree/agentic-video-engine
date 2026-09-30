@@ -11,3 +11,10 @@ Epic 21:
 - `doctor` nutzt dieselben GPU- und Grafik-Proben wie das Render-Manifest (`probeHostGpu`, `probeBrowserGraphics`) und nennt den Grafik-Modus (`OPENVIDEO_BROWSER_GPU`).
 - TSX-Projekte: Der Compiler-Output landet in der Cache-Ebene `compiled`; unveränderte Quellen werden nicht erneut in der Sandbox ausgewertet.
 - `asset.import` nutzt die Asset Loader der Plugins aus `settings.plugins` (mit derselben Rechteprüfung wie beim Rendern).
+
+Im Container des Wrappers aus `npm run setup` (ADR 0029):
+
+- `OPENVIDEO_PUBLIC_URL` (z. B. `http://127.0.0.1:7788`): `serve`, `dev` und `studio` geben ihre Links mit dieser Adresse aus statt mit der Bind-Adresse `0.0.0.0`.
+- `OPENVIDEO_WATCH_POLL_MS` (mindestens 100): Datei-Watcher von `dev` und Revisionsbeobachtung des Servers fragen zusätzlich ab, weil Bind-Mounts unter macOS/Windows Änderungen vom Host nicht immer als Dateiereignis melden.
+- `OPENVIDEO_RUNTIME_INFO`: `doctor` nennt die Laufzeit in der ersten Zeile (`runtime`); ohne die Variable `native (this host)`.
+- Ein leeres `OPENVIDEO_WORKSPACE` gilt als nicht gesetzt (das Image `openvideo-local` setzt es leer).

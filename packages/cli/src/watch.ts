@@ -7,7 +7,7 @@
  * Bei JSON-Projekten prüft der Watcher nur, ob `project.json` lesbares JSON ist.
  */
 import { existsSync, watch, type FSWatcher } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, normalize, relative, sep } from 'node:path';
 import { isSourceEntry, type SourceService } from '@agentic-video/agent';
 import type { Diagnostic } from '@agentic-video/core';
@@ -31,6 +31,12 @@ export interface WatchOptions {
   readonly sources?: SourceService;
   /** Wartezeit nach dem letzten Dateiereignis (Standard 120 ms). */
   readonly debounceMs?: number;
+  /**
+   * Zusätzlich alle n Millisekunden Änderungszeit und Größe der beobachteten Dateien vergleichen.
+   * Für Bind-Mounts, die Änderungen vom Host nicht als inotify-Ereignis melden (Container unter
+   * macOS/Windows, ADR 0029; `OPENVIDEO_WATCH_POLL_MS`). Standard: nur Dateiereignisse.
+   */
+  readonly pollMs?: number;
   readonly onEvent: (event: WatchEvent) => void;
 }
 
@@ -42,6 +48,53 @@ export interface ProjectWatcher {
 }
 
 const IGNORED = ['out', '.openvideo', 'node_modules', '.git'];
+
+/**
+ * Abfrage-Intervall aus `OPENVIDEO_WATCH_POLL_MS` (ganze Millisekunden, mindestens 100); sonst `undefined`.
+ * Der Wrapper aus `npm run setup` setzt es unter macOS und Windows (ADR 0029).
+ *
+ * @example
+ * ```ts
+ * watchPollMsFromEnv({ OPENVIDEO_WATCH_POLL_MS: '1000' }); // 1000
+ * watchPollMsFromEnv({}); // undefined
+ * ```
+ */
+export function watchPollMsFromEnv(env: Readonly<Record<string, string | undefined>>): number | undefined {
+  const raw = env['OPENVIDEO_WATCH_POLL_MS'];
+  if (raw === undefined || !/^[0-9]+$/u.test(raw.trim())) return undefined;
+  const ms = Number(raw.trim());
+  return ms === 0 ? undefined : Math.max(100, ms);
+}
+
+/** Änderungszeit und Größe je Datei (relativer Pfad) der beobachteten Orte. */
+async function snapshotOf(dir: string, entry: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const note = async (rel: string): Promise<void> => {
+    if (!isWatchedPath(rel, entry)) return;
+    try {
+      const s = await stat(join(dir, rel));
+      if (s.isFile()) out.set(rel, `${String(s.mtimeMs)}:${String(s.size)}`);
+    } catch (error) {
+      // Zwischen readdir und stat gelöscht: fehlt im Abbild und zählt beim Vergleich als Änderung.
+      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+    }
+  };
+  const list = async (sub: string, recursive: boolean): Promise<void> => {
+    let names: string[];
+    try {
+      names = await readdir(sub === '' ? dir : join(dir, sub), { recursive });
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) return;
+      throw error;
+    }
+    for (const name of names) await note(normalize(sub === '' ? name : join(sub, name)).split(sep).join('/'));
+  };
+  await list('', false);
+  await list('src', true);
+  const entryDir = dirname(entry);
+  if (entryDir !== '.' && !normalize(entryDir).split(sep).join('/').startsWith('src')) await list(entryDir, false);
+  return out;
+}
 
 /**
  * Soll eine geänderte Datei (relativ zum Projektordner) eine Neukompilierung auslösen?
@@ -165,10 +218,40 @@ export function watchProject(options: WatchOptions): ProjectWatcher {
   // Liegt die Entry-Datei außerhalb von src/ in einem Unterordner, wird dieser zusätzlich beobachtet.
   if (entryDir !== '.' && (rel.startsWith('..') || rel === entryDir) && existsSync(join(dir, entryDir))) add(join(dir, entryDir), false, entryDir.split(sep).join('/'));
 
+  // Abfrage für Bind-Mounts ohne Dateiereignisse: geänderte, neue und gelöschte Dateien melden.
+  let poll: ReturnType<typeof setInterval> | undefined;
+  if (options.pollMs !== undefined && options.pollMs > 0) {
+    let previous: Map<string, string> | undefined;
+    let polling = false;
+    const tick = async (): Promise<void> => {
+      if (polling || closed) return;
+      polling = true;
+      try {
+        const next = await snapshotOf(dir, entry);
+        if (previous !== undefined) {
+          for (const [rel, sig] of next) if (previous.get(rel) !== sig) onChange(rel);
+          for (const rel of previous.keys()) if (!next.has(rel)) onChange(rel);
+        }
+        previous = next;
+      } finally {
+        polling = false;
+      }
+    };
+    const runTick = (): void => {
+      tick().catch((error: unknown) => {
+        options.onEvent({ kind: 'error', file: entry, diagnostics: [{ code: 'OV_WATCH_FAILED', severity: 'error', errorClass: 'ProjectError', problem: error instanceof Error ? error.message : String(error), suggestions: ['Check that the project folder is readable; the watcher keeps polling.'] }] });
+      });
+    };
+    runTick();
+    poll = setInterval(runTick, options.pollMs);
+    poll.unref();
+  }
+
   return {
     close: () => {
       closed = true;
       if (timer !== undefined) clearTimeout(timer);
+      if (poll !== undefined) clearInterval(poll);
       for (const w of watchers) w.close();
     },
     idle: async () => {

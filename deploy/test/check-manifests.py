@@ -11,7 +11,10 @@ Ziel nach kind und Namens-Regex, images/secretGenerator werden übergangen) und 
 - jede ScaledObject-Zielressource existiert;
 - Single-Writer (coordinator, api) bleiben bei einer Replik mit Recreate;
 - worker-gpu setzt OPENVIDEO_BROWSER_GPU=1 (ADR 0019), kein anderer Workload und nicht die ConfigMap;
-- im Overlay production-ha: Studio 2 Replikate mit RollingUpdate, PDBs, DCGM-Trigger für worker-gpu.
+- im Overlay production-ha: Studio 2 Replikate mit RollingUpdate, PDBs, DCGM-Trigger für worker-gpu;
+- im Overlay dev (npm run setup, ADR 0029): genau der Pod openvideo als Single Writer, Image-Platzhalter
+  openvideo-local, Token nur aus dem Secret openvideo-local (kein Secret im Repository), Pod-Sicherheit
+  wie restricted, NetworkPolicy ohne ausgehenden Verkehr.
 
 Aufruf: python3 deploy/test/check-manifests.py   (Exit-Code 1 bei Fehlern)
 Mit kubectl: zusätzlich `kubectl kustomize deploy/k8s/overlays/<name>` (siehe deploy/README.md).
@@ -24,7 +27,7 @@ import sys
 import yaml
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "k8s")
-OVERLAYS = ["local", "production", "prometheus", "production-ha"]
+OVERLAYS = ["local", "production", "prometheus", "production-ha", "dev"]
 CLUSTER_SCOPED = {"Namespace", "PriorityClass", "ClusterRole", "ClusterRoleBinding"}
 errors = []
 
@@ -193,6 +196,32 @@ def check_browser_gpu(name, resources, workloads):
             fail(f"{name}: ConfigMap {cm['metadata']['name']} must not set OPENVIDEO_BROWSER_GPU; set it on worker-gpu only")
 
 
+def check_dev(resources, by_name):
+    """Schlanker lokaler Stack (ADR 0029): ein Pod, Token nur aus dem vom Setup erzeugten Secret."""
+    if set(by_name) != {"openvideo"}:
+        fail(f"dev: expected exactly the workload openvideo, got {sorted(by_name)}")
+        return
+    w = by_name["openvideo"]
+    if w["spec"].get("replicas", 1) != 1 or w["spec"].get("strategy", {}).get("type") != "Recreate":
+        fail("dev: openvideo must stay a single writer (replicas 1, Recreate)")
+    if any(r["kind"] == "Secret" for r in resources):
+        fail("dev: no Secret in the repository; npm run setup generates openvideo-local")
+    pod = w["spec"]["template"]["spec"]
+    if pod.get("automountServiceAccountToken") is not False or pod.get("securityContext", {}).get("runAsNonRoot") is not True:
+        fail("dev: pod needs runAsNonRoot and no service account token")
+    for c in pod["containers"]:
+        if c.get("image") != "openvideo-local":
+            fail("dev: container image must be the placeholder openvideo-local (set by the generated overlay)")
+        sc = c.get("securityContext", {})
+        if sc.get("readOnlyRootFilesystem") is not True or sc.get("allowPrivilegeEscalation") is not False or sc.get("capabilities", {}).get("drop") != ["ALL"]:
+            fail(f"dev: container {c['name']} must be read-only, without privilege escalation and capabilities")
+        if not any(e.get("secretRef", {}).get("name") == "openvideo-local" for e in c.get("envFrom", [])):
+            fail("dev: OPENVIDEO_API_TOKEN must come from the secret openvideo-local")
+    policies = [r for r in resources if r["kind"] == "NetworkPolicy"]
+    if not any(p["spec"].get("egress") == [] and "Egress" in p["spec"].get("policyTypes", []) for p in policies):
+        fail("dev: NetworkPolicy without egress missing")
+
+
 def check(name, resources):
     seen = set()
     for r in resources:
@@ -212,6 +241,9 @@ def check(name, resources):
         if so["spec"]["scaleTargetRef"]["name"] not in by_name:
             fail(f"{name}: ScaledObject {so['metadata']['name']} targets a missing workload")
     check_browser_gpu(name, resources, workloads)
+    if name == "dev":
+        check_dev(resources, by_name)
+        return
     for single in ("coordinator", "api"):
         w = by_name.get(single)
         if w is None:

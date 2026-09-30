@@ -64,16 +64,33 @@ export function webgpuCheck(probe: { readonly webgpu: string; readonly webgpuAva
 }
 
 /**
- * Führt alle Prüfungen aus: Node, Browser, WebGL, WebGPU, GPU, FFmpeg, Codecs, Blender,
+ * Doctor-Zeile zur Laufzeit (ADR 0029): Der Wrapper aus `npm run setup` setzt `OPENVIDEO_RUNTIME_INFO`
+ * (z. B. `docker, image openvideo-local:0.1.0`). Ohne die Variable läuft die CLI nativ auf dem Host.
+ *
+ * @example
+ * ```ts
+ * runtimeCheck('docker, image openvideo-local:0.1.0');
+ * // { status: 'ok', detail: 'docker, image openvideo-local:0.1.0' }
+ * ```
+ */
+export function runtimeCheck(info: string | undefined): Omit<DoctorCheck, 'name'> {
+  if (info === undefined || info.trim() === '') return { status: 'ok', detail: 'native (this host)' };
+  return { status: 'ok', detail: info.trim() };
+}
+
+/**
+ * Führt alle Prüfungen aus: Laufzeit, Node, Browser, WebGL, WebGPU, GPU, FFmpeg, Codecs, Blender,
  * Fonts, Dateisystem, Docker, Hardware-Encoder.
  *
  * @example
  * ```ts
- * const checks = await runDoctor({ projectDir: process.cwd() });
+ * const checks = await runDoctor({ projectDir: process.cwd(), runtimeInfo: process.env['OPENVIDEO_RUNTIME_INFO'] });
  * ```
  */
-export async function runDoctor(options: { readonly projectDir: string }): Promise<DoctorCheck[]> {
+export async function runDoctor(options: { readonly projectDir: string; readonly runtimeInfo?: string | undefined }): Promise<DoctorCheck[]> {
   const out: DoctorCheck[] = [];
+  const inContainer = options.runtimeInfo !== undefined && options.runtimeInfo.trim() !== '';
+  out.push({ name: 'runtime', ...runtimeCheck(options.runtimeInfo) });
   out.push(
     await check('node', () => {
       const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
@@ -158,6 +175,10 @@ export async function runDoctor(options: { readonly projectDir: string }): Promi
   out.push(
     await check('docker', async () => {
       const sandbox = await sandboxAvailable();
+      // Im Container des Wrappers gibt es kein Docker; eigene TSX-Projekte laufen dort mit --trusted.
+      if (!sandbox.available && inContainer) {
+        return { status: 'warn', detail: 'No Docker inside the OpenVideo container (expected).', fix: 'TSX projects: run your OWN project with --trusted; it runs in this container, which sees only the mounted folders. Untrusted TSX needs a native setup with Docker.' };
+      }
       return sandbox.available
         ? { status: 'ok', detail: `Docker ${sandbox.version ?? ''} is available (sandbox image ${sandbox.image}).`.replace('  ', ' ') }
         : { status: 'warn', detail: `Docker is not available${sandbox.reason !== undefined ? `: ${sandbox.reason}` : ''}.`, fix: 'Install Docker to run TSX projects and scripted HTML safely; JSON projects work without it.' };

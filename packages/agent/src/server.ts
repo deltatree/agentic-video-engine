@@ -52,6 +52,12 @@ export interface AgentServerOptions {
    * der Kopf nur von Loopback-Adressen (Proxy auf demselben Rechner). Standard `false`.
    */
   readonly trustProxy?: boolean;
+  /**
+   * Projektordner zusätzlich alle n Millisekunden abfragen, statt nur auf Dateiereignisse zu warten.
+   * Nötig, wenn Änderungen vom Host keine inotify-Ereignisse im Container auslösen (Bind-Mounts unter
+   * macOS/Windows, ADR 0029). Standard: nur Dateiereignisse.
+   */
+  readonly watchPollMs?: number;
   /** Weitere Routen (z. B. Studio-Dateien); liefert `true`, wenn die Anfrage behandelt wurde. */
   readonly fallback?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 }
@@ -226,7 +232,7 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     );
   }
   const gate = new RequestGate(options.maxConcurrentRequests ?? 8, options.maxQueuedRequests ?? 64);
-  const revisions = new RevisionWatcher();
+  const revisions = new RevisionWatcher(40, options.watchPollMs);
   /** Offene Ereignis-Streams; `close()` beendet sie, sonst wartet `server.close` ewig. */
   const streams = new Set<ServerResponse>();
   const maxStreams = options.maxEventStreams ?? 32;

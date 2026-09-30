@@ -8,17 +8,27 @@
 #   blender     render-cpu + Blender 4.2 LTS (SHA256 geprüft)
 #   studio      base + gebautes Studio, Befehl `openvideo serve --host 0.0.0.0`
 #   worker      render-cpu, Befehl `openvideo-worker`
+#   local       render-cpu (oder blender, ARG LOCAL_BASE) + Studio: das Image für `npm run setup`
+#               (Docker, Podman, Kubernetes; ADR 0029), Tag openvideo-local:<version>
 #
 # Bauen: `bash deploy/docker/build.sh` (Kontext ist die Wurzel des Repositorys).
+# Lokal: `npm run setup -- --runtime docker|podman|kubernetes` baut das Ziel `local` (scripts/setup/).
+#
+# Podman/Buildah: gleiches Dockerfile mit `podman build --format docker` (sonst ignoriert das OCI-Format
+# die SHELL-Anweisung) und `--ignorefile deploy/docker/Dockerfile.dockerignore`. Basis-Images sind voll
+# qualifiziert (docker.io/…), damit keine Kurznamen-Auflösung nötig ist.
 #
 # Reproduzierbarkeit: Basis-Image per Digest, apt nur über snapshot.debian.org mit festem Datum,
-# feste Paketversionen, `npm ci` mit Lockfile, Blender- und Chromium-Archive mit SHA256, SOURCE_DATE_EPOCH.
+# feste Paketversionen, `npm ci` mit Lockfile, Blender- und Chromium-Archive mit SHA256 (deploy/docker/fetch.mjs
+# und `sha256sum -c`; kein `ADD --checksum`, das Buildah vor 1.37 nicht kennt), SOURCE_DATE_EPOCH.
 #
 # Sicherheit (A24, ADR 0008, Epic 16): Nutzer 65532, keine Capabilities nötig, Root-FS darf read-only sein.
 # Schreibpfade: nur /tmp und /cache. OPENVIDEO_CONTAINER_IMAGE nennt nur das Image (Manifest); HTML-Skripte
 # erlaubt erst OPENVIDEO_ALLOW_HTML_SCRIPTS=1, und auch dann nur mit Chromium-OS-Sandbox.
 
-ARG NODE_IMAGE=node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4
+ARG NODE_IMAGE=docker.io/library/node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4
+# Grundlage des Ziels `local`: render-cpu (Standard) oder blender (`npm run setup -- --with-blender`).
+ARG LOCAL_BASE=render-cpu
 
 # ---------------------------------------------------------------------------------------------
 # os: Basis mit apt über snapshot.debian.org (festes Datum = Datum des Basis-Images)
@@ -40,8 +50,12 @@ RUN rm -f /etc/apt/sources.list.d/* /etc/apt/sources.list \
 FROM os AS compile
 WORKDIR /src
 COPY . .
+# Optional: CA-Zertifikate eines TLS-Proxys als Build-Secret `ca` (`npm run setup -- --ca-cert <datei>`,
+# ADR 0029). Das Secret landet nicht im Image.
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    npm ci --no-audit --no-fund
+    --mount=type=secret,id=ca,required=false \
+    if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; fi \
+ && npm ci --no-audit --no-fund
 # Alle TypeScript-Pakete (auch die, die tsconfig.json im Root noch nicht referenziert) und
 # danach die Zusatzschritte der Pakete ("build:extra"). Das Studio baut ein eigenes Ziel.
 RUN node node_modules/typescript/bin/tsc -b tsconfig.json packages/*/tsconfig.json \
@@ -64,7 +78,9 @@ RUN cd apps/studio && npm run build:extra --silent && test -f dist/index.html
 # ist ein fertiges Bundle und braucht zur Laufzeit keine node_modules).
 FROM compile AS app
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
-    rm -rf node_modules packages/*/node_modules apps/*/node_modules \
+    --mount=type=secret,id=ca,required=false \
+    if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; fi \
+ && rm -rf node_modules packages/*/node_modules apps/*/node_modules \
  && npm ci --omit=dev --no-audit --no-fund $(for d in packages/*; do printf -- '--workspace=%s ' "$d"; done) \
  && node deploy/docker/stage.mjs /src /app
 
@@ -75,7 +91,10 @@ FROM os AS blender-fetch
 ARG BLENDER_VERSION=4.2.23
 ARG BLENDER_SHA256=bea0eb3146be13eae6225409a117b215184f41b7f79e799f97cb3abb8f6dc404
 RUN ov-apt xz-utils
-ADD --checksum=sha256:${BLENDER_SHA256} https://download.blender.org/release/Blender4.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz /tmp/blender.tar.xz
+COPY deploy/docker/fetch.mjs /usr/local/lib/ov-fetch.mjs
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; fi \
+ && NODE_USE_ENV_PROXY=1 node /usr/local/lib/ov-fetch.mjs "https://download.blender.org/release/Blender4.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz" "${BLENDER_SHA256}" /tmp/blender.tar.xz
 RUN echo "${BLENDER_SHA256}  /tmp/blender.tar.xz" | sha256sum -c - \
  && mkdir -p /opt/blender \
  && tar -xJf /tmp/blender.tar.xz -C /opt/blender --strip-components=1 --no-same-owner \
@@ -95,8 +114,12 @@ ARG CHROMIUM_REVISION=1243
 ARG CHROMIUM_SHA256=8aac35011c18f6e2d10696154af89a5728ac2ddd6dc6fad24ffdf243c3fcfd5a
 ARG CHROMIUM_HEADLESS_SHELL_SHA256=a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d
 RUN ov-apt unzip
-ADD --checksum=sha256:${CHROMIUM_SHA256} https://cdn.playwright.dev/builds/cft/${CHROMIUM_VERSION}/linux64/chrome-linux64.zip /tmp/chrome-linux64.zip
-ADD --checksum=sha256:${CHROMIUM_HEADLESS_SHELL_SHA256} https://cdn.playwright.dev/builds/cft/${CHROMIUM_VERSION}/linux64/chrome-headless-shell-linux64.zip /tmp/chrome-headless-shell-linux64.zip
+COPY deploy/docker/fetch.mjs /usr/local/lib/ov-fetch.mjs
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -s /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca; fi \
+ && export NODE_USE_ENV_PROXY=1 \
+ && node /usr/local/lib/ov-fetch.mjs "https://cdn.playwright.dev/builds/cft/${CHROMIUM_VERSION}/linux64/chrome-linux64.zip" "${CHROMIUM_SHA256}" /tmp/chrome-linux64.zip \
+ && node /usr/local/lib/ov-fetch.mjs "https://cdn.playwright.dev/builds/cft/${CHROMIUM_VERSION}/linux64/chrome-headless-shell-linux64.zip" "${CHROMIUM_HEADLESS_SHELL_SHA256}" /tmp/chrome-headless-shell-linux64.zip
 RUN echo "${CHROMIUM_SHA256}  /tmp/chrome-linux64.zip" | sha256sum -c - \
  && echo "${CHROMIUM_HEADLESS_SHELL_SHA256}  /tmp/chrome-headless-shell-linux64.zip" | sha256sum -c - \
  && mkdir -p /opt/ms-playwright/chromium-${CHROMIUM_REVISION} /opt/ms-playwright/chromium_headless_shell-${CHROMIUM_REVISION} \
@@ -142,7 +165,7 @@ LABEL org.opencontainers.image.title="openvideo-base" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.revision="${REVISION}" \
       org.opencontainers.image.created="${CREATED}" \
-      org.opencontainers.image.base.name="docker.io/library/${NODE_IMAGE}" \
+      org.opencontainers.image.base.name="${NODE_IMAGE}" \
       io.openvideo.version="${VERSION}" \
       io.openvideo.node="22" \
       io.openvideo.debian-snapshot="${DEBIAN_SNAPSHOT}"
@@ -245,3 +268,27 @@ LABEL org.opencontainers.image.title="openvideo-worker" \
       org.opencontainers.image.description="OpenVideo render worker"
 ENTRYPOINT ["/usr/bin/tini", "--", "openvideo-worker"]
 CMD ["--stdio"]
+
+# ---------------------------------------------------------------------------------------------
+# local: ein Image für die lokale Nutzung (npm run setup, ADR 0029)
+# ---------------------------------------------------------------------------------------------
+# render-cpu (FFmpeg, Chromium, Schriften) bzw. blender plus Studio. Der Wrapper `openvideo` auf dem
+# Host startet es mit der Nutzer-ID des Aufrufers. Der Cache liegt deshalb in /var/cache/openvideo, für
+# alle beschreibbar mit Sticky-Bit; der Wrapper hängt dort das benannte Volume openvideo-cache-<uid> ein, das
+# diese Rechte beim ersten Einhängen übernimmt (/cache ist schon als VOLUME deklariert).
+# OPENVIDEO_WORKSPACE ist leer: Wie nativ gilt `--workspace` bzw. `.openvideo-workspace` im aktuellen Ordner. GPU (NVENC) kommt zur Laufzeit über `--gpus`/CDI dazu.
+FROM ${LOCAL_BASE} AS local
+ARG VERSION=0.0.0-dev
+ARG LOCAL_BASE
+USER 0:0
+RUN mkdir -p /var/cache/openvideo && chmod 1777 /var/cache/openvideo
+COPY --from=studio-build /src/apps/studio/dist /app/apps/studio/dist
+ENV OPENVIDEO_STUDIO_DIR=/app/apps/studio/dist \
+    OPENVIDEO_CACHE_DIR=/var/cache/openvideo \
+    OPENVIDEO_WORKSPACE="" \
+    OPENVIDEO_CONTAINER_IMAGE=openvideo-local:${VERSION}
+LABEL org.opencontainers.image.title="openvideo-local" \
+      org.opencontainers.image.description="OpenVideo for local use: CLI, Studio, FFmpeg, Chromium (built by npm run setup)" \
+      io.openvideo.local-base="${LOCAL_BASE}"
+USER 65532:65532
+EXPOSE 7788

@@ -44,6 +44,7 @@ Alle Images entstehen aus `deploy/docker/Dockerfile`. Jedes Ziel ist ein Image.
 | `openvideo-blender` | `render-cpu` + Blender 4.2.23 LTS. |
 | `openvideo-studio` | `base` + Studio. Befehl `openvideo serve --host 0.0.0.0`. |
 | `openvideo-worker` | `render-cpu`. Befehl `openvideo-worker`. |
+| `openvideo-local` | `render-cpu` (oder `blender`) + Studio. Lokal gebaut von `npm run setup` (Tag `openvideo-local:<version>`), nie veröffentlicht. Siehe [Lokal mit Docker, Podman oder Kubernetes](#lokal-mit-docker-podman-oder-kubernetes). |
 
 Registry: `ghcr.io/deltatree/openvideo-<name>`.
 Tags: die Version aus `package.json` (zum Beispiel `0.1.0`) und `<version>-<git-sha>`.
@@ -63,7 +64,7 @@ Reproduzierbarkeit:
 - Das Basis-Image ist per Digest gepinnt.
 - apt lädt nur von `snapshot.debian.org` mit festem Datum. Wichtige Pakete haben feste Versionen.
 - `npm ci` installiert genau das Lockfile.
-- Die Archive von Blender und Chromium werden per SHA256 geprüft (`ADD --checksum` und `sha256sum -c`).
+- Die Archive von Blender und Chromium werden per SHA256 geprüft (`deploy/docker/fetch.mjs` und `sha256sum -c`; dasselbe Dockerfile baut auch mit Podman/Buildah).
   Beim Update von playwright-core bricht der Build ab, bis Revision und Prüfsummen in `chromium-fetch` passen.
 - `SOURCE_DATE_EPOCH` ist die Zeit des letzten Commits.
 
@@ -151,6 +152,44 @@ OPENVIDEO_BROWSER_GPU=1 openvideo render my-project --isolation docker --gpus de
 Ohne eigenes Image startet das GPU-Image `openvideo worker --stdio` (Einstieg `openvideo`), das Worker-Image
 `openvideo-worker --stdio`.
 
+## Lokal mit Docker, Podman oder Kubernetes
+
+Für eine Person an einem Rechner gibt es `npm run setup` (siehe [SETUP.de.md](../SETUP.de.md), ADR 0029). Es wählt die
+Laufzeit – `--runtime <docker|podman|kubernetes|native>` oder die erste nutzbare aus Docker, Podman, Kubernetes –, baut
+das Image `openvideo-local:<version>` (Ziel `local`) **lokal mit genau dieser Technik** und installiert den Befehl
+`openvideo` als Wrapper (Standard `~/.local/bin`). Aus keiner Registry wird ein Image geladen.
+
+| Laufzeit | Build | Der Wrapper `openvideo` |
+|---|---|---|
+| Docker | `docker build --target local` (BuildKit) | `docker run --rm -i` je Befehl, aktueller Ordner unter demselben Pfad, Nutzer-ID des Aufrufers |
+| Podman | `podman build --format docker --ignorefile deploy/docker/Dockerfile.dockerignore --target local` | `podman run`, rootless mit `--userns=keep-id` |
+| Kubernetes | erster nutzbarer aus docker, podman, nerdctl, buildah; Image in kind/minikube/k3d/k3s geladen oder mit `--registry` geschoben | `kubectl exec` in `deploy/openvideo` (Stack `overlays/dev`), `kubectl port-forward` für Studio/API |
+
+Container-Eigenschaften des Wrappers (Docker/Podman): `--pull never`, `--security-opt no-new-privileges`,
+`--cap-drop ALL`, kein `--privileged`, `--shm-size 512m`, Cache im Volume `openvideo-cache-<uid>`
+(`/var/cache/openvideo`). `serve`, `dev` und `studio` veröffentlichen ihren Port nur auf `127.0.0.1` und binden im
+Container an `0.0.0.0`, mit dem API-Token aus `~/.config/openvideo/api.env` (0600, per `--env-file` übergeben).
+`openvideo mcp` läuft über stdio (`-i`, nie `-t`). `openvideo doctor` nennt in der ersten Zeile die Laufzeit.
+
+Das Image `local` ist `render-cpu` plus Studio (mit `--with-blender`: `blender` plus Studio). Die Archive von Chromium und
+Blender lädt im Build `deploy/docker/fetch.mjs` und prüft ihre SHA-256; das ersetzt `ADD --checksum`, das Buildah vor
+1.37 (zum Beispiel Podman 4.9 unter Ubuntu 24.04) nicht kennt. Hinter einem TLS-prüfenden Proxy `--ca-cert <datei>`
+angeben; die Zertifikate gehen als Secret `ca` in den Build, nicht ins Image.
+
+**Kubernetes-Stack `overlays/dev`:** ein Pod `openvideo` (CLI, Agent API und Studio, Image `openvideo-local`), ein
+Workspace-PVC, ein Service und eine NetworkPolicy ohne ausgehenden Verkehr; Sicherheit wie in den übrigen Overlays
+(Nutzer 65532, Root-Dateisystem nur lesbar, keine Capabilities, kein Service-Account-Token). Kein Koordinator, keine
+Worker, kein KEDA, kein S3 – `overlays/local` ist zum Testen des vollen Stacks gedacht. `overlays/dev` nicht direkt
+anwenden: Das Setup schreibt nach `~/.config/openvideo/kubernetes/` ein Overlay, das es einbindet und Namespace
+(Standard `openvideo-local`), Image (kustomize `images:`) und das Secret `openvideo-local` (`OPENVIDEO_API_TOKEN`) setzt.
+
+```bash
+npm run setup -- --runtime kubernetes --kube-context kind-dev
+kubectl -n openvideo-local get pods
+openvideo doctor
+openvideo studio        # port-forward to http://127.0.0.1:7788/#token=…
+```
+
 ## Installation in Kubernetes
 
 ### Voraussetzungen
@@ -228,6 +267,7 @@ Studio (es landet sonst in Logs und im Verlauf).
 
 | Overlay | Zweck |
 |---|---|
+| `overlays/dev` | Ein Pod für die lokale Nutzung durch `npm run setup -- --runtime kubernetes` (CLI, API, Studio; kein Koordinator, keine Worker, kein KEDA, kein S3). Nur über das vom Setup erzeugte Overlay angewendet. |
 | `overlays/local` | kind oder Laptop: kleine Ressourcen, Images mit Tag `local`, keine GPU, feste Test-Tokens. |
 | `overlays/production` | Images aus ghcr.io mit fester Version, Geheimnisse aus `secrets.env`. |
 | `overlays/prometheus` | `production` plus Skalierung über die Render-Dauer aus Prometheus. |
@@ -510,7 +550,9 @@ kubectl -n openvideo logs -l app.kubernetes.io/component=worker --prefix | grep 
 | `bash deploy/docker/build.sh` | Alle Images bauen. |
 | `bash deploy/test/images.sh` | Jedes Image startet. `doctor` meldet FFmpeg, Chromium und Blender. Ein Frame und ein Video rendern ohne Netz und read-only. |
 | `bash deploy/test/kind.sh` | kind-Cluster, KEDA, Overlay `local`. Ein Video über die API. Hochskalieren unter Queue-Last. Danach wird der Cluster gelöscht. |
-| `python3 deploy/test/check-manifests.py` | Alle Overlays (auch `production-ha`) statisch bauen: gültiges YAML, jedes Patch-Ziel trifft, PDB-Selektoren, Single-Writer, HA-Eigenschaften. Braucht nur Python 3 mit PyYAML. |
+| `python3 deploy/test/check-manifests.py` | Alle Overlays (auch `production-ha` und `dev`) statisch bauen: gültiges YAML, jedes Patch-Ziel trifft, PDB-Selektoren, Single-Writer, HA-Eigenschaften. Braucht nur Python 3 mit PyYAML. |
+| `npx vitest run scripts/test/setup.test.mjs scripts/test/setup-wrapper.test.mjs` | `npm run setup` und der Wrapper `openvideo` mit Stub-Programmen: Erkennung jeder Laufzeit, jeder Kubernetes-Weg, Argumente, Ports, Token-Übergabe, Spiegelung der Dateien in den Pod. |
+| `.github/workflows/setup-smoke.yml` | Echtes `npm run setup -- --runtime docker` und eine Rauchprobe über den Wrapper (create, validate, render-frame, MCP-Handshake); nachts und auf Abruf. |
 
 `kind.sh` lädt `kind` und `kubectl` bei Bedarf nach `~/.local/bin` und prüft ihre Prüfsummen.
 Mit `KEEP_CLUSTER=1` bleibt der Cluster für die Fehlersuche stehen.

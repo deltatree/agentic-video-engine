@@ -10,7 +10,8 @@ Node.js 22.13+, FFmpeg in `PATH` or `OPENVIDEO_FFMPEG`/`OPENVIDEO_FFPROBE`, Chro
 
 | Task | Command |
 |---|---|
-| Set up from scratch | `npm run setup` (npm ci, build, Chromium, links `openvideo`; see [SETUP.md](SETUP.md)) |
+| Set up from scratch | `npm run setup` (container by default: detects docker/podman/kubernetes or `--runtime <name>`, builds the image `openvideo-local` locally, installs the `openvideo` wrapper; `--runtime native` for npm ci, build, Chromium, global link; see [SETUP.md](SETUP.md), ADR 0029) |
+| Develop OpenVideo itself | `npm run setup -- --runtime native` (or `npm ci && npm run build && npx playwright install chromium chromium-headless-shell`) |
 | Install | `npm ci` (never add dependencies without a reason in the PR) |
 | Build everything | `npm run build` |
 | Build one package | `npx tsc -b packages/<name>` |

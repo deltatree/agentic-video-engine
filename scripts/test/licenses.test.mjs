@@ -31,7 +31,7 @@ describe('licenses.mjs (Story 22.6)', () => {
 
   it('weist je Image FFmpeg, Chromium und Blender ehrlich aus', () => {
     const images = Object.fromEntries(imageInventory(ROOT).map((i) => [i.image, i.contents]));
-    expect(Object.keys(images)).toEqual(['openvideo-base', 'openvideo-render-cpu', 'openvideo-render-gpu', 'openvideo-blender', 'openvideo-studio', 'openvideo-worker']);
+    expect(Object.keys(images)).toEqual(['openvideo-base', 'openvideo-render-cpu', 'openvideo-render-gpu', 'openvideo-blender', 'openvideo-studio', 'openvideo-worker', 'openvideo-local']);
     const find = (image, name) => images[image].find((c) => c.name.startsWith(name));
     expect(find('openvideo-blender', 'Blender')).toMatchObject({ license: 'GPL-3.0-or-later', bundled: true });
     expect(find('openvideo-blender', 'Blender').note).toMatch(/download\.blender\.org\/source/u);

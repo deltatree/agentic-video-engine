@@ -6,7 +6,7 @@ Documentation is English first; German versions sit next to a file as `*.de.md` 
 
 ## Start here
 
-- [Setup](SETUP.md): OpenVideo is not on npm; this file tells a coding assistant how to build it from source, link the `openvideo` command and register the MCP server (`npm run setup`)
+- [Setup](SETUP.md): OpenVideo is not on npm; this file tells a coding assistant how to set it up from source with `npm run setup` – by default in a container (Docker, Podman or Kubernetes, detected or named with `--runtime`; the image is built locally with that technology, the `openvideo` command becomes a wrapper), natively only as a fallback – and how to register the MCP server
 - [Agent guide](docs/ai/AGENTS.md): workflow, output examples, rules, animation (`$keyframes`, `$spring`, `$expr`, `$sampled`, `$ref`), node types, patches, preview patches, diagnostics, TSX, manifests, plugins, live events
 - [Recipes](docs/guide/recipes.md): small verified IR snippets for common tasks
 - [Getting started](docs/guide/getting-started.md): install, create, dev (Studio with live sync), render

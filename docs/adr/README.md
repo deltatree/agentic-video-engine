@@ -30,3 +30,4 @@
 | 0026 | [Render-Leistung – parallel, gestreamt und bitgleich](0026-render-leistung-parallel-und-bitgleich.md) |
 | 0027 | [Hochverfügbarkeit auf Kubernetes: zustandslose Teile repliziert, Single-Writer bleiben einzeln](0027-kubernetes-ha-single-writer.md) |
 | 0028 | [Qualitätstore ohne stille Skips, Determinismus ohne Cache und npm-Release mit Provenance](0028-qualitaetstore-ohne-stille-skips-und-npm-release.md) |
+| 0029 | [Setup standardmäßig im Container – Docker, Podman oder Kubernetes, Image lokal gebaut](0029-setup-im-container-docker-podman-kubernetes.md) |

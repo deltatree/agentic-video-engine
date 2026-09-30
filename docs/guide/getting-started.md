@@ -24,11 +24,16 @@ cd ~/openvideo
 npm run setup
 ```
 
-`npm run setup` checks Node.js and FFmpeg, runs `npm ci` and `npm run build`, downloads Chromium, links the
-command `openvideo` globally (`npm install -g ./packages/cli`, a link to the checkout) and runs `openvideo doctor`.
-Options such as `--with-deps` (Linux system libraries for Chromium) and `--no-link` are described in SETUP.md.
-Without the global link use `alias openvideo="node ~/openvideo/packages/cli/dist/bin.js"`.
-Update later with `git pull && npm run setup -- --skip-browser`.
+`npm run setup` picks the runtime – the one you name with `--runtime <docker|podman|kubernetes|native>`, otherwise
+the first usable of Docker, Podman and Kubernetes; native (Node.js on this host) only as a last resort. With a container
+runtime it builds the image `openvideo-local` locally with that technology (FFmpeg, Chromium, fonts and Studio inside)
+and installs the command `openvideo` as a wrapper in `~/.local/bin`: every command runs in a container that sees the
+current folder under the same path, `dev`/`studio`/`serve` publish their port only on `127.0.0.1`.
+With Kubernetes the wrapper runs commands in a pod (`deploy/k8s/overlays/dev`). The choice is saved, so
+`git pull && npm run setup` later rebuilds with the same runtime. Details, options and troubleshooting: SETUP.md;
+the decision: [ADR 0029](../adr/0029-setup-im-container-docker-podman-kubernetes.md).
+
+With a container runtime, the table above applies to the image, not to your computer: you only need Node.js for the setup script.
 
 Check everything with `openvideo doctor`. Every line names a fix when needed.
 
@@ -36,7 +41,7 @@ Check everything with `openvideo doctor`. Every line names a fix when needed.
 
 1. Create a project: `openvideo create hello` (`--tsx` for TypeScript/JSX, `--template <name>` for one of the 15 templates; `openvideo templates` lists them).
 2. Change into the folder: `cd hello`.
-3. Start the Studio: `openvideo dev`. The browser opens with the project; the address (with the token in the `#token=` fragment) is also printed.
+3. Start the Studio: `openvideo dev`. The browser opens with the project; the address (with the token in the `#token=` fragment) is also printed. In a container (Docker/Podman) open the printed address yourself.
 
 The Studio shows the composition. Changes in the Studio land as patches in `project.json`.
 

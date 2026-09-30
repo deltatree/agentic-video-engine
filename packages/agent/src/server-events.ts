@@ -67,6 +67,8 @@ interface Watched {
   readonly ino: number;
   revision: string | undefined;
   timer: ReturnType<typeof setTimeout> | undefined;
+  /** Abfrage-Intervall, wenn Dateiereignisse fehlen können (`pollMs`). */
+  poll: ReturnType<typeof setInterval> | undefined;
 }
 
 /** Inode eines Ordners; `undefined`, wenn er fehlt. */
@@ -97,8 +99,14 @@ async function inodeOf(dir: string): Promise<number | undefined> {
 export class RevisionWatcher {
   private readonly watched = new Map<string, Watched>();
 
-  /** @param debounceMs Wartezeit nach dem letzten Dateiereignis (atomare Schreibvorgänge erzeugen mehrere). */
-  constructor(private readonly debounceMs = 40) {}
+  /**
+   * @param debounceMs Wartezeit nach dem letzten Dateiereignis (atomare Schreibvorgänge erzeugen mehrere).
+   * @param pollMs Zusätzlich alle n Millisekunden prüfen (Bind-Mounts ohne inotify-Ereignisse, ADR 0029).
+   */
+  constructor(
+    private readonly debounceMs = 40,
+    private readonly pollMs?: number,
+  ) {}
 
   /**
    * Abonniert Revisionsänderungen eines Ordners; liefert die Abmeldung. `onEnd` läuft einmal, wenn die
@@ -111,7 +119,13 @@ export class RevisionWatcher {
       // Zwischen `await` und hier kann ein anderer Abonnent den Ordner schon angemeldet haben.
       entry = this.watched.get(dir);
       if (entry === undefined) {
-        const created: Watched = { watcher: watch(dir, { persistent: false }), listeners: new Set(), ino: ino ?? -1, revision, timer: undefined };
+        const created: Watched = { watcher: watch(dir, { persistent: false }), listeners: new Set(), ino: ino ?? -1, revision, timer: undefined, poll: undefined };
+        if (this.pollMs !== undefined && this.pollMs > 0) {
+          created.poll = setInterval(() => {
+            void this.check(dir, created);
+          }, this.pollMs);
+          created.poll.unref();
+        }
         const self = basename(dir);
         created.watcher.on('change', (_type, name) => {
           // `project.json` oder der Ordner selbst (gelöscht/umbenannt meldet Linux mit seinem Namen).
@@ -188,6 +202,7 @@ export class RevisionWatcher {
     if (entry === undefined) return;
     this.watched.delete(dir);
     if (entry.timer !== undefined) clearTimeout(entry.timer);
+    if (entry.poll !== undefined) clearInterval(entry.poll);
     entry.watcher.close();
   }
 }
