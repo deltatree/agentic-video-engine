@@ -10,6 +10,6 @@
  * await writeFile('video.json', exportJson(project));
  * ```
  */
-export { BUNDLE_FILENAME, bundleTsx, compileTsx, mapStack, type Bundle, type CompileOptions, type CompileResult, type SourcePosition } from './compile.js';
+export { BUNDLE_FILENAME, COMPILER_VERSION, bundleTsx, compileTsx, compiledCacheKey, mapStack, type Bundle, type CompileOptions, type CompileResult, type CompiledStore, type SourcePosition } from './compile.js';
 export { exportJson } from './export.js';
 export { applyPatchesToSource, nodeToJsx, toLiteral, type RoundtripOptions, type RoundtripResult } from './roundtrip.js';

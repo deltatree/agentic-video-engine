@@ -87,7 +87,7 @@ jobs:
             tar xJf blender.tar.xz -C ~/.local/opt
             rm blender.tar.xz
           fi
-          sudo apt-get update && sudo apt-get install -y espeak-ng python3-venv libxi6 libxkbcommon0 libsm6 libgl1 libegl1 libegl-mesa0 libglx-mesa0 libxxf86vm1 libxfixes3 libxrender1
+          sudo apt-get update && sudo apt-get install -y espeak-ng python3-venv python3-yaml libxi6 libxkbcommon0 libsm6 libgl1 libegl1 libegl-mesa0 libglx-mesa0 libxxf86vm1 libxfixes3 libxrender1
           echo "OPENVIDEO_BLENDER=$HOME/.local/opt/blender-4.2.23-linux-x64/blender" >> "$GITHUB_ENV"
       - name: Docker-Images vorab ziehen (Digest geprüft)
         run: |
@@ -160,6 +160,8 @@ jobs:
           fi
       - name: Abhängigkeitsregeln (AD-14)
         run: npm run check:deps
+      - name: Kubernetes-Manifeste (alle Kustomize-Overlays, ohne kubectl)
+        run: python3 deploy/test/check-manifests.py
       - name: Build (TypeScript, Bundles, JSON Schema)
         run: npm run build
       - name: JSON Schema ist aktuell (API-Schema-Verstoß)
@@ -170,7 +172,8 @@ jobs:
         run: node scripts/licenses.mjs --check
       - name: Schwachstellen ab high
         run: npm audit --omit=dev --audit-level=high
-      - name: Tests mit Coverage (Unit, Property, Integration, Golden, Audio, E2E, Determinismus, Security)
+      # Die Tests der Skripte (scripts/test/*.test.mjs, z. B. licenses) sammelt vitest.config.ts mit ein.
+      - name: Tests mit Coverage (Unit, Property, Integration, Golden, Audio, E2E, Determinismus, Security, Skripte)
         # CI=true: fehlende Vitest-Snapshots sind ein Fehler statt still neu geschrieben.
         env:
           CI: 'true'

@@ -345,7 +345,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     return command === undefined && values.help !== true ? 2 : 0;
   }
   const target = resolve(io.cwd, rest[0] ?? '.');
-  const sources = createSourceService({ trusted });
+  const sources = createSourceService({ trusted, env: io.env });
   const isolation = trusted ? 'trusted' : 'container';
   const offline = values.offline === true ? { offline: true } : {};
   const withEnv = async <T>(fn: (loaded: Awaited<ReturnType<typeof loadProject>>, env: Awaited<ReturnType<typeof createNodeEnvironment>>) => Promise<T>): Promise<T> => {
