@@ -40,6 +40,8 @@ export type CompositorNode =
       readonly matrix: Matrix2D;
       readonly mask?: CompositorMaskLike;
       readonly reveal?: CompositorRevealLike;
+      /** `filters` und `shadow` der Node im Compositor anwenden (Backend ohne eigene Filter). */
+      readonly applyFilters?: boolean;
     };
 
 /** Eine Farbnachschlagetabelle (Vertrag des Pakets `compositor`). */

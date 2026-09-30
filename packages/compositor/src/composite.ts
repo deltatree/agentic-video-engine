@@ -31,6 +31,7 @@ import {
 import { blendPixel, separableChannel } from './blend.js';
 import { assertImage, clamp01, convertFloatInPlace, createFloatImage, decodeTable, encodeTransfer, floatToRgba, rgbaToFloat, srgbToLinear, type FloatImage } from './color.js';
 import { applyEffectsLinear, type EffectContext } from './effects.js';
+import { applyNodeFilters } from './filters.js';
 import type { Lut } from './lut.js';
 
 /** Maske eines Gruppen-Knotens: ein Bild in Ausgabegröße im lokalen Raum der Gruppe. */
@@ -51,9 +52,12 @@ export interface CompositorReveal {
  *
  * - `group` komponiert seine Kinder und wendet Farbraum, Effekte, Crop, Clip, Maske, Reveal,
  *   Transform, Opacity und Blend Mode der Node an. Maske und Reveal liegen im lokalen Raum der Gruppe.
+ *   Zwischen Maske und Reveal wirken `filters` und `shadow` der Node (Story 17.11).
  * - `isolate` komponiert seine Kinder (die Node, vom Backend schon transformiert und mit Opacity)
  *   und wendet nur Reveal, Maske und Blend Mode an. `matrix` bildet lokale Pixel (lokale
  *   Koordinaten × `scale`) auf Ausgabepixel ab; damit folgen Maske und Reveal der Node.
+ *   Mit `applyFilters: true` (Backend ohne eigene Filter, z. B. `scene3d`, `blender`) wendet der
+ *   Compositor auch `filters` und `shadow` an: nach der Maske, vor dem Reveal, mit der Node-Matrix skaliert.
  */
 export type CompositorNode =
   | { readonly kind: 'image'; readonly image: RgbaImage }
@@ -71,6 +75,8 @@ export type CompositorNode =
       readonly matrix: Matrix2D;
       readonly mask?: CompositorMask;
       readonly reveal?: CompositorReveal;
+      /** `filters` und `shadow` der Node im Compositor anwenden (das Backend zeichnet sie nicht). */
+      readonly applyFilters?: boolean;
     };
 
 /** Eingabe für {@link compositeFrame}. */
@@ -391,6 +397,7 @@ function renderGroup(node: EvaluatedNode, children: readonly CompositorNode[], m
     assertLayerSize(mask.image, ctx, `Mask of group "${node.id}"`);
     applyMask(off, mask);
   }
+  off = applyNodeFilters(off, node.props, ctx.space, [ctx.scale, 0, 0, ctx.scale, 0, 0]);
   if (reveal !== undefined) applyReveal(off, reveal, IDENTITY, ctx.scale);
   const s = ctx.scale;
   const m = multiply(scaleMatrix(s, s), multiply(localMatrix(node), scaleMatrix(1 / s, 1 / s)));
@@ -398,7 +405,19 @@ function renderGroup(node: EvaluatedNode, children: readonly CompositorNode[], m
 }
 
 function renderIsolated(layer: Extract<CompositorNode, { kind: 'isolate' }>, ctx: Ctx): FloatImage {
-  const off = composeChildren(layer.children, ctx);
+  let off = composeChildren(layer.children, ctx);
+  if (layer.applyFilters === true) {
+    // Reihenfolge wie im Skia-Backend: Maske → Filter/Schatten → Reveal-Clip.
+    if (layer.mask !== undefined) {
+      assertLayerSize(layer.mask.image, ctx, `Mask of node "${layer.node.id}"`);
+      applyMask(off, layer.mask, layer.matrix);
+    }
+    const m = layer.matrix;
+    const s = ctx.scale;
+    off = applyNodeFilters(off, layer.node.props, ctx.space, [m[0] * s, m[1] * s, m[2] * s, m[3] * s, 0, 0]);
+    if (layer.reveal !== undefined) applyReveal(off, layer.reveal, layer.matrix, ctx.scale);
+    return off;
+  }
   if (layer.reveal !== undefined) applyReveal(off, layer.reveal, layer.matrix, ctx.scale);
   if (layer.mask !== undefined) {
     assertLayerSize(layer.mask.image, ctx, `Mask of node "${layer.node.id}"`);
@@ -429,9 +448,10 @@ function compositeLayer(target: FloatImage, layer: CompositorNode, ctx: Ctx): vo
  * `outputSpace`).
  *
  * Reihenfolge je `group`: Kinder in einen Offscreen komponieren → `colorSpace` (nur `layer`) →
- * `effects` → `crop` → `clip` → Maske → Reveal → Transform (`localMatrix(node)`, mit `scale`) →
- * `opacity` → `blendMode` auf das Ziel. Je `isolate`: Kinder komponieren → Reveal → Maske →
- * `blendMode` auf das Ziel.
+ * `effects` → `crop` → `clip` → Maske → `filters` → `shadow` → Reveal → Transform
+ * (`localMatrix(node)`, mit `scale`) → `opacity` → `blendMode` auf das Ziel. Je `isolate`:
+ * Kinder komponieren → Reveal → Maske → `blendMode` auf das Ziel; mit `applyFilters`
+ * Maske → `filters` → `shadow` → Reveal.
  *
  * @example
  * ```ts

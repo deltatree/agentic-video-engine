@@ -24,10 +24,12 @@ import {
   type EvaluatedNode,
   type EvaluatedScene,
   type LayerPlan,
+  type Matrix2D,
   type NodeBounds,
   type Rect,
   type RgbaImage,
 } from '@agentic-video/core';
+import { hasNodeFilters } from '@agentic-video/compositor';
 import { decodeRawFrame, encodeRawFrameAsync } from '@agentic-video/png';
 import { MOTION_STATES_CAPABILITY, evaluateMotionStates, type BlenderLayerRequest, type MotionState } from '@agentic-video/renderer-blender';
 import type { CompositorNode, RenderEnvironment } from './environment.js';
@@ -126,7 +128,7 @@ interface PlanContext {
   readonly signal: { readonly aborted: boolean } | undefined;
   /** Laufende Cache-Schreibvorgänge; {@link renderFrame} wartet am Ende auf alle. */
   readonly writes: CacheWrites;
-  /** Diagnosen aus dem Zusammensetzen (z. B. Filter an Compositor-Gruppen). */
+  /** Diagnosen aus dem Zusammensetzen. */
   readonly diagnostics: Diagnostic[];
 }
 
@@ -298,21 +300,7 @@ async function maskOf(ctx: PlanContext, node: EvaluatedNode): Promise<{ image: R
 async function buildGroup(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
   const childTree = await buildTree(ctx, children);
   const mask = await maskOf(ctx, node);
-  const ignored = ['filters', 'shadow'].filter((k) => {
-    const v = node.props[k];
-    return Array.isArray(v) ? v.length > 0 : v !== undefined;
-  });
-  if (ignored.length > 0) {
-    ctx.diagnostics.push({
-      code: 'OV_COMPOSITE_UNSUPPORTED',
-      severity: 'warning',
-      errorClass: 'CompositorError',
-      problem: `${node.type} "${node.id}" is composited across renderer backends; its ${ignored.join(' and ')} are not applied.`,
-      nodeId: node.id,
-      frame: ctx.scene.frame,
-      suggestions: ['Use a layer node with effects (blur, glow, color-grade …) instead of filters/shadow.', 'Or keep all children of the group in one 2D backend.'],
-    });
-  }
+  // filters und shadow der Gruppe wendet der Compositor an (Story 17.11).
   return {
     kind: 'group',
     node,
@@ -322,19 +310,29 @@ async function buildGroup(ctx: PlanContext, node: EvaluatedNode, children: reado
   };
 }
 
+/**
+ * Node-Typen, deren Backends `filters` und `shadow` nicht selbst zeichnen (Three.js, Blender).
+ * Für sie wendet der Compositor beides an (Story 17.11).
+ */
+const FILTERLESS_TYPES: ReadonlySet<string> = new Set(['scene3d', 'blender']);
+
+function isolateMatrix(ctx: PlanContext, node: EvaluatedNode): Matrix2D {
+  const s = ctx.scale;
+  return multiply(scaleMatrix(s, s), multiply(localMatrix(node, measuredOf(ctx.env, node)), scaleMatrix(1 / s, 1 / s)));
+}
+
 /** Isolierte Node: Das Backend hat sie transformiert; der Compositor wendet Reveal, Maske und Blend Mode an. */
 async function buildIsolate(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
   const childTree = await buildTree(ctx, children);
   const mask = await maskOf(ctx, node);
-  const s = ctx.scale;
-  const matrix = multiply(scaleMatrix(s, s), multiply(localMatrix(node, measuredOf(ctx.env, node)), scaleMatrix(1 / s, 1 / s)));
   return {
     kind: 'isolate',
     node,
     children: childTree,
-    matrix,
+    matrix: isolateMatrix(ctx, node),
     ...(mask !== undefined ? { mask } : {}),
     ...(node.reveal !== undefined ? { reveal: { reveal: node.reveal, box: contentBox(ctx.env, node) } } : {}),
+    ...(FILTERLESS_TYPES.has(node.type) && hasNodeFilters(node.props) ? { applyFilters: true } : {}),
   };
 }
 
@@ -342,7 +340,14 @@ async function buildTree(ctx: PlanContext, plan: readonly LayerPlan[]): Promise<
   const out: CompositorNode[] = [];
   for (const layer of plan) {
     if (layer.kind === 'render') {
-      out.push({ kind: 'image', image: await renderLayerCached(ctx, layer.backend, layer.nodes, layer.id) });
+      const image: CompositorNode = { kind: 'image', image: await renderLayerCached(ctx, layer.backend, layer.nodes, layer.id) };
+      const [only, ...rest] = layer.nodes;
+      if (only !== undefined && rest.length === 0 && FILTERLESS_TYPES.has(only.type) && hasNodeFilters(only.props)) {
+        // scene3d/blender mit filters/shadow: Der Compositor zeichnet sie auf dem fertigen Layer (Story 17.11).
+        out.push({ kind: 'isolate', node: only, children: [image], matrix: isolateMatrix(ctx, only), applyFilters: true });
+        continue;
+      }
+      out.push(image);
       continue;
     }
     if (layer.mode === 'isolate') {

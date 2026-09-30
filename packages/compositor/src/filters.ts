@@ -141,7 +141,14 @@ function applyShadow(image: FloatImage, color: { r: number; g: number; b: number
   return out;
 }
 
-/** Hat die Node wirksame `filters` oder einen `shadow`? */
+/**
+ * Hat die Node wirksame `filters` oder einen `shadow`?
+ *
+ * @example
+ * ```ts
+ * hasNodeFilters({ filters: [{ type: 'blur', radius: 2 }] }); // true
+ * ```
+ */
 export function hasNodeFilters(props: Readonly<Record<string, unknown>>): boolean {
   const filters = props['filters'];
   const shadow = props['shadow'];
