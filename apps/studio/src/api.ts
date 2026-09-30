@@ -65,8 +65,15 @@ function apiToken(): string | null {
   return cachedToken;
 }
 
-/** Bearer-Header, wenn der Server ein Token verlangt (`OPENVIDEO_API_TOKEN`). */
-function authHeaders(): Record<string, string> {
+/**
+ * Bearer-Header, wenn der Server ein Token verlangt (`OPENVIDEO_API_TOKEN`).
+ *
+ * @example
+ * ```ts
+ * await fetch('/v1/events?projectId=demo', { headers: authHeaders() });
+ * ```
+ */
+export function authHeaders(): Record<string, string> {
   const token = apiToken();
   return token !== null && token !== '' ? { authorization: `Bearer ${token}` } : {};
 }
@@ -142,6 +149,23 @@ export async function fetchFile(projectId: string, path: string): Promise<ArrayB
     throw new ApiError({ code: 'OV_FILE_NOT_FOUND', severity: 'error', errorClass: 'ApiError', problem: `File "${path}" could not be loaded (HTTP ${String(response.status)}).`, suggestions: ['Check the asset path in the project.'] });
   }
   return response.arrayBuffer();
+}
+
+/**
+ * Lädt eine Projektdatei als Text mit ihrer Revision (ETag des Servers, Story 20.1).
+ *
+ * @example
+ * ```ts
+ * const { text, revision } = await fetchTextWithRevision('demo', 'project.json');
+ * ```
+ */
+export async function fetchTextWithRevision(projectId: string, path: string): Promise<{ readonly text: string; readonly revision: string | undefined }> {
+  const response = await fetch(fileUrl(projectId, path), { headers: authHeaders(), cache: 'no-store' });
+  if (!response.ok) {
+    throw new ApiError({ code: 'OV_FILE_NOT_FOUND', severity: 'error', errorClass: 'ApiError', problem: `File "${path}" could not be loaded (HTTP ${String(response.status)}).`, suggestions: ['Check that the project still exists.'] });
+  }
+  const etag = response.headers.get('etag');
+  return { text: await response.text(), revision: etag !== null ? etag.replace(/^W\//u, '').replace(/"/gu, '') : undefined };
 }
 
 /**

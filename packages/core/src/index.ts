@@ -26,3 +26,5 @@ export * from './patches.js';
 export * from './bounds.js';
 export * from './frame-key.js';
 export * from './semantics.js';
+export * from './pixels.js';
+export * from './child-env.js';

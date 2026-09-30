@@ -213,7 +213,8 @@ export function textUnitState(node: EvaluatedNode, index: number, count: number,
 export function splitTextUnits(text: string, unit: 'char' | 'word' | 'line'): string[] {
   if (unit === 'line') return text.split('\n');
   if (unit === 'word') return text.match(/\S+\s*/gu) ?? [];
-  return Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text), (s) => s.segment);
+  // Feste Locale `und` (Story 18.9): Grapheme hängen nicht von der Systemsprache ab.
+  return Array.from(new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(text), (s) => s.segment);
 }
 
 /** Liefert die Schriftfamilie einer Text-Node mit Standardwert. */

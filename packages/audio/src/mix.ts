@@ -3,7 +3,8 @@
  *
  * Signalfluss je Spur:
  * Clips (Trim, Loop, Tempo, Clip-Volume, Fades, Crossfade, Pan) → EQ → Kompressor → Spur-Volume → Limiter → Ducking.
- * Danach werden alle nicht stummen Spuren summiert. Das Mastering übernimmt {@link masterAudio}.
+ * Danach werden alle nicht stummen Spuren und die Quellen mit Zeitabbildung ({@link MappedAudioSource})
+ * summiert. Das Mastering übernimmt {@link masterAudio}.
  *
  * Regeln:
  * - Pan-Gesetz mit konstanter Leistung ({@link panGains}): Mitte −3 dB je Kanal. Clip- und Spur-Pan
@@ -29,6 +30,29 @@ export interface ResolvedAudioSource {
   readonly duration: number;
 }
 
+/**
+ * Audioquelle mit Zeitabbildung (Story 17.7): Die Quellzeit ist je Composition-Frame vorgegeben,
+ * dazwischen linear interpoliert. So folgt der Ton `speed`, `reverse`, `remap`, Schleifen und
+ * verschachtelten Compositions. Die Quelle wird wie ein Band abgespielt: Die Tonhöhe folgt der
+ * Geschwindigkeit (Varispeed), rückwärts läuft der Ton rückwärts.
+ */
+export interface MappedAudioSource {
+  /** Kennung für Fehlermeldungen (z. B. Node-ID). */
+  readonly id: string;
+  /** Datei, die FFmpeg dekodiert (ganz, ohne Tempo-Änderung). Alternativ {@link pcm}. */
+  readonly path?: string;
+  /** Fertiges PCM, z. B. der Mix einer verschachtelten Composition (Abtastrate = Mix-Abtastrate). */
+  readonly pcm?: PcmBuffer;
+  /** Quelle wiederholen: Quellzeit modulo Quelldauer. */
+  readonly loop?: boolean;
+  /** Composition-Frame der ersten Stützstelle. */
+  readonly startFrame: number;
+  /** Quellzeit in Sekunden je Frame ab {@link startFrame}; `NaN` = still (Node inaktiv). */
+  readonly times: readonly number[];
+  /** Linearer Pegel je Frame (Standard 1). */
+  readonly gains?: readonly number[];
+}
+
 /** Eingabe für {@link mixComposition}. */
 export interface MixInput extends FfmpegLocateOptions {
   /** `tracks` der Composition; Untertitelspuren werden übersprungen. */
@@ -45,6 +69,11 @@ export interface MixInput extends FfmpegLocateOptions {
   readonly sampleRate?: number;
   /** Timeout je Dekodier-Aufruf in Millisekunden. */
   readonly timeoutMs?: number;
+  /**
+   * Quellen mit Zeitabbildung (Video-Ton mit `speed`/`reverse`/`remap`, verschachtelte Compositions).
+   * Sie werden mit dem Pan-Gesetz in der Mitte (wie ein Clip ohne `pan`) direkt in die Summe gemischt.
+   */
+  readonly mapped?: readonly MappedAudioSource[];
 }
 
 /** Automationsblock: 1/1000 s. */
@@ -243,6 +272,80 @@ async function renderTrack(track: AudioTrack, trackIndex: number, input: MixInpu
   return out;
 }
 
+/**
+ * Quellzeit an Frame-Position `x` (gebrochen) aus den Stützstellen. Sprünge (Schleifen-Wechsel,
+ * `hold`) werden nicht überblendet: Weicht die nächste Stützstelle stark von der Fortsetzung ab,
+ * wird mit der Steigung des vorigen Frames weitergerechnet.
+ */
+function mappedTime(times: readonly number[], k: number, frac: number, fps: number): number {
+  const a = times[k] ?? Number.NaN;
+  if (!Number.isFinite(a)) return Number.NaN;
+  if (frac === 0) return a;
+  const prev = times[k - 1];
+  const next = times[k + 1];
+  const prevSlope = prev !== undefined && Number.isFinite(prev) ? a - prev : undefined;
+  if (next !== undefined && Number.isFinite(next)) {
+    const slope = next - a;
+    // Ein Sprung ist eine Änderung, die weder zur vorigen Steigung passt noch klein ist.
+    const jump = prevSlope !== undefined ? Math.abs(slope - prevSlope) > 2 / fps + Math.abs(prevSlope) : Math.abs(slope) > 8 / fps;
+    if (!jump) return a + slope * frac;
+  }
+  return a + (prevSlope ?? 1 / fps) * frac;
+}
+
+/** Linearer Pegel an Frame-Position `k + frac`. */
+function mappedGain(gains: readonly number[] | undefined, k: number, frac: number): number {
+  if (gains === undefined) return 1;
+  const a = gains[k] ?? 1;
+  const b = gains[k + 1] ?? a;
+  return a + (b - a) * frac;
+}
+
+async function renderMapped(source: MappedAudioSource, input: MixInput, sr: number, n: number, out: Float32Array[]): Promise<void> {
+  let pcm = source.pcm;
+  if (pcm === undefined) {
+    if (source.path === undefined) {
+      throw audioError('OV_AUDIO_MAPPED_SOURCE', `Mapped audio source "${source.id}" has neither a path nor PCM.`, ['Pass path (a decodable file) or pcm.']);
+    }
+    pcm = await decodeAudio(source.path, {
+      sampleRate: sr,
+      channels: 2,
+      ...(input.ffmpegPath !== undefined ? { ffmpegPath: input.ffmpegPath } : {}),
+      ...(input.ffprobePath !== undefined ? { ffprobePath: input.ffprobePath } : {}),
+      ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+    });
+  }
+  if (pcm.sampleRate !== sr) {
+    throw audioError('OV_AUDIO_MAPPED_SOURCE', `Mapped audio source "${source.id}" has ${String(pcm.sampleRate)} Hz, the mix ${String(sr)} Hz.`, ['Mix nested compositions with the sample rate of the outer mix.']);
+  }
+  const srcL = pcm.channels[0] ?? new Float32Array(0);
+  const srcR = pcm.channels[1] ?? srcL;
+  const len = srcL.length;
+  const [outL, outR] = out;
+  if (len === 0 || outL === undefined || outR === undefined) return;
+  const [gl, gr] = panGains(0);
+  const fps = input.fps;
+  const s0 = Math.max(0, Math.ceil((source.startFrame / fps) * sr));
+  const s1 = Math.min(n, Math.ceil(((source.startFrame + source.times.length) / fps) * sr));
+  for (let i = s0; i < s1; i++) {
+    const x = (i / sr) * fps - source.startFrame;
+    const k = Math.floor(x);
+    const frac = x - k;
+    const u = mappedTime(source.times, k, frac, fps);
+    if (!Number.isFinite(u)) continue;
+    let pos = u * sr;
+    if (source.loop === true) pos = ((pos % len) + len) % len;
+    if (pos < 0 || pos > len - 1) continue;
+    const j = Math.floor(pos);
+    const f = pos - j;
+    const l = (srcL[j] ?? 0) + ((srcL[j + 1] ?? srcL[j] ?? 0) - (srcL[j] ?? 0)) * f;
+    const r = (srcR[j] ?? 0) + ((srcR[j + 1] ?? srcR[j] ?? 0) - (srcR[j] ?? 0)) * f;
+    const g = mappedGain(source.gains, k, frac);
+    outL[i] = (outL[i] ?? 0) + l * g * gl;
+    outR[i] = (outR[i] ?? 0) + r * g * gr;
+  }
+}
+
 /** Reihenfolge, in der Führungsspuren vor den geduckten Spuren fertig sind. */
 function duckingOrder(tracks: readonly AudioTrack[]): AudioTrack[] {
   const byId = new Map(tracks.map((t) => [t.id, t]));
@@ -316,5 +419,6 @@ export async function mixComposition(input: MixInput): Promise<PcmBuffer> {
       for (let i = 0; i < n; i++) dst[i] = (dst[i] ?? 0) + (src[i] ?? 0);
     }
   }
+  for (const source of input.mapped ?? []) await renderMapped(source, input, sr, n, master);
   return { sampleRate: sr, channels: master };
 }

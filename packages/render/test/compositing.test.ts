@@ -177,9 +177,48 @@ describe('Compositing über Backend-Grenzen (Story 17.1)', () => {
     expect(px(image, 60, 30)).toEqual([0, 0, 0, 255]);
   });
 
-  it('meldet Filter an Gruppen, die der Compositor zusammensetzt', async () => {
-    const r = await renderFrame(env, project([{ id: 'g', type: 'group', filters: [{ type: 'blur', radius: 2 }], children: [scene3d()] }]), { frame: 0, useCache: false });
-    expect(r.diagnostics.map((d) => d.code)).toContain('OV_COMPOSITE_UNSUPPORTED');
+  it('wendet filters an Gruppen an, die der Compositor zusammensetzt (Story 17.11)', async () => {
+    const r = await renderFrame(env, project([{ id: 'g', type: 'group', filters: [{ type: 'grayscale', amount: 1 }], children: [scene3d()] }]), { frame: 0, useCache: false });
+    expect(r.diagnostics.map((d) => d.code)).not.toContain('OV_COMPOSITE_UNSUPPORTED');
+    // Rot → Grau (Luma-Gewicht 0,213 in sRGB-Kodierung).
+    const [red, green, blue] = px(r.image, 10, 10);
+    expect(red).toBe(green);
+    expect(green).toBe(blue);
+    expect(red).toBeGreaterThan(50);
+    expect(red).toBeLessThan(60);
+  });
+
+  it('wendet shadow an einer hochgestuften Gruppe an (Story 17.11)', async () => {
+    const image = await render(project([{ id: 'g', type: 'group', x: 10, y: 10, shadow: { color: '#00FF00', offsetX: 20, offsetY: 0 }, children: [scene3d({ width: 40, height: 40 })] }]));
+    expect(px(image, 20, 20)).toEqual([255, 0, 0, 255]);
+    // Schatten rechts neben dem Inhalt: 10 + 40 … 10 + 40 + 20.
+    expect(px(image, 60, 20)).toEqual([0, 255, 0, 255]);
+    expect(px(image, 75, 20)).toEqual([0, 0, 0, 255]);
+  });
+
+  it('filtert eine hochgestufte Gruppe wie Skia die gleiche Gruppe (Story 17.11)', async () => {
+    const filters = [{ type: 'blur', radius: 3 }, { type: 'hue-rotate', degrees: 90 }, { type: 'contrast', amount: 1.4 }];
+    const shadow = { color: '#0000FFAA', blur: 2, offsetX: 6, offsetY: 4 };
+    const rect = { id: 'r', type: 'rect', x: 30, y: 20, width: 50, height: 30, fill: '#FF8800' };
+    // Skia zeichnet die Gruppe selbst; mit einem leeren html-Kind setzt der Compositor sie zusammen.
+    const skia = await render(project([{ id: 'g', type: 'group', x: 5, y: 3, filters, shadow, children: [rect] }]));
+    const composite = await render(project([{ id: 'g', type: 'group', x: 5, y: 3, filters, shadow, children: [rect, { id: 'h', type: 'html', html: '', width: 1, height: 1, background: '#00000000' }] }]));
+    let worst = 0;
+    let sum = 0;
+    for (let i = 0; i < skia.data.length; i++) {
+      const d = Math.abs((skia.data[i] ?? 0) - (composite.data[i] ?? 0));
+      worst = Math.max(worst, d);
+      sum += d;
+    }
+    expect(sum / skia.data.length).toBeLessThan(1);
+    expect(worst).toBeLessThanOrEqual(12);
+  });
+
+  it('wendet filters an scene3d an, auch ohne Gruppe und isoliert (Story 17.11)', async () => {
+    const plain = await render(project([scene3d({ filters: [{ type: 'invert', amount: 1 }] })]));
+    expect(px(plain, 10, 10)).toEqual([0, 255, 255, 255]);
+    const isolated = await render(project([scene3d({ blendMode: 'screen', filters: [{ type: 'invert', amount: 1 }] })]));
+    expect(px(isolated, 10, 10)).toEqual([0, 255, 255, 255]);
   });
 
 });

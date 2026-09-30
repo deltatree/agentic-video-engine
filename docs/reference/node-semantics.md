@@ -54,20 +54,21 @@ Fehlen bei `image`, `video`, `svg`, `sprite` die Maße, gilt die Eigengröße de
 Der Planner (`planFrame`) teilt die Szene in Layer; jedes Backend rendert seine Layer, der Compositor setzt sie zusammen.
 Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Regeln:
 
-- **Gruppen** mit Nachfahren aus mehreren Backends, und Gruppen, deren Kinder ein Backend ohne eigene Gruppen-Unterstützung brauchen (`scene3d`, `html`, `blender`), setzt der Compositor zusammen. Er wendet in dieser Reihenfolge an: Kinder → `colorSpace` (nur `layer`) → `effects` → `crop` → `clip` → Maske → Reveal → Transform → `opacity` → `blendMode`. `filters` und `shadow` einer solchen Gruppe wirken dort nicht (Warnung `OV_COMPOSITE_UNSUPPORTED`; stattdessen `layer.effects` verwenden).
+- **Gruppen** mit Nachfahren aus mehreren Backends, und Gruppen, deren Kinder ein Backend ohne eigene Gruppen-Unterstützung brauchen (`scene3d`, `html`, `blender`), setzt der Compositor zusammen. Er wendet in dieser Reihenfolge an: Kinder → `colorSpace` (nur `layer`) → `effects` → `crop` → `clip` → Maske → `filters` → `shadow` → Reveal → Transform → `opacity` → `blendMode`. `filters` und `shadow` rechnet der Compositor wie das Skia-Backend (Story 17.11): Farbfilter auf nicht vormultiplizierten, sRGB-kodierten Werten, `blur` und Schatten auf vormultiplizierten sRGB-Werten, Längen in lokalen Einheiten (mit der Vorschau-Skalierung bzw. Node-Matrix in Pixel umgerechnet).
 - **Isolierte Nodes:** Eine Node wird isoliert, wenn ihr Backend eine Eigenschaft nicht über die Layer-Grenze anwenden kann:
   - `scene3d`, `html`, `blender` mit `blendMode ≠ normal`, `mask` oder Reveal;
   - 2D-Nodes (Skia, PixiJS) mit `blendMode ≠ normal`, wenn unter ihnen Inhalt außerhalb ihres Layers liegt (ein anderer Layer oder die Hintergrundfarbe der Composition);
   - 2D-Nodes, deren Masken-Node ein anderes Backend braucht.
 
   Das Backend rendert die Node dann ohne diese Eigenschaften (mit Transform und Opacity), der Compositor wendet Reveal, Maske (mit der Node-Matrix transformiert) und Blend Mode auf den fertigen Layer an. Reveal-Kanten werden mit 4 × 4 Stichproben geglättet.
+- **`filters` und `shadow` an `scene3d` und `blender`:** Three.js und Blender zeichnen sie nicht selbst. Der Compositor wendet sie auf den fertigen Layer an (Reihenfolge Maske → `filters` → `shadow` → Reveal), isoliert oder nicht; Blur-Radien skalieren mit √|det| der Node-Matrix, Schatten-Offsets mit ihrem linearen Anteil. 2D-Backends und `html` (CSS) zeichnen sie selbst.
 - Blend Modes innerhalb eines 2D-Layers ohne Hintergrundfarbe rechnet das Backend selbst (Skia/PixiJS).
 
 ### 1.7 Farbräume
 
 - Backends liefern sRGB-kodierte Pixel (1.1). Der Compositor mischt im **Arbeitsfarbraum**: `composition.colorSpace`, sonst `settings.workingColorSpace`, sonst `srgb`. Effekte rechnen immer in linearem Licht.
 - `layer.colorSpace` erklärt, wie die Pixel der Kinder kodiert sind: `linear` (lineares Licht) oder `rec709` (BT.709-OETF). Der Compositor liest sie mit dieser Kodierung statt sRGB und überführt sie in den Arbeitsfarbraum. `srgb` ist der Standard und ändert nichts.
-- `settings.outputColorSpace` kodiert die Ausgabe-Pixel: `srgb` (Standard), `rec709` oder `linear` (lineares Licht in 8 Bit; für Weiterverarbeitung, sichtbar gröbere Abstufung in dunklen Tönen). Der Wert geht in den Frame-Schlüssel ein. Das Video-Tag (`color_trc`) setzt `renderProfile.colorSpace`; beide sollten übereinstimmen.
+- `settings.outputColorSpace` kodiert die Ausgabe-Pixel: `srgb` (Standard), `rec709` oder `linear` (lineares Licht in 8 Bit; für Weiterverarbeitung, sichtbar gröbere Abstufung in dunklen Tönen). Der Wert geht in den Frame-Schlüssel ein. Das Video-Tag (`color_trc`) setzt `renderProfile.colorSpace` (Standard `srgb`); weichen beide ab, warnt der Validator mit `OV_COLORSPACE_MISMATCH`.
 
 ### 1.5 Füllung und Kontur
 
@@ -141,4 +142,4 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 - **camera3d**: `fov` 50, `near` 0.1, `far` 1000, `projection` `perspective`. `target` bestimmt die Blickrichtung, sonst gilt `rotation`.
 - **light3d**: `intensity` 1, `color` `#FFFFFF`.
 - **mesh3d**, **model3d**, **instances3d**, **particles3d**, **group3d**: Position in Metern, Rotation XYZ in Grad.
-- **blender**: wie `scene3d`, gerendert mit Blender.
+- **blender**: wie `scene3d`, gerendert mit Blender. `particles3d` wird als Instanzen übertragen (je lebendes Partikel eine unbeleuchtete Kugel, gleiche Formel wie Three.js). `motionBlur: true`: Der Frame-Render übergibt die Zustände bei ±0,25 Frames (Verschlusszeit ½ Frame); Blender interpoliert Position, Rotation und Skalierung linear dazwischen.

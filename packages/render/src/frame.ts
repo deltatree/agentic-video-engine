@@ -323,7 +323,8 @@ function isolateMatrix(ctx: PlanContext, node: EvaluatedNode): Matrix2D {
 
 /** Isolierte Node: Das Backend hat sie transformiert; der Compositor wendet Reveal, Maske und Blend Mode an. */
 async function buildIsolate(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
-  const childTree = await buildTree(ctx, children);
+  // Filter der Node wendet diese Isolierung an, nicht der Kind-Layer.
+  const childTree = await buildTree(ctx, children, true);
   const mask = await maskOf(ctx, node);
   return {
     kind: 'isolate',
@@ -336,13 +337,13 @@ async function buildIsolate(ctx: PlanContext, node: EvaluatedNode, children: rea
   };
 }
 
-async function buildTree(ctx: PlanContext, plan: readonly LayerPlan[]): Promise<CompositorNode[]> {
+async function buildTree(ctx: PlanContext, plan: readonly LayerPlan[], isolated = false): Promise<CompositorNode[]> {
   const out: CompositorNode[] = [];
   for (const layer of plan) {
     if (layer.kind === 'render') {
       const image: CompositorNode = { kind: 'image', image: await renderLayerCached(ctx, layer.backend, layer.nodes, layer.id) };
       const [only, ...rest] = layer.nodes;
-      if (only !== undefined && rest.length === 0 && FILTERLESS_TYPES.has(only.type) && hasNodeFilters(only.props)) {
+      if (!isolated && only !== undefined && rest.length === 0 && FILTERLESS_TYPES.has(only.type) && hasNodeFilters(only.props)) {
         // scene3d/blender mit filters/shadow: Der Compositor zeichnet sie auf dem fertigen Layer (Story 17.11).
         out.push({ kind: 'isolate', node: only, children: [image], matrix: isolateMatrix(ctx, only), applyFilters: true });
         continue;

@@ -238,6 +238,11 @@ describe('particles3d als Instanzen (Story 17.5)', () => {
     additive: true,
   };
 
+  it('warnt nicht mehr vor filters/shadow (der Compositor wendet sie an, Story 17.11)', () => {
+    const codes = checkBlenderNode({ id: 'b', type: 'blender', width: 10, height: 10, filters: [{ type: 'blur', radius: 2 }], shadow: { color: '#000000' }, children: [] }).map((d) => d.code);
+    expect(codes).not.toContain('OV_BLENDER_IGNORED');
+  });
+
   it('akzeptiert particles3d in check()', () => {
     const result = checkBlenderNode({ id: 'b', type: 'blender', width: 10, height: 10, children: [sparks] });
     expect(result.filter((d) => d.severity === 'error')).toEqual([]);

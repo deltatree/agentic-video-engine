@@ -16,4 +16,8 @@ Nach ADR 0005 rendert jedes Backend seine Layer, der Compositor setzt sie zusamm
 
 ## Folgen
 
-Grenzfälle rendern gleich, egal welches Backend beteiligt ist. Isolierte Nodes kosten einen zusätzlichen Layer und einen Compositor-Durchgang; reine 2D-Szenen ohne Hintergrundfarbe und ohne Blend Modes planen unverändert. Frames mit Blend Modes auf oberster Ebene über einer Hintergrundfarbe oder mit Reveals an Compositor-Gruppen ändern sich (Korrektur). `filters` und `shadow` an hochgestuften Gruppen wirken nicht und werden als `OV_COMPOSITE_UNSUPPORTED` gemeldet.
+Grenzfälle rendern gleich, egal welches Backend beteiligt ist. Isolierte Nodes kosten einen zusätzlichen Layer und einen Compositor-Durchgang; reine 2D-Szenen ohne Hintergrundfarbe und ohne Blend Modes planen unverändert. Frames mit Blend Modes auf oberster Ebene über einer Hintergrundfarbe oder mit Reveals an Compositor-Gruppen ändern sich (Korrektur). `filters` und `shadow` an hochgestuften Gruppen wirkten zunächst nicht (`OV_COMPOSITE_UNSUPPORTED`).
+
+## Nachtrag (Story 17.11)
+
+Der Compositor wendet `filters` und `shadow` an Compositor-Gruppen und an `scene3d`-/`blender`-Layern (isoliert oder nicht) selbst an, mit der Semantik des Skia-Backends (CSS-Farbmatrizen auf nicht vormultiplizierten sRGB-Werten, Blur und Schatten auf vormultiplizierten sRGB-Werten). Reihenfolge: Maske → `filters` → `shadow` → Reveal. `OV_COMPOSITE_UNSUPPORTED` entfällt. Die Compositor-Version im Frame-Schlüssel steigt auf `openvideo-compositor-3`.

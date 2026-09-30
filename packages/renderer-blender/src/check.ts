@@ -57,7 +57,8 @@ function info(code: string, problem: string, nodeId: string, pointer: string, su
  * - `OV_BLENDER_MASK_OBJECT`: `pass: 'object-mask'` ohne gültiges `maskObject`.
  *
  * Warnungen und Hinweise:
- * - `OV_BLENDER_IGNORED` (Warnung): `filters`, `shadow` oder `toneMapping` wirken nicht.
+ * - `OV_BLENDER_IGNORED` (Warnung): `toneMapping` wirkt nicht. (`filters` und `shadow` wendet
+ *   der Compositor auf den fertigen Layer an.)
  * - `OV_BLENDER_APPROXIMATED` (Hinweis): `ambient`/`hemisphere`-Licht und `environment.preset`
  *   werden über das Weltlicht genähert.
  *
@@ -114,11 +115,7 @@ export function checkBlenderNode(node: Readonly<Record<string, unknown>>): Diagn
   if (node['postprocessing'] !== undefined) {
     out.push(unsupported('postprocessing is not available in the Blender renderer.', sceneId, '/postprocessing', [USE_THREE, 'Use layer effects (effects on a layer node) for bloom-like looks.']));
   }
-  for (const key of ['filters', 'shadow'] as const) {
-    if (node[key] !== undefined) {
-      out.push(info('OV_BLENDER_IGNORED', `${key} on a blender node has no effect.`, sceneId, `/${key}`, [`Remove ${key}, or wrap the blender node in a layer and use layer effects.`], 'warning'));
-    }
-  }
+  // filters und shadow wendet der Compositor auf den fertigen Layer an (Story 17.11).
   const toneMapping = node['toneMapping'];
   if (toneMapping !== undefined && toneMapping !== 'none') {
     out.push(info('OV_BLENDER_IGNORED', 'toneMapping has no effect; Blender output uses the "Standard" view transform.', sceneId, '/toneMapping', ['Remove toneMapping.', 'Use a color-grade layer effect.'], 'warning'));
