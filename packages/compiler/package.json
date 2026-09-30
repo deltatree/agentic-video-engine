@@ -34,6 +34,6 @@
     "@agentic-video/sandbox": "0.1.0",
     "@agentic-video/sdk": "0.1.0",
     "esbuild": "^0.28.2",
-    "typescript": "6.0.3"
+    "typescript": "7.0.2"
   }
 }
