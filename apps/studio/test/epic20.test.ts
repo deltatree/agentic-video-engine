@@ -190,16 +190,31 @@ describe('Story 20.1: Live-Sync', () => {
     expect(t.reported).toBe('y');
   });
 
-  it('subscribeRevisions: wachsende Wartezeit bei sofort endenden Strömen, Rücksetzen erst nach einem Ereignis, Ende mit stop()', async () => {
+  it('subscribeRevisions: wachsende Wartezeit bei sofort endenden Strömen (mit Anfangsstand wie der echte Server), Rücksetzen erst nach einem weiteren Ereignis, Ende mit stop()', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('window', { location: { hash: '', search: '', pathname: '/' }, history: { replaceState: () => undefined } });
     vi.stubGlobal('sessionStorage', { getItem: () => null, setItem: () => undefined });
     const starts: number[] = [];
-    let withEvent = false;
+    let mode: 'initial' | 'change' | 'long' = 'initial';
+    // Wie packages/agent/src/server.ts: jede Verbindung beginnt mit `retry` und dem aktuellen Stand.
+    const initial = 'retry: 2000\n\nevent: revision\ndata: {"projectId":"demo","revision":"r0"}\n\n';
     vi.stubGlobal('fetch', () => {
       starts.push(Date.now());
-      const text = withEvent ? 'event: revision\ndata: {"revision":"r1"}\n\n' : 'retry: 2000\n\n';
-      withEvent = false;
+      const current = mode;
+      mode = 'initial';
+      if (current === 'long') {
+        // Offen, bis `maxDelayMs` vergangen ist; dann endet der Strom ohne weiteres Ereignis.
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode(initial));
+            setTimeout(() => {
+              controller.close();
+            }, 400);
+          },
+        });
+        return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }));
+      }
+      const text = current === 'change' ? `${initial}event: revision\ndata: {"projectId":"demo","revision":"r1"}\n\n` : initial;
       return Promise.resolve(new Response(text, { headers: { 'content-type': 'text/event-stream' } }));
     });
     const revisions: string[] = [];
@@ -208,17 +223,28 @@ describe('Story 20.1: Live-Sync', () => {
       const t0 = Date.now();
       const stop = subscribeRevisions('demo', (r) => revisions.push(r), (st) => states.push(st), { minDelayMs: 100, maxDelayMs: 400 });
       await vi.advanceTimersByTimeAsync(100 + 200 + 400 + 400 - 1);
-      // Verbindet sofort, dann nach 100, 200, 400, 400 ms (gedeckelt) – kein Sekundentakt-Rücksetzen.
+      // Nur der Anfangsstand: Verbindet sofort, dann nach 100, 200, 400, 400 ms (gedeckelt) – kein Sekundentakt-Rücksetzen.
       expect(starts.map((x) => x - t0)).toEqual([0, 100, 300, 700]);
-      withEvent = true;
+      expect(revisions.every((r) => r === 'r0')).toBe(true);
+      mode = 'change';
       await vi.advanceTimersByTimeAsync(1);
-      expect(revisions).toEqual(['r1']);
-      // Diese Verbindung trug ein Ereignis: die nächste Wartezeit beginnt wieder bei 100 ms.
+      expect(revisions.at(-1)).toBe('r1');
+      // Diese Verbindung trug ein Ereignis nach dem Anfangsstand: die nächste Wartezeit beginnt wieder bei 100 ms.
       await vi.advanceTimersByTimeAsync(100);
       expect(starts.map((x) => x - t0)).toEqual([0, 100, 300, 700, 1100, 1200]);
+      // Wieder nur Anfangsstände: 200, 400 …
+      await vi.advanceTimersByTimeAsync(200);
+      expect(starts.map((x) => x - t0)).toEqual([0, 100, 300, 700, 1100, 1200, 1400]);
+      // Eine Verbindung, die `maxDelayMs` offen war, setzt ebenfalls zurück.
+      mode = 'long';
+      await vi.advanceTimersByTimeAsync(400);
+      expect(starts).toHaveLength(8);
+      await vi.advanceTimersByTimeAsync(400 + 100);
+      expect(starts.map((x) => x - t0).at(-1)).toBe(1800 + 400 + 100);
       stop();
+      const count = starts.length;
       await vi.advanceTimersByTimeAsync(10_000);
-      expect(starts).toHaveLength(6);
+      expect(starts).toHaveLength(count);
       expect(states).toContain('live');
       expect(states.at(-1)).toBe('offline');
     } finally {

@@ -229,6 +229,12 @@ function writeStorage(storage: 'local' | 'session', key: string, value: string):
 export interface StudioOptions {
   /** Monotone Uhr in Millisekunden für das Zusammenfassen von Undo-Schritten (Standard `performance.now`). */
   readonly now?: () => number;
+  /**
+   * Wartezeiten, wenn das Nachlesen von `project.json` nach einer gemeldeten Revision scheitert
+   * (Review M4): erster erneuter Versuch nach `minMs` (Standard 1000), dann verdoppelt bis `maxMs`
+   * (Standard 30 000).
+   */
+  readonly recheckDelay?: { readonly minMs?: number; readonly maxMs?: number };
 }
 
 /**
@@ -263,6 +269,11 @@ export class Studio {
 
   /** Uhr für das Zusammenfassen von Undo-Schritten (Millisekunden, monoton). */
   private readonly now: () => number;
+  /** Erneute Prüfung nach gescheitertem Nachlesen (Review M4); solange gesetzt, prüft nur dieser Timer. */
+  private recheckTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly recheckMin: number;
+  private readonly recheckMax: number;
+  private recheckDelay: number;
 
   /**
    * @param projectId Projekt, das das Studio bearbeitet.
@@ -271,6 +282,9 @@ export class Studio {
    */
   constructor(projectId: string, options: StudioOptions = {}) {
     this.now = options.now ?? (() => performance.now());
+    this.recheckMin = Math.max(1, options.recheckDelay?.minMs ?? 1000);
+    this.recheckMax = Math.max(this.recheckMin, options.recheckDelay?.maxMs ?? 30_000);
+    this.recheckDelay = this.recheckMin;
     this.state = {
       projectId,
       status: 'loading',
@@ -407,6 +421,8 @@ export class Studio {
     this.audio.stop();
     if (this.jobTimer !== undefined) clearInterval(this.jobTimer);
     this.jobTimer = undefined;
+    if (this.recheckTimer !== undefined) clearTimeout(this.recheckTimer);
+    this.recheckTimer = undefined;
   }
 
   /** Lädt alles nach einer Änderung neu. */
@@ -452,18 +468,39 @@ export class Studio {
    * die Datei aber nicht. Nur wenn die Datei selbst abweicht, ist es eine Fremdänderung.
    */
   private checkForeignChange(): Promise<void> {
+    // Wartet ein verzögerter Versuch (Nachlesen scheiterte), prüft nur er – nie im Mikrotask-Takt (Review M4).
+    if (this.recheckTimer !== undefined) return Promise.resolve();
     return this.write(async () => {
       const reported = this.revisions.reported;
       if (reported === undefined || reported === this.revisions.current) {
         this.revisions.acknowledge(reported);
         return;
       }
-      const file = await fetchTextWithRevision(this.state.projectId, 'project.json');
+      let file: Awaited<ReturnType<typeof fetchTextWithRevision>>;
+      try {
+        file = await fetchTextWithRevision(this.state.projectId, 'project.json');
+      } catch (error) {
+        // Die Meldung bleibt vorgemerkt; erneut prüfen mit wachsender Wartezeit (1 s … 30 s).
+        this.scheduleRecheck();
+        throw error;
+      }
+      this.recheckDelay = this.recheckMin;
       // Alles bis zu `reported` ist mit diesem Lesen geprüft; neuere Meldungen bleiben vorgemerkt.
       this.revisions.acknowledge(reported);
       if (file.revision !== undefined && file.revision === this.revisions.current) return;
       await this.applyForeignChange();
     }, undefined);
+  }
+
+  /** Plant die nächste Prüfung nach gescheitertem Nachlesen; `dispose` bricht sie ab. */
+  private scheduleRecheck(): void {
+    if (this.disposed || this.recheckTimer !== undefined) return;
+    const delay = this.recheckDelay;
+    this.recheckDelay = Math.min(this.recheckMax, delay * 2);
+    this.recheckTimer = setTimeout(() => {
+      this.recheckTimer = undefined;
+      if (!this.disposed && this.revisions.pending()) void this.checkForeignChange();
+    }, delay);
   }
 
   /**

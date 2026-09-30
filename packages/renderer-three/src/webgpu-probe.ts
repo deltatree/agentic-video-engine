@@ -21,6 +21,13 @@ export interface WebGPUProbe {
    * `no adapter` oder `<adapter> (unusable: <Grund>)`, wenn der Mini-Render scheitert.
    */
   readonly adapter: string;
+  /**
+   * Ist das Ergebnis stabil und darf gespeichert werden (Review M3)? `true` bei Erfolg, fehlender
+   * API und unvollständiger API (`TypeError` aus der WebIDL-Prüfung, Validierungsfehler des
+   * Deskriptors). `false` bei vorübergehenden Fehlern: kein Adapter (`null`), `OperationError`,
+   * verlorenes Gerät, falsch zurückgelesene Pixel – dann wird beim nächsten Start neu geprüft.
+   */
+  readonly stable: boolean;
 }
 
 /**
@@ -34,15 +41,17 @@ export interface WebGPUProbe {
 export async function probeWebGPU(): Promise<WebGPUProbe> {
   const isGpu = (value: unknown): value is GPU => typeof value === 'object' && value !== null && 'requestAdapter' in value && typeof value.requestAdapter === 'function';
   const gpu: unknown = Reflect.get(navigator, 'gpu');
-  if (!isGpu(gpu)) return { available: false, adapter: 'unavailable' };
-  let adapter: GPUAdapter | null = null;
+  if (!isGpu(gpu)) return { available: false, adapter: 'unavailable', stable: true };
+  let adapter: GPUAdapter | null;
   try {
     adapter = await gpu.requestAdapter();
   } catch (error) {
-    // Ein Fehler beim Anfordern heißt: kein WebGPU.
+    // Ein Fehler beim Anfordern heißt: jetzt kein WebGPU (vorübergehend, nicht speichern).
     if (!(error instanceof Error)) throw error;
+    return { available: false, adapter: `no adapter (${error.name}: ${error.message})`, stable: false };
   }
-  if (adapter === null) return { available: false, adapter: 'no adapter' };
+  // Ohne Adapter (z. B. GPU-Prozess gerade abgestürzt): vorübergehend, nicht speichern.
+  if (adapter === null) return { available: false, adapter: 'no adapter', stable: false };
   const info: unknown = Reflect.get(adapter, 'info');
   const field = (k: string): string => (typeof info === 'object' && info !== null ? String(Reflect.get(info, k) ?? '') : '');
   const name = `${field('vendor')} ${field('architecture')}`.trim() || 'adapter';
@@ -64,16 +73,18 @@ export async function probeWebGPU(): Promise<WebGPUProbe> {
     encoder.copyTextureToBuffer({ texture }, { buffer, bytesPerRow: 256 }, [4, 4]);
     device.queue.submit([encoder.finish()]);
     const validation = await device.popErrorScope();
-    if (validation !== null) return { available: false, adapter: `${name} (unusable: ${validation.message})` };
+    // Validierungsfehler des Deskriptors von Three.js: API unvollständig (stabil).
+    if (validation !== null) return { available: false, adapter: `${name} (unusable: ${validation.message})`, stable: true };
     await buffer.mapAsync(0x1); // GPUMapMode.READ
     const pixel = Array.from(new Uint8Array(buffer.getMappedRange(0, 4)));
     buffer.unmap();
     const ok = pixel[0] === 255 && pixel[1] === 0 && pixel[2] === 0 && pixel[3] === 255;
-    return ok ? { available: true, adapter: name } : { available: false, adapter: `${name} (unusable: read back ${pixel.join(',')} instead of 255,0,0,255)` };
+    return ok ? { available: true, adapter: name, stable: true } : { available: false, adapter: `${name} (unusable: read back ${pixel.join(',')} instead of 255,0,0,255)`, stable: false };
   } catch (error) {
-    // TypeError aus der WebIDL-Prüfung (z. B. `swizzle`) oder ein verlorenes Gerät: WebGPU ist nicht nutzbar.
+    // TypeError aus der WebIDL-Prüfung (z. B. `swizzle`): API unvollständig (stabil). Alles andere
+    // (OperationError, verlorenes Gerät, AbortError …) ist vorübergehend.
     if (!(error instanceof Error)) throw error;
-    return { available: false, adapter: `${name} (unusable: ${error.name}: ${error.message})` };
+    return { available: false, adapter: `${name} (unusable: ${error.name}: ${error.message})`, stable: error.name === 'TypeError' };
   } finally {
     device?.destroy();
   }

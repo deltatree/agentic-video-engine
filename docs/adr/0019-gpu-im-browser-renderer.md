@@ -25,3 +25,11 @@ SwiftShader rechnet auf jeder Maschine gleich; Frames sind bitgleich und Golden-
 - Projekte mit `scene3d` zahlen einen Browserstart beim Anlegen der Umgebung nur, solange die Grafik-Probe für diese Chromium-Version und Schalter nicht im Cache liegt (Politur P1). Ihre Schlüssel bleiben ehrlich und stabil.
 - Ohne eigenen Chromium-Pfad steht die zu playwright-core gehörende Version im Schlüssel (unverändert); mit `OPENVIDEO_CHROMIUM` die tatsächliche Version aus `chrome --version` (einmal je Pfad, ohne Browserstart), sonst ein Fingerabdruck der Programmdatei.
 - Worker-Prozesse lesen nur `OPENVIDEO_BROWSER_GPU`; die programmatische Option gilt nur im eigenen Prozess.
+
+## Nachtrag 2026-09-30 (abschließendes Review, M3)
+
+Die Grafik-Probe stand im Schlüssel, die Render-Seite entschied `backend: 'auto'` und die Texturgrenze aber live. Eine gespeicherte Fehl-Probe (z. B. ein verlorenes Gerät beim ersten Start) galt außerdem dauerhaft.
+
+- **Host → Seite:** Der Host gibt jedem `three`-Layer das Probe-Ergebnis mit, das im Schlüssel steht (`BrowserLayerPayload.graphics`: `webgpu`, `maxTextureSize`). `ThreeLayerRenderer` entscheidet `auto` dann danach (`input.graphics`) und nutzt für WebGL2 genau die Texturgrenze der Probe (`threeTextureLimit`). Kann die GPU weniger als die Probe sagt, meldet der Renderer `OV_THREE_GRAPHICS_MISMATCH` statt still anders zu rendern. Ohne Probe (Studio, direkte Nutzung) prüft der Renderer wie bisher live. Das träge `three`-Backend holt die Probe vor dem ersten Layer nach, und `env.prepare` holt sie für Projekte nach, die erst später `scene3d` enthalten.
+- **Nur Stabiles speichern:** `probeWebGPU` meldet `stable`. Stabil sind Erfolg, fehlende API und unvollständige API (`TypeError` der WebIDL-Prüfung, Validierungsfehler des Deskriptors). Vorübergehend sind kein Adapter (`null` oder Fehler beim Anfordern), `OperationError`, verlorenes Gerät, falsch zurückgelesene Pixel und ein fehlender WebGL2-Kontext (`MAX_TEXTURE_SIZE` 0). Vorübergehende Ergebnisse gelten nur für die laufende Umgebung (Schlüssel und Seite stimmen überein) und werden nicht gespeichert; der nächste Start prüft neu.
+- **Versionspräfix:** Gespeicherte Proben tragen `v: 3`, der Schlüssel `openvideo-graphics-probe-3`. Ältere Einträge (auch mögliche Fehl-Proben) sind Fehlgriffe.

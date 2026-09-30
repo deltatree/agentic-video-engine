@@ -4,7 +4,7 @@
  */
 import { OpenVideoError } from '@agentic-video/core';
 import { ThreeAssets } from './assets.js';
-import { requiresWebGL2, threeBackendFor } from './check.js';
+import { requiresWebGL2, threeBackendFor, threeTextureLimit } from './check.js';
 import { buildScene, outputSize, wantsAntialias, type ThreeLayerInput } from './scene.js';
 import { WebGLBackend } from './webgl.js';
 import { WebGPUBackend, webgpuAvailable } from './webgpu.js';
@@ -21,7 +21,8 @@ type Backend = WebGLBackend | WebGPUBackend;
  *   und kein `requestAnimationFrame`. Die Szene wird pro Aufruf neu aufgebaut, daher hängt
  *   Frame n nie von Frame n−1 ab.
  * - Backend: Node-Property `backend`, sonst `preferredBackend` des Konstruktors. `auto` nutzt
- *   WebGPU, außer die Szene braucht WebGL2 (GLSL-Shader) oder WebGPU fehlt.
+ *   WebGPU, außer die Szene braucht WebGL2 (GLSL-Shader) oder WebGPU fehlt. Mit `input.graphics`
+ *   (Probe des Hosts, steht im Cache-Schlüssel) entscheidet dieses Ergebnis statt einer Live-Prüfung.
  * - Bildtexturen werden gegen das GPU-Maximum geprüft (`OV_THREE_TEXTURE_TOO_LARGE`); mit
  *   `textureDownscale` (Node) bzw. `downscaleTextures` (Option) werden sie verkleinert.
  * - Ergebnis: ein neues 2D-Canvas `width·scale × height·scale`, transparent ohne `background`.
@@ -76,8 +77,8 @@ export class ThreeLayerRenderer {
     const antialias = wantsAntialias(input.node);
     const backend = await this.backend(kind, antialias);
     const prop = input.node.props['textureDownscale'];
-    const gpuMax = backend.maxTextureSize;
-    const textureLimit = { maxSize: this.maxTextureSize === undefined ? gpuMax : Math.min(gpuMax, this.maxTextureSize), downscale: typeof prop === 'boolean' ? prop : this.downscaleTextures };
+    // Mit Probe-Ergebnis gilt dessen Grenze (Review M3), sonst die live gemessene.
+    const textureLimit = { maxSize: threeTextureLimit(kind, backend.maxTextureSize, input.graphics?.maxTextureSize, this.maxTextureSize), downscale: typeof prop === 'boolean' ? prop : this.downscaleTextures };
     const built = await buildScene(input, this.assets, (preset) => backend.presetEnvironment(preset), textureLimit);
     const { width, height } = outputSize(input);
     const canvas = document.createElement('canvas');
@@ -114,6 +115,8 @@ export class ThreeLayerRenderer {
     }
     // `auto`: dieselbe reine Regel wie Manifest und Cache-Schlüssel (threeBackendFor, Story 21.5).
     if (requiresWebGL2({ children: input.node.children.map(toRaw) })) return 'webgl2';
+    // Mit Probe-Ergebnis des Hosts entscheidet genau das, was im Schlüssel steht – nie live (Review M3).
+    if (input.graphics !== undefined) return threeBackendFor({ backend: 'auto', children: [] }, input.graphics.webgpu);
     this.webgpuOk ??= webgpuAvailable();
     return threeBackendFor({ backend: 'auto', children: [] }, await this.webgpuOk);
   }

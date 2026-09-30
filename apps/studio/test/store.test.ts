@@ -38,6 +38,8 @@ let services: LocalServices;
 let server: AgentServer;
 let studio: Studio | undefined;
 let count = 0;
+/** Nachlesen von project.json scheitern lassen (Review M4): synchron geworfen oder abgelehnt. */
+const fileFetch: { failure: 'none' | 'sync' | 'async'; reads: number } = { failure: 'none', reads: 0 };
 
 async function api(operation: string, input: Json): Promise<Json> {
   const r = await fetch(`${server.url}/v1/${operation}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input) });
@@ -70,6 +72,11 @@ beforeAll(async () => {
         },
       });
       return Promise.resolve(new Response(body, { headers: { 'content-type': 'text/event-stream' } }));
+    }
+    if (typeof input === 'string' && input.startsWith('/v1/files/') && input.endsWith('/project.json')) {
+      fileFetch.reads++;
+      if (fileFetch.failure === 'sync') throw new TypeError('Failed to fetch');
+      if (fileFetch.failure === 'async') return Promise.reject(new TypeError('Failed to fetch'));
     }
     return realFetch(typeof input === 'string' && input.startsWith('/') ? `${server.url}${input}` : input, init);
   });
@@ -228,4 +235,42 @@ describe('Studio-Store', () => {
     s().setResolution(0.25);
     expect(s().renderScale()).toBe(0.25);
   });
+
+  it('scheitert das Nachlesen nach einer Revision, wird mit wachsender Wartezeit erneut geprüft, nie im Mikrotask-Takt (Review M4)', async () => {
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+    for (const failure of ['sync', 'async'] as const) {
+      const st = new Studio(projectId, { recheckDelay: { minMs: 40, maxMs: 160 } });
+      await st.load();
+      try {
+        fileFetch.reads = 0;
+        fileFetch.failure = failure;
+        st.onRemoteRevision('foreign-revision');
+        await wait(20);
+        // Ohne Backoff: hunderte Anfragen in dieser Zeit (PoC: 316 in 500 ms).
+        expect(fileFetch.reads).toBe(1);
+        expect(st.getState().message?.kind).toBe('error');
+        // Wartezeiten 40, 80, 160, 160 …: in 500 ms höchstens eine Handvoll Versuche.
+        await wait(500);
+        expect(fileFetch.reads).toBeGreaterThanOrEqual(3);
+        expect(fileFetch.reads).toBeLessThanOrEqual(6);
+        // Der Endpunkt ist wieder da: die nächste Prüfung gelingt (gleiche Datei → kein Neuladen), dann Ruhe.
+        fileFetch.failure = 'none';
+        await wait(250);
+        const settled = fileFetch.reads;
+        await wait(300);
+        expect(fileFetch.reads).toBe(settled);
+        // dispose bricht einen wartenden Versuch ab.
+        fileFetch.failure = failure;
+        st.onRemoteRevision('another-revision');
+        await wait(10);
+        const before = fileFetch.reads;
+        st.dispose();
+        await wait(300);
+        expect(fileFetch.reads).toBe(before);
+      } finally {
+        fileFetch.failure = 'none';
+        st.dispose();
+      }
+    }
+  }, 30_000);
 });

@@ -43,6 +43,8 @@ export async function renderThreeLayer(payload: BrowserLayerPayload, frameUrl: s
     seed: payload.seed,
     assetUrl,
     ...(payload.debug === undefined ? {} : { debug: payload.debug }),
+    // Probe des Hosts (steht im Cache-Schlüssel): keine Live-Entscheidung in der Seite (Review M3).
+    ...(payload.graphics === undefined ? {} : { graphics: payload.graphics }),
   });
   await sendCanvas(canvas, payload.width, payload.height, frameUrl, { matrix: outputMatrix(node, payload.scale), width, height, node });
 }

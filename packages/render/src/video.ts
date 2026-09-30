@@ -490,10 +490,9 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
   const wanted = (options.reuseOutput ?? outputCacheFromEnv()) && !options.profile.format.endsWith('-sequence');
   const runner = wanted ? chunkRunnerFingerprint(options.runChunks) : null;
   const hardwareEncoders = runner === null ? undefined : encoderSettings.hardware === 'none' ? null : await media.hardwareEncoders?.();
-  const audioHash = audio === undefined ? null : (await fileHash(audio.path)).hash;
   const key =
     runner !== null && hardwareEncoders !== undefined
-      ? await stage('outputKey', () => Promise.resolve(outputKey(env, project, { compositionId, range, count: outCount, step: out.step, scale: out.scale, encoder: encoderSettings, hardwareEncoders, audioHash, runner })))
+      ? await stage('outputKey', async () => outputKey(env, project, { compositionId, range, count: outCount, step: out.step, scale: out.scale, encoder: encoderSettings, hardwareEncoders, audioHash: audio === undefined ? null : (await fileHash(audio.path)).hash, runner }))
       : undefined;
   const cachedOutput = key !== undefined ? await stage('outputCache', () => restoreOutput(env, key, options.outPath)) : undefined;
   const encodeFresh = async (): Promise<Produced> => {

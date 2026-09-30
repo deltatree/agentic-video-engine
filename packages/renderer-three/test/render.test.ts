@@ -117,6 +117,30 @@ describe('Texturgrenzen (Story 21.7, Auftrag §40)', () => {
   });
 });
 
+describe('Grafik-Probe des Hosts statt Live-Entscheidung (Review M3)', () => {
+  type HintResult = { ok: boolean; backend?: string; diagnostic?: { code?: string; details?: Record<string, unknown> } };
+  const withGraphics = (webgpu: boolean, maxTextureSize: number): Promise<HintResult> =>
+    page.evaluate(([w, m]) => (window as unknown as { ovRenderWithGraphics: (w: boolean, m: number) => Promise<HintResult> }).ovRenderWithGraphics(w, m), [webgpu, maxTextureSize] as const);
+
+  it('nutzt die Texturgrenze der Probe (WebGL2), nicht die live gemessene', async () => {
+    // Live erlaubt die GPU 8192 px; die Probe im Schlüssel sagt 32 px: Die 64-px-Textur ist zu groß.
+    const result = await withGraphics(false, 32);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.code).toBe('OV_THREE_TEXTURE_TOO_LARGE');
+    expect(result.diagnostic?.details?.['GPU maximum']).toBe('32 × 32');
+  });
+
+  it('wählt bei auto WebGL2, wenn die Probe WebGPU als nicht verfügbar meldet', async () => {
+    expect(await withGraphics(false, 8192)).toEqual({ ok: true, backend: 'webgl2' });
+  });
+
+  it('meldet eine Probe, die mehr verspricht als die GPU kann, als OV_THREE_GRAPHICS_MISMATCH', async () => {
+    const result = await withGraphics(false, 1 << 20);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.code).toBe('OV_THREE_GRAPHICS_MISMATCH');
+  });
+});
+
 describe('Determinismus', () => {
   it('Animation Clip bei Frame n in frischem Browser gleich wie nach Frames 0..n', async () => {
     const n = 20;

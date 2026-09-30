@@ -24,7 +24,19 @@ export interface BrowserBackends {
   readonly pixi: RenderBackend;
 }
 
-function toPayload(request: LayerRequest): BrowserLayerPayload {
+/** Grafik-Probe für `three`-Layer (siehe {@link BrowserLayerPayload.graphics}). */
+export type ThreeGraphicsSource = () => BrowserLayerPayload['graphics'];
+
+/** Optionen für {@link createBrowserBackends}. */
+export interface BrowserBackendsOptions extends BrowserHostOptions {
+  /**
+   * Liefert das Probe-Ergebnis, das im Cache-Schlüssel steht (Review M3); es geht mit jedem
+   * `three`-Layer an die Seite. Ohne Angabe entscheidet die Seite live.
+   */
+  readonly threeGraphics?: ThreeGraphicsSource;
+}
+
+function toPayload(request: LayerRequest, graphics?: BrowserLayerPayload['graphics']): BrowserLayerPayload {
   const debug = request.debug === undefined ? undefined : { ...(request.debug.showCameraFrustum === undefined ? {} : { showCameraFrustum: request.debug.showCameraFrustum }), ...(request.debug.showLightHelpers === undefined ? {} : { showLightHelpers: request.debug.showLightHelpers }) };
   return {
     nodes: request.nodes,
@@ -38,6 +50,7 @@ function toPayload(request: LayerRequest): BrowserLayerPayload {
     compositionWidth: request.scene.width,
     compositionHeight: request.scene.height,
     ...(debug === undefined ? {} : { debug }),
+    ...(graphics === undefined ? {} : { graphics }),
   };
 }
 
@@ -51,8 +64,9 @@ function toPayload(request: LayerRequest): BrowserLayerPayload {
  * registry.registerBackend(browser);
  * ```
  */
-export async function createBrowserBackends(options: BrowserHostOptions): Promise<BrowserBackends> {
-  const host = await createBrowserHost(options);
+export async function createBrowserBackends(options: BrowserBackendsOptions): Promise<BrowserBackends> {
+  const { threeGraphics, ...hostOptions } = options;
+  const host = await createBrowserHost(hostOptions);
   let holders = 3;
   const make = (
     id: string,
@@ -73,6 +87,8 @@ export async function createBrowserBackends(options: BrowserHostOptions): Promis
         const all = host.versions();
         const out: Record<string, string> = { chromium: all['chromium'] ?? 'unknown' };
         if (library !== undefined) out[library] = all[library] ?? 'unknown';
+        // Freigegebene HTML-Skripte ändern die Pixel: eigener Schlüssel, nur wenn gesetzt (Review m2).
+        if (kind === 'html' && options.allowHtmlScripts === true) out['html-scripts'] = 'allowed';
         return out;
       },
       check,
@@ -87,7 +103,7 @@ export async function createBrowserBackends(options: BrowserHostOptions): Promis
           }
         }
         try {
-          return await host.render(kind, toPayload(request));
+          return await host.render(kind, toPayload(request, kind === 'three' ? threeGraphics?.() : undefined));
         } catch (error) {
           // Fehler der Seite kommen als Text; die Diagnose darin wird wieder ein OpenVideoError (Story 21.7).
           throw hostLayerError(error, kind, request.nodes.map((n) => n.id));

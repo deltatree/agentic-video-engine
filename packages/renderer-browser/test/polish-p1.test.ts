@@ -87,7 +87,8 @@ describe('Grafik-Probe aus dem Speicher (Politur P1)', () => {
     const store: GraphicsProbeStore = {
       get: (key) => {
         keys.push(key);
-        return Promise.resolve(new TextEncoder().encode(JSON.stringify(info)));
+        // Gespeichert mit Versionspräfix (Review M3); gelesen gilt es als stabil.
+        return Promise.resolve(new TextEncoder().encode(JSON.stringify({ v: 3, ...info })));
       },
       put: () => Promise.reject(new Error('must not write on a hit')),
     };
@@ -95,7 +96,7 @@ describe('Grafik-Probe aus dem Speicher (Politur P1)', () => {
     const all = [make(true, 'NVIDIA A10G (23028 MiB)'), make(true, 'NVIDIA L4 (23034 MiB)'), make(false)];
     try {
       for (const lazy of all) {
-        expect(await lazy.prepareGraphics()).toEqual(info);
+        expect(await lazy.prepareGraphics()).toEqual({ ...info, stable: true });
         expect(lazy.started()).toBe(false);
         expect(lazy.three.versions()['three-webgpu']).toBe('available');
         expect(lazy.three.versions()['three-max-texture']).toBe('16384');

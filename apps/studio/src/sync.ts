@@ -116,9 +116,12 @@ export interface ReconnectOptions {
 
 /**
  * Abonniert `/v1/events` und meldet Revisionen; bricht die Verbindung ab, wird mit wachsender
- * Wartezeit (1 s … 15 s) neu verbunden. Die Wartezeit fällt erst zurück, wenn eine Verbindung ein
- * Ereignis geliefert hat – ein Server, der Ströme sofort wieder schließt, erzeugt so keine
- * Sekundentakt-Schleife. Die zurückgegebene Funktion beendet Strom und Wiederverbindung endgültig.
+ * Wartezeit (1 s … 15 s) neu verbunden. Der Server schickt bei jeder Verbindung zuerst den
+ * aktuellen Stand; dieses Anfangsereignis zählt nicht. Die Wartezeit fällt erst zurück, wenn eine
+ * Verbindung danach ein weiteres Ereignis geliefert hat oder mindestens `maxDelayMs` offen war –
+ * ein Server, der Ströme nach dem Anfangsstand sofort wieder schließt, erzeugt so keine
+ * Sekundentakt-Schleife (Review m5). Die zurückgegebene Funktion beendet Strom und Wiederverbindung
+ * endgültig.
  *
  * @example
  * ```ts
@@ -139,6 +142,8 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
     if (isStopped()) return;
     controller = new AbortController();
     onState('connecting');
+    let events = 0;
+    let openedAt: number | undefined;
     try {
       const response = await fetch(`/v1/events?projectId=${encodeURIComponent(projectId)}`, { headers: { accept: 'text/event-stream', ...authHeaders() }, signal: controller.signal, cache: 'no-store' });
       const body = response.body;
@@ -151,6 +156,7 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
         return;
       }
       onState('live');
+      openedAt = Date.now();
       for (;;) {
         const chunk = await reader.read();
         if (chunk.done || isStopped()) break;
@@ -161,8 +167,7 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
           if (e.event !== 'revision') continue;
           const data: unknown = JSON.parse(e.data);
           if (typeof data === 'object' && data !== null && 'revision' in data && typeof data.revision === 'string') {
-            // Die Verbindung trägt: nach dem nächsten Abbruch wieder mit kurzer Wartezeit beginnen.
-            retry = minDelay;
+            events++;
             onRevision(data.revision);
           }
         }
@@ -173,6 +178,8 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
     }
     if (isStopped()) return;
     onState('offline');
+    // Die Verbindung trug (mehr als den Anfangsstand oder lange genug): wieder kurz warten.
+    if (events > 1 || (openedAt !== undefined && Date.now() - openedAt >= maxDelay)) retry = minDelay;
     timer = setTimeout(() => {
       timer = undefined;
       void connect();

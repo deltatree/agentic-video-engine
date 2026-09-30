@@ -8,7 +8,7 @@ import { JobManager, Workspace, type AgentServices, type SourceService, type Tem
 import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
 import { OpenVideoError, contentHash, isRecord } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
-import { OPENVIDEO_VERSION, createNodeEnvironment, renderChunk, type BackendProvider, type ChunkResult, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
+import { OPENVIDEO_VERSION, createNodeEnvironment, describeChunkRunner, renderChunk, type BackendProvider, type ChunkResult, type ChunkRunner, type NodeEnvironment, type NodeEnvironmentOptions, type RenderEnvironment } from '@agentic-video/render';
 import { createDockerChunkRunner, createProcessChunkRunner, createRemoteChunkRunner, defaultWorkerCount } from '@agentic-video/scheduler';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 import { createTemplateCatalog } from '@agentic-video/templates';
@@ -349,6 +349,8 @@ function projectDirOf(env: RenderEnvironment): string {
 /**
  * Chunk-Runner mit Pull-Workern am Koordinator (`OPENVIDEO_COORDINATOR_URL`, Kubernetes).
  * Der Runner prüft die Frames der Worker im Speicher der Umgebung (Präfix und SHA-256, T8).
+ * Die Versionen der entfernten Worker sind vor dem Render unbekannt: Ausgaben dieses Runners
+ * nutzen die Cache-Ebene `encoding` nicht (Review M2, ADR 0021).
  *
  * @example
  * ```ts
@@ -356,13 +358,14 @@ function projectDirOf(env: RenderEnvironment): string {
  * ```
  */
 export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, coordinatorUrl: string, token: string | undefined): ChunkRunner {
-  return createRemoteChunkRunner({ coordinatorUrl, store: env.cache.store, projectDir: projectDirOf(env), project, telemetry: env.telemetry, ...(token !== undefined ? { token } : {}) });
+  return describeChunkRunner(createRemoteChunkRunner({ coordinatorUrl, store: env.cache.store, projectDir: projectDirOf(env), project, telemetry: env.telemetry, ...(token !== undefined ? { token } : {}) }), null);
 }
 
 /**
  * Chunk-Runner mit Docker-Containern (Story 21.3, `--isolation docker`): je Worker ein Container
  * ohne Netz, read-only, ohne Capabilities, optional mit GPU-Quota (`--gpus`). Die Frames kommen
- * über stdout zurück in den Cache der Umgebung.
+ * über stdout zurück in den Cache der Umgebung. Image, GPU-Quota, Browser-GPU-Modus und Befehl
+ * stehen als Fingerabdruck im Schlüssel der Cache-Ebene `encoding` (Review M2).
  *
  * @example
  * ```ts
@@ -371,7 +374,7 @@ export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<st
  */
 export function dockerRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, workers: number, settings: DockerIsolationSettings): ChunkRunner {
   const timeout = Number(process.env['OPENVIDEO_CHUNK_TIMEOUT_MS'] ?? '');
-  return createDockerChunkRunner({
+  const runner = createDockerChunkRunner({
     image: settings.image,
     concurrency: Math.max(1, Math.floor(workers)),
     projectDir: projectDirOf(env),
@@ -383,6 +386,7 @@ export function dockerRunner(env: RenderEnvironment, project: Readonly<Record<st
     ...(settings.docker !== undefined ? { docker: settings.docker } : {}),
     ...(Number.isFinite(timeout) && timeout > 0 ? { chunkTimeoutMs: timeout } : {}),
   });
+  return describeChunkRunner(runner, { kind: 'docker', image: settings.image, gpus: settings.gpus ?? null, browserGpu: settings.browserGpu, command: settings.command.join(' ') });
 }
 
 /**
@@ -398,7 +402,8 @@ export function processRunner(env: RenderEnvironment, project: Readonly<Record<s
   const timeout = Number(process.env['OPENVIDEO_CHUNK_TIMEOUT_MS'] ?? '');
   const pool = createProcessChunkRunner({ concurrency: workers, projectDir: projectDirOf(env), project, cache: env.cache, telemetry: env.telemetry, trusted, ...(Number.isFinite(timeout) && timeout > 0 ? { chunkTimeoutMs: timeout } : {}) });
   // Ein einzelner Chunk lohnt keinen Worker-Start (Node, Skia, Chromium): dann im eigenen Prozess.
-  return async (chunks, onDone, run) => {
+  // Worker-Prozesse derselben Installation und Umgebung rendern wie der eigene Prozess (Review M2).
+  return describeChunkRunner(async (chunks, onDone, run) => {
     if (chunks.length > 1) return pool(chunks, onDone, run);
     const results: ChunkResult[] = [];
     for (const c of chunks) {
@@ -407,5 +412,5 @@ export function processRunner(env: RenderEnvironment, project: Readonly<Record<s
       results.push(r);
     }
     return results;
-  };
+  }, { kind: 'process' });
 }

@@ -132,23 +132,26 @@ export function helloProject(name: string): Record<string, unknown> {
   };
 }
 
-const PROJECT_AGENTS_MD = (name: string) => `# ${name} – Hinweise für Coding Agents
+/** AGENTS.md für neue Projekte (Englisch, Team-Entscheidung T2); Kurzfassung von docs/ai/AGENTS.md. */
+const PROJECT_AGENTS_MD = (name: string): string => `# ${name} – notes for coding agents
 
-Dieses Projekt ist ein OpenVideo-Projekt. Die Composition steht in \`project.json\` (Composition IR).
+This is an OpenVideo project. The video is described in \`project.json\` (Composition IR).
 
-## Kreislauf
+## The loop
 
-1. \`openvideo validate --json\` – prüft Schema, Assets, Schriften, Backends.
-2. \`openvideo render-frame --frame 2s --out out/frame.png\` – Ergebnis ansehen.
-3. Gezielt ändern (eine Property), nicht die ganze Datei neu schreiben.
-4. \`openvideo render --format mp4\` – Video und \`render-manifest.json\`.
+1. \`openvideo validate --json\` – checks schema, assets, fonts and backends.
+2. \`openvideo render-frame --frame 2s --out out/frame.png\` – look at the result.
+3. Change precisely (one property, \`openvideo patch\`), do not rewrite the whole file.
+4. \`openvideo render --format mp4\` – the video and its \`render-manifest.json\`.
 
-## Regeln
+## Rules
 
-- Zeiten: Frames (\`48\`) oder Text (\`"2s"\`, \`"500ms"\`, \`"marker:intro+10f"\`).
+- Time: frames (\`48\`) or text (\`"2s"\`, \`"500ms"\`, \`"marker:intro+10f"\`).
 - Animation: \`{"$keyframes": [{"t": 0, "v": 0}, {"t": "1s", "v": 100, "ease": "easeOutCubic"}]}\`.
-- Koordinaten: Pixel, \`x\`/\`y\` ist die linke obere Ecke; Rotation in Grad.
-- Referenz: https://github.com/deltatree/agentic-video-engine/blob/main/docs/ai/AGENTS.md
+- Coordinates: pixels, \`x\`/\`y\` is the top left corner; rotation in degrees.
+- Every error has \`code\`, \`problem\` and \`suggestions\`; follow the first suggestion.
+
+Full reference: https://github.com/deltatree/agentic-video-engine/blob/main/docs/ai/AGENTS.md
 `;
 
 /**

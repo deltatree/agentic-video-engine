@@ -112,7 +112,15 @@ export interface LazyBrowserBackendsOptions extends BrowserHostOptions {
   readonly hostGpu?: string;
   /** Umgebungsvariablen für `OPENVIDEO_CHROMIUM` (Standard `process.env`). */
   readonly env?: Readonly<Record<string, string | undefined>>;
+  /**
+   * Probe der Render-Seite ersetzen (Tests). Standard: WebGL2 und WebGPU-Mini-Render auf der Seite
+   * des gestarteten Hosts (`host.graphics()`).
+   */
+  readonly readGraphics?: () => Promise<PageGraphics>;
 }
+
+/** Version der gespeicherten Probe (Schlüssel und Inhalt, Review M3). */
+const PROBE_FORMAT = 3;
 
 /** Liest die gespeicherte Probe; ein nicht erreichbarer Speicher zählt als Fehlgriff (die Probe läuft dann live). */
 async function readProbe(store: GraphicsProbeStore, key: string): Promise<Uint8Array | undefined> {
@@ -127,7 +135,8 @@ async function readProbe(store: GraphicsProbeStore, key: string): Promise<Uint8A
 /** Speichert die Probe; scheitert der Speicher, bleibt nur der nächste Start ohne Treffer. */
 async function writeProbe(store: GraphicsProbeStore, key: string, info: PageGraphics): Promise<void> {
   try {
-    await store.put(key, new TextEncoder().encode(JSON.stringify(info)));
+    const { webgl2, webgl2MaxTextureSize, webgpu, webgpuAvailable } = info;
+    await store.put(key, new TextEncoder().encode(JSON.stringify({ v: PROBE_FORMAT, webgl2, webgl2MaxTextureSize, webgpu, webgpuAvailable })));
   } catch (error) {
     if (!(error instanceof OpenVideoError)) throw error;
   }
@@ -143,10 +152,12 @@ function parseGraphics(bytes: Uint8Array | undefined): PageGraphics | undefined 
     if (error instanceof SyntaxError) return undefined;
     throw error;
   }
-  if (!isRecord(raw)) return undefined;
+  if (!isRecord(raw) || raw['v'] !== PROBE_FORMAT) return undefined;
   const { webgl2, webgl2MaxTextureSize, webgpu, webgpuAvailable } = raw;
   if (typeof webgl2 !== 'string' || typeof webgl2MaxTextureSize !== 'number' || typeof webgpu !== 'string' || typeof webgpuAvailable !== 'boolean') return undefined;
-  return { webgl2, webgl2MaxTextureSize, webgpu, webgpuAvailable };
+  // Gespeichert wird nur Stabiles; ein unbrauchbarer Wert zählt als Fehlgriff.
+  if (webgl2MaxTextureSize <= 0) return undefined;
+  return { webgl2, webgl2MaxTextureSize, webgpu, webgpuAvailable, stable: true };
 }
 
 function toCheck(diagnostics: ReturnType<typeof checkThreeNode>): BackendCheck {
@@ -187,7 +198,7 @@ export interface LazyBrowserBackends {
  * ```
  */
 export function createLazyBrowserBackends(options: LazyBrowserBackendsOptions): LazyBrowserBackends {
-  const { graphicsCache, hostGpu, env, ...hostOptions } = options;
+  const { graphicsCache, hostGpu, env, readGraphics, ...hostOptions } = options;
   let real: Promise<BrowserBackends> | undefined;
   let started: BrowserBackends | undefined;
   let graphics: PageGraphics | undefined;
@@ -197,10 +208,11 @@ export function createLazyBrowserBackends(options: LazyBrowserBackendsOptions): 
   const chromium = chromiumVersionFor(options.executablePath, env);
   const gpuMode = browserGpuMode(options.gpu, env);
   // Schlüssel der Probe; im Modus `native` nur mit bekannter Host-GPU (sonst immer live prüfen).
-  const probeKey = gpuMode === 'native' && hostGpu === undefined ? undefined : contentHash({ v: 'openvideo-graphics-probe-2', chromium, mode: gpuMode, args: [...chromiumArgsFor(CHROMIUM_ARGS, gpuMode), ...graphicsArgsFor(gpuMode)], three: THREE_VERSION, hostGpu: gpuMode === 'native' ? (hostGpu ?? null) : null });
+  const probeKey = gpuMode === 'native' && hostGpu === undefined ? undefined : contentHash({ v: `openvideo-graphics-probe-${String(PROBE_FORMAT)}`, chromium, mode: gpuMode, args: [...chromiumArgsFor(CHROMIUM_ARGS, gpuMode), ...graphicsArgsFor(gpuMode)], three: THREE_VERSION, hostGpu: gpuMode === 'native' ? (hostGpu ?? null) : null });
   const ensure = (): Promise<BrowserBackends> => {
     if (real === undefined) {
-      const created = createBrowserBackends({ ...hostOptions, executablePath: executable.path, gpu: gpuMode === 'native' });
+      // Die Seite bekommt das Probe-Ergebnis aus dem Schlüssel und entscheidet nicht live (Review M3).
+      const created = createBrowserBackends({ ...hostOptions, executablePath: executable.path, gpu: gpuMode === 'native', threeGraphics: () => (graphics === undefined ? undefined : { webgpu: graphics.webgpuAvailable, maxTextureSize: graphics.webgl2MaxTextureSize }) });
       real = created;
       created.then(
         (b) => {
@@ -220,9 +232,11 @@ export function createLazyBrowserBackends(options: LazyBrowserBackendsOptions): 
     capabilities,
     fusable,
     // `browser-gpu` nur im GPU-Modus: Schlüssel im Standardmodus (SwiftShader) bleiben wie bisher.
-    versions: () => ({ chromium, ...(gpuMode === 'native' ? { 'browser-gpu': 'native' } : {}), ...versions, ...(id === 'three' && graphics !== undefined ? { 'three-webgpu': graphics.webgpuAvailable ? 'available' : 'unavailable', 'three-max-texture': String(graphics.webgl2MaxTextureSize) } : {}) }),
+    versions: () => ({ chromium, ...(gpuMode === 'native' ? { 'browser-gpu': 'native' } : {}), ...(id === 'browser' && options.allowHtmlScripts === true ? { 'html-scripts': 'allowed' } : {}), ...versions, ...(id === 'three' && graphics !== undefined ? { 'three-webgpu': graphics.webgpuAvailable ? 'available' : 'unavailable', 'three-max-texture': String(graphics.webgl2MaxTextureSize) } : {}) }),
     check,
     async renderLayer(request: LayerRequest): Promise<RgbaImage> {
+      // `three` rendert nur mit feststehender Probe: Die Seite bekommt sie mit jedem Layer (Review M3).
+      if (id === 'three' && graphics === undefined) await prepareGraphics();
       const backends = await ensure();
       return backends[id].renderLayer(request);
     },
@@ -234,34 +248,36 @@ export function createLazyBrowserBackends(options: LazyBrowserBackendsOptions): 
   const browser = make('browser', ['html'], HTML_CAPABILITIES, true, (n) => checkHtmlNode(n, { allowScripts: options.allowHtmlScripts === true }), {});
   const three = make('three', ['scene3d'], THREE_CAPABILITIES, false, (n) => toCheck(checkThreeNode(n)), { three: THREE_VERSION });
   const pixi = make('pixi', PIXI_NODE_TYPES, PIXI_CAPABILITIES, true, (n) => toCheck(checkPixiNode(n)), { 'pixi.js': PIXI_VERSION });
+  function prepareGraphics(): Promise<PageGraphics> {
+    if (graphics !== undefined) return Promise.resolve(graphics);
+    probing ??= (async () => {
+      if (graphicsCache !== undefined && probeKey !== undefined) {
+        const stored = parseGraphics(await readProbe(graphicsCache, probeKey));
+        if (stored !== undefined) return stored;
+      }
+      const info = readGraphics !== undefined ? await readGraphics() : await (await ensure()).host.graphics();
+      // Nur stabile Ergebnisse speichern (Review M3); vorübergehende gelten nur für diese Umgebung.
+      if (graphicsCache !== undefined && probeKey !== undefined && info.stable === true) await writeProbe(graphicsCache, probeKey, info);
+      return info;
+    })().then(
+      (info) => {
+        graphics = info;
+        return info;
+      },
+      (error: unknown) => {
+        probing = undefined;
+        throw error;
+      },
+    );
+    return probing;
+  }
   return {
     browser,
     three,
     pixi,
     started: () => real !== undefined,
     gpuMode,
-    prepareGraphics() {
-      if (graphics !== undefined) return Promise.resolve(graphics);
-      probing ??= (async () => {
-        if (graphicsCache !== undefined && probeKey !== undefined) {
-          const stored = parseGraphics(await readProbe(graphicsCache, probeKey));
-          if (stored !== undefined) return stored;
-        }
-        const info = await (await ensure()).host.graphics();
-        if (graphicsCache !== undefined && probeKey !== undefined) await writeProbe(graphicsCache, probeKey, info);
-        return info;
-      })().then(
-        (info) => {
-          graphics = info;
-          return info;
-        },
-        (error: unknown) => {
-          probing = undefined;
-          throw error;
-        },
-      );
-      return probing;
-    },
+    prepareGraphics,
     graphicsInfo: () => graphics,
     runtimeVersions: () => (started === undefined ? undefined : { ...started.host.versions() }),
     async dispose() {

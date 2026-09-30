@@ -4,7 +4,8 @@
 import type { EvaluatedNode } from '@agentic-video/core';
 import { describe, expect, it } from 'vitest';
 import { formatDiagnostic } from '@agentic-video/core';
-import { THREE_CAPABILITIES, THREE_VERSION, checkThreeNode, detectFormat, fitTextureSize, instanceTransforms, particles3d, requiresWebGL2, textureTooLargeError } from '../src/index.js';
+import { OpenVideoError } from '@agentic-video/core';
+import { THREE_CAPABILITIES, THREE_VERSION, checkThreeNode, detectFormat, fitTextureSize, instanceTransforms, particles3d, requiresWebGL2, textureTooLargeError, threeTextureLimit } from '../src/index.js';
 
 const scene = (props: Record<string, unknown>, children: Record<string, unknown>[] = []): Record<string, unknown> => ({ id: 'hero', type: 'scene3d', width: 640, height: 360, ...props, children });
 const codes = (node: Record<string, unknown>): string[] => checkThreeNode(node).map((d) => d.code);
@@ -164,5 +165,27 @@ describe('Texturgrenzen (Story 21.7)', () => {
         'Suggested actions:\n1. Resize the asset to <= 8192 px.\n2. Enable automatic texture downscaling: set textureDownscale: true on the scene3d node (or ThreeLayerRenderer option downscaleTextures).\n3. Use the Blender backend.',
       ].join('\n\n'),
     );
+  });
+});
+
+describe('Texturgrenze aus der Grafik-Probe (Review M3)', () => {
+  it('nutzt für WebGL2 die Grenze der Probe statt der live gemessenen', () => {
+    expect(threeTextureLimit('webgl2', 16384, 8192)).toBe(8192);
+    expect(threeTextureLimit('webgl2', 16384)).toBe(16384);
+    expect(threeTextureLimit('webgl2', 16384, 0)).toBe(16384);
+    expect(threeTextureLimit('webgl2', 16384, 8192, 4096)).toBe(4096);
+    // WebGPU nutzt die Standardgrenzen des Geräts.
+    expect(threeTextureLimit('webgpu', 8192, 16384)).toBe(8192);
+  });
+
+  it('wirft OV_THREE_GRAPHICS_MISMATCH, wenn die GPU weniger kann als die Probe sagt', () => {
+    let error: unknown;
+    try {
+      threeTextureLimit('webgl2', 4096, 8192);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(OpenVideoError);
+    expect(error instanceof OpenVideoError ? error.diagnostic.code : '').toBe('OV_THREE_GRAPHICS_MISMATCH');
   });
 });

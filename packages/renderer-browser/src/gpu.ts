@@ -101,6 +101,13 @@ export interface PageGraphics {
   readonly webgpu: string;
   /** Gelingt der WebGPU-Mini-Render (`probeWebGPU`)? Genau diese Prüfung nutzt `three` bei `backend: 'auto'`. */
   readonly webgpuAvailable: boolean;
+  /**
+   * Darf das Ergebnis gespeichert werden (Review M3)? Nur stabile Ergebnisse: WebGPU verfügbar, ohne
+   * API oder mit unvollständiger API, und WebGL2 mit `MAX_TEXTURE_SIZE` > 0. Vorübergehende Fehler
+   * (kein Adapter, `OperationError`, verlorenes Gerät, WebGL2-Kontext fehlt) werden nicht gespeichert.
+   * Fehlt die Angabe, gilt das Ergebnis als nicht speicherbar.
+   */
+  readonly stable?: boolean;
 }
 
 /** WebGL2-Teil von {@link PageGraphics}. */
@@ -137,7 +144,7 @@ export function pageWebGL2(): PageWebGL2 {
 export async function readPageGraphics(page: Pick<Page, 'evaluate'>): Promise<PageGraphics> {
   const gl = await page.evaluate(pageWebGL2);
   const gpu = await page.evaluate(probeWebGPU);
-  return { ...gl, webgpu: gpu.adapter, webgpuAvailable: gpu.available };
+  return { ...gl, webgpu: gpu.adapter, webgpuAvailable: gpu.available, stable: gpu.stable && gl.webgl2MaxTextureSize > 0 };
 }
 
 /** Ergebnis von {@link probeBrowserGraphics}. */

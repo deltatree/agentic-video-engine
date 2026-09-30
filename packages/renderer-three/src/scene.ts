@@ -47,6 +47,18 @@ export interface ThreeLayerInput {
   /** URL eines Assets auf der Host-Origin. */
   readonly assetUrl: (assetId: string) => string;
   readonly debug?: { readonly showCameraFrustum?: boolean; readonly showLightHelpers?: boolean };
+  /**
+   * Ergebnis der Grafik-Probe, die im Cache-Schlüssel steht (Review M3): `webgpu` entscheidet
+   * `backend: 'auto'`, `maxTextureSize` (WebGL2 `MAX_TEXTURE_SIZE`) die Texturgrenze von WebGL2.
+   * Ohne Angabe prüft der Renderer live (Studio, direkte Nutzung).
+   */
+  readonly graphics?: ThreeGraphicsHint;
+}
+
+/** Grafik-Fähigkeiten aus der Probe des Hosts (siehe {@link ThreeLayerInput.graphics}). */
+export interface ThreeGraphicsHint {
+  readonly webgpu: boolean;
+  readonly maxTextureSize: number;
 }
 
 /** Postprocessing-Einstellungen eines Frames (Zahlen bereits ausgewertet). */

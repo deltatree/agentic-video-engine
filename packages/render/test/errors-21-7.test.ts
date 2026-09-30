@@ -31,5 +31,8 @@ describe('Audio-Engine (Story 21.7)', () => {
     expect(error.diagnostic.code).toBe('OV_AUDIO_SOURCE_UNRESOLVED');
     expect(error.diagnostic.details).toEqual({ source: 'ghost' });
     expect(error.diagnostic.suggestions.length).toBeGreaterThan(1);
+    // Nur Befehle, die es gibt: `openvideo validate`, nicht `openvideo check`.
+    expect(error.diagnostic.suggestions.join('\n')).toContain('openvideo validate');
+    expect(error.diagnostic.suggestions.join('\n')).not.toContain('openvideo check');
   });
 });

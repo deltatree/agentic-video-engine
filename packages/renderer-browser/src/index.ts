@@ -29,7 +29,7 @@ export {
   type PageGraphics,
   type PageWebGL2,
 } from './gpu.js';
-export { createBrowserBackends, PIXI_NODE_TYPES, type BrowserBackends } from './backends.js';
+export { createBrowserBackends, PIXI_NODE_TYPES, type BrowserBackends, type BrowserBackendsOptions, type ThreeGraphicsSource } from './backends.js';
 export { checkHtmlNode, HTML_CAPABILITIES, type HtmlCheckOptions } from './html-check.js';
 export type { BrowserLayerKind, BrowserLayerPayload, OpenVideoPageApi } from './protocol.js';
 export { chromiumVersionFor, createLazyBrowserBackends, expectedChromiumVersion, type GraphicsProbeStore, type LazyBrowserBackends, type LazyBrowserBackendsOptions } from './lazy.js';

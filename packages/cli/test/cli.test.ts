@@ -20,6 +20,12 @@ describe('openvideo CLI (FR-77, FR-78)', () => {
     expect((await cli(['create', 'hello'], root)).code).toBe(0);
     const dir = join(root, 'hello');
     for (const f of ['openvideo.json', 'project.json', 'AGENTS.md', '.gitignore']) expect(existsSync(join(dir, f)), f).toBe(true);
+    // AGENTS.md auf Englisch (T2), kurz, mit Verweis auf die volle Referenz.
+    const agents = readFileSync(join(dir, 'AGENTS.md'), 'utf8');
+    expect(agents).toMatch(/^# hello – notes for coding agents\n/u);
+    expect(agents).toContain('openvideo validate --json');
+    expect(agents).toContain('docs/ai/AGENTS.md');
+    expect(agents).not.toMatch(/Hinweise|Kreislauf|Regeln/u);
     const validate = await cli(['validate', '--json'], dir);
     expect(validate.code).toBe(0);
     expect((JSON.parse(validate.stdout) as { ok: boolean }).ok).toBe(true);

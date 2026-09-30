@@ -36,6 +36,11 @@ export interface BrowserLayerPayload {
   /** Standardschrift für Pixi-Text. */
   readonly defaultFont?: string;
   readonly debug?: { readonly showCameraFrustum?: boolean; readonly showLightHelpers?: boolean };
+  /**
+   * Grafik-Probe aus dem Cache-Schlüssel (nur `three`, Review M3): Die Seite entscheidet
+   * `backend: 'auto'` und die WebGL2-Texturgrenze danach, nicht live.
+   */
+  readonly graphics?: { readonly webgpu: boolean; readonly maxTextureSize: number };
 }
 
 /** Konfiguration eines HTML-Dokuments, übergeben über `window.name` vor dem Laden. */

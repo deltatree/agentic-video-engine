@@ -290,7 +290,7 @@ export function createAudioEngine(options: AudioEngineOptions): AudioEngine {
             errorClass: 'AudioError',
             problem: `Audio source "${id}" is not resolved: it is neither an imported audio/video asset nor a synthesized voice.`,
             details: { source: id },
-            suggestions: ['Import the file with `openvideo assets import <file>` and reference its asset id.', `Add { id: "${id}", asset: "<asset id>" } or a voice entry to project.audio.`, 'Run `openvideo check` to list missing assets.'],
+            suggestions: ['Import the file with `openvideo assets import <file>` and reference its asset id.', `Add { id: "${id}", asset: "<asset id>" } or a voice entry to project.audio.`, 'Run `openvideo validate` to list missing assets.'],
           });
         }
         return { path: s.path, duration: s.duration };
