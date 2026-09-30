@@ -274,8 +274,8 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
   const ready = new Map<number, ChunkResult>();
   const direct = new Set<number>();
   let pump: Promise<void> = Promise.resolve();
-  let pumpError: unknown;
-  let pumpFailed = false;
+  // Als Objekt: Callbacks setzen den Zustand zwischen zwei `await`.
+  const pumpState: { failed: boolean; error: unknown } = { failed: false, error: undefined };
   const writeFrame = async (image: RgbaImage): Promise<void> => {
     const t = performance.now();
     await encoder.write(image);
@@ -302,9 +302,9 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
   const enqueue = (r: ChunkResult): void => {
     ready.set(r.start, r);
     pump = pump.then(drain).catch((error: unknown) => {
-      if (!pumpFailed) {
-        pumpFailed = true;
-        pumpError = error;
+      if (!pumpState.failed) {
+        pumpState.failed = true;
+        pumpState.error = error;
       }
     });
   };
@@ -316,7 +316,7 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
       for (const c of list) {
         // Lokal in Reihenfolge: Frames gehen ohne Umweg über den Cache an den Encoder.
         await pump;
-        const inOrder = c.start === nextStart && ready.size === 0 && !pumpFailed;
+        const inOrder = c.start === nextStart && ready.size === 0 && !pumpState.failed;
         if (inOrder) direct.add(c.start);
         const r = await renderChunk(env, project, c, signal, inOrder ? writeFrame : undefined);
         onDone(r);
@@ -339,7 +339,7 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
       ),
     );
     await pump;
-    if (pumpFailed) throw pumpError;
+    if (pumpState.failed) throw pumpState.error;
   } catch (error) {
     await pump.catch(() => undefined);
     await encoder.abort();

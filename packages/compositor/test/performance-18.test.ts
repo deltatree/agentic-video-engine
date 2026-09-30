@@ -72,7 +72,7 @@ function tree(seed: number, key: string, depth: number): CompositorNode {
   if (depth >= 2 || kind < 0.35) return { kind: 'image', image: sparse(seed, key) };
   const children = Array.from({ length: 1 + Math.floor(rnd(seed, key, 'n') * 3) }, (_, i) => tree(seed, `${key}.${String(i)}`, depth + 1));
   const withMask = rnd(seed, key, 'mask') < 0.3 ? { mask: { image: sparse(seed, `${key}-mask`), mode: rnd(seed, key, 'mm') < 0.5 ? ('alpha' as const) : ('luminance' as const), invert: rnd(seed, key, 'mi') < 0.3 } } : {};
-  const withReveal = rnd(seed, key, 'reveal') < 0.25 ? { reveal: { reveal: { type: rnd(seed, key, 'rt') < 0.5 ? 'wipe' : 'iris', progress: rnd(seed, key, 'rp'), direction: 'right' }, box: { x: 2, y: 2, width: 40, height: 26 } } } : {};
+  const withReveal = rnd(seed, key, 'reveal') < 0.25 ? { reveal: { reveal: rnd(seed, key, 'rt') < 0.5 ? { shape: 'rect' as const, direction: 'right' as const, progress: rnd(seed, key, 'rp') } : { shape: 'ellipse' as const, direction: 'center' as const, progress: rnd(seed, key, 'rp') }, box: { x: 2, y: 2, width: 40, height: 26 } } } : {};
   if (kind < 0.55) {
     const angle = (rnd(seed, key, 'ia') - 0.5) * 0.6;
     const matrix: Matrix2D = [Math.cos(angle), Math.sin(angle), -Math.sin(angle), Math.cos(angle), Math.round(rnd(seed, key, 'itx') * 6), 0];

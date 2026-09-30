@@ -65,8 +65,8 @@ describe('Befund m9', () => {
       });
       const results = await Promise.all([h.render('html', payload([card('a', { x: 10, y: 10 })])), h.render('three', payload([three])), h.render('html', payload([card('b', { x: 60, y: 40 })]))]);
       expect(results.map((r) => r.width)).toEqual([W, W, W]);
-      expect(results[0]?.data.some((v) => v !== 0)).toBe(true);
-      expect(results[2]?.data.some((v) => v !== 0)).toBe(true);
+      expect(results[0].data.some((v) => v !== 0)).toBe(true);
+      expect(results[2].data.some((v) => v !== 0)).toBe(true);
     } finally {
       await h.close();
     }
