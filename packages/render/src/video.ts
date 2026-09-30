@@ -3,14 +3,13 @@
  * Audio → Encoding → Render-Manifest. Frames liegen im Frame-Cache; nur Geändertes wird neu gerendert.
  */
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { dirname, join, basename } from 'node:path';
-import { OpenVideoError, contentHash, evaluateScene, findComposition, compositionDurationFrames, frameKey, isRecord, type Diagnostic, type RgbaImage } from '@agentic-video/core';
+import { OpenVideoError, contentHash, evaluateScene, findComposition, compositionDurationFrames, isRecord, type Diagnostic, type RgbaImage } from '@agentic-video/core';
 import { decodeRawFrameAsync } from '@agentic-video/png';
 import type { RenderEnvironment } from './environment.js';
-import { assetHashes, outputSize, renderFrame, resolveAnimatedImages } from './frame.js';
+import { assetHashes, evaluateFrameKey, renderFrame } from './frame.js';
 import type { EncodeOptions, RenderEnvironment as Env } from './environment.js';
 import { chunkHash, countDiagnostics, frameBackendUsage, imageHash, manifestChromium, manifestGpu, manifestGraphics, versionOr, type RenderManifest } from './manifest.js';
 import { OPENVIDEO_VERSION } from './version.js';
@@ -64,6 +63,47 @@ export interface CancelSignal {
   readonly aborted: boolean;
 }
 
+/**
+ * Fingerabdruck eines Chunk-Runners für den Schlüssel der Ebene `encoding` (Review M2): Wer die
+ * Frames rendert (lokal, Worker-Prozesse, Docker-Image mit GPU-Quota …), bestimmt ihre Pixel mit.
+ */
+export type RunnerFingerprint = Readonly<Record<string, string | number | boolean | null>>;
+
+/** Fingerabdruck des Standard-Runners (Frames im eigenen Prozess). */
+export const LOCAL_RUNNER_FINGERPRINT: RunnerFingerprint = { kind: 'local' };
+
+/** Fingerabdrücke beschriebener Runner (`null`: Ausgabe dieses Runners nie wiederverwenden). */
+const runnerFingerprints = new WeakMap<ChunkRunner, RunnerFingerprint | null>();
+
+/**
+ * Hängt einem Chunk-Runner seinen Fingerabdruck an (Review M2). Nur beschriebene Runner nutzen die
+ * Cache-Ebene `encoding`; ein Runner ohne Beschreibung oder mit `null` (z. B. entfernte Worker,
+ * deren Versionen vor dem Render unbekannt sind) rendert und kodiert immer frisch.
+ *
+ * @example
+ * ```ts
+ * const runChunks = describeChunkRunner(createDockerChunkRunner(options), { kind: 'docker', image: 'openvideo/worker:0.1.0', gpus: null, browserGpu: false });
+ * ```
+ */
+export function describeChunkRunner<T extends ChunkRunner>(runner: T, fingerprint: RunnerFingerprint | null): T {
+  runnerFingerprints.set(runner, fingerprint);
+  return runner;
+}
+
+/**
+ * Fingerabdruck eines Runners: ohne Runner {@link LOCAL_RUNNER_FINGERPRINT}, sonst der mit
+ * {@link describeChunkRunner} angehängte; unbeschriebene Runner liefern `null` (kein Ausgabe-Cache).
+ *
+ * @example
+ * ```ts
+ * chunkRunnerFingerprint(undefined); // { kind: 'local' }
+ * ```
+ */
+export function chunkRunnerFingerprint(runner: ChunkRunner | undefined): RunnerFingerprint | null {
+  if (runner === undefined) return LOCAL_RUNNER_FINGERPRINT;
+  return runnerFingerprints.get(runner) ?? null;
+}
+
 /** Laufzeit-Optionen eines Chunk-Runners. */
 export interface ChunkRunOptions {
   /** Bricht laufende und wartende Chunks ab (Worker bekommen `cancel`). */
@@ -101,10 +141,11 @@ export interface RenderVideoOptions {
   readonly localRenderProcesses?: number;
   /**
    * Ganze Ausgabe aus der Cache-Ebene `encoding` wiederverwenden (Story 21.2, ADR 0021). Ein Treffer
-   * setzt gleiche Eingaben voraus (Projekt, Composition, Assets, Versionen, Bereich, Profil,
-   * Encoder-Einstellungen, Tonspur) und liefert die Bytes der früheren Kodierung, ohne zu rendern
-   * oder zu kodieren. Standard `true`; `OPENVIDEO_OUTPUT_CACHE=0` schaltet ab. Nur für Formate mit
-   * genau einer Ausgabedatei (keine Bildfolgen).
+   * setzt gleiche Eingaben voraus (Frame-Schlüssel aller Ausgabe-Frames, Projekt, Assets,
+   * Versionen, Bereich, Profil, Encoder-Einstellungen samt Hardware-Wahl, Tonspur, Runner) und
+   * liefert die Bytes der früheren Kodierung, ohne zu rendern oder zu kodieren. Standard `true`;
+   * `OPENVIDEO_OUTPUT_CACHE=0` schaltet ab. Nur für Formate mit genau einer Ausgabedatei (keine
+   * Bildfolgen) und für beschriebene Runner ({@link describeChunkRunner}).
    */
   readonly reuseOutput?: boolean;
   /**
@@ -297,9 +338,33 @@ interface Produced {
   readonly output: 'hit' | 'miss' | 'off';
 }
 
-/** Schlüssel der Ebene `encoding` für eine ganze Ausgabe (ADR 0021). */
-function outputKey(env: Env, project: Readonly<Record<string, unknown>>, input: { readonly compositionId: string; readonly range: { readonly start: number; readonly end: number }; readonly count: number; readonly step: number; readonly scale: number; readonly encoder: Omit<EncodeOptions, 'outPath' | 'audioPath'>; readonly audioHash: string | null }): string {
-  return `render-${contentHash({ v: 'output-1', project: contentHash(project), assets: assetHashes(env, project), versions: env.versions, trusted: env.trusted, ...input }).slice('sha256:'.length)}`;
+/** Eingaben des Schlüssels der Ebene `encoding` neben Projekt und Umgebung. */
+interface OutputKeyInput {
+  readonly compositionId: string;
+  readonly range: { readonly start: number; readonly end: number };
+  readonly count: number;
+  readonly step: number;
+  readonly scale: number;
+  readonly encoder: Omit<EncodeOptions, 'outPath' | 'audioPath'>;
+  /** Verfügbare Hardware-Encoder, wenn `hardware` nicht `none` ist (bestimmen die tatsächliche Wahl). */
+  readonly hardwareEncoders: Readonly<Record<string, boolean>> | null;
+  readonly audioHash: string | null;
+  readonly runner: RunnerFingerprint;
+}
+
+/**
+ * Schlüssel der Ebene `encoding` für eine ganze Ausgabe (ADR 0021, Review M1/M2). Er enthält die
+ * Frame-Schlüssel aller Ausgabe-Frames (reine Auswertung nach `prepare`, ohne Rendern): Sie tragen
+ * die expandierte Szene – auch Untertitel aus Transkripten – sowie Versionen und Asset-Hashes.
+ */
+function outputKey(env: Env, project: Readonly<Record<string, unknown>>, input: OutputKeyInput): string {
+  const frames: string[] = [];
+  for (let i = 0; i < input.count; i++) frames.push(evaluateFrameKey(env, project, input.compositionId, input.range.start + i * input.step, input.scale));
+  return `render-${contentHash({ v: 'output-2', project: contentHash(project), assets: assetHashes(env, project), versions: env.versions, trusted: env.trusted, frames: contentHash(frames), ...input }).slice('sha256:'.length)}`;
+}
+
+function isNotFound(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 /** Liest einen Treffer der Ebene `encoding` und schreibt die Datei nach `outPath`; sonst `undefined`. */
@@ -317,9 +382,17 @@ async function restoreOutput(env: Env, key: string, outPath: string): Promise<Ou
   if (!isOutputEntry(entry)) return undefined;
   const local = tier.localPath(entry.file);
   // Lokale Datei direkt kopieren (kein Laden in den Speicher); sonst über den Speicher (z. B. S3).
-  if (local !== undefined && existsSync(local)) {
-    await copyFile(local, outPath);
-  } else {
+  let copied = false;
+  if (local !== undefined) {
+    try {
+      await copyFile(local, outPath);
+      copied = true;
+    } catch (error) {
+      // Fehlt die Datei (z. B. nach parallelem `prune`), gilt der Eintrag als Fehlgriff (Review m4).
+      if (!isNotFound(error)) throw error;
+    }
+  }
+  if (!copied) {
     const bytes = await tier.get(entry.file);
     if (bytes === undefined) return undefined;
     await writeFile(outPath, bytes);
@@ -412,10 +485,16 @@ export async function renderVideo(env: RenderEnvironment, project: Readonly<Reco
   };
 
   // Cache-Ebene `encoding` (Story 21.2): gleiche Eingaben → Bytes der früheren Kodierung.
-  const reuse = (options.reuseOutput ?? outputCacheFromEnv()) && !options.profile.format.endsWith('-sequence');
-  const key = reuse
-    ? outputKey(env, project, { compositionId, range, count: outCount, step: out.step, scale: out.scale, encoder: encoderSettings, audioHash: audio === undefined ? null : (await fileHash(audio.path)).hash })
-    : undefined;
+  // Nur mit bekanntem Runner (Review M2) und bekannter Hardware-Wahl (Review m3): Die Wahl bei
+  // `hardware` ≠ `none` folgt aus Profil und verfügbaren Encodern; fehlen diese, kein Ausgabe-Cache.
+  const wanted = (options.reuseOutput ?? outputCacheFromEnv()) && !options.profile.format.endsWith('-sequence');
+  const runner = wanted ? chunkRunnerFingerprint(options.runChunks) : null;
+  const hardwareEncoders = runner === null ? undefined : encoderSettings.hardware === 'none' ? null : await media.hardwareEncoders?.();
+  const audioHash = audio === undefined ? null : (await fileHash(audio.path)).hash;
+  const key =
+    runner !== null && hardwareEncoders !== undefined
+      ? await stage('outputKey', () => Promise.resolve(outputKey(env, project, { compositionId, range, count: outCount, step: out.step, scale: out.scale, encoder: encoderSettings, hardwareEncoders, audioHash, runner })))
+      : undefined;
   const cachedOutput = key !== undefined ? await stage('outputCache', () => restoreOutput(env, key, options.outPath)) : undefined;
   const encodeFresh = async (): Promise<Produced> => {
     const encoder = await media.createEncoder({
@@ -667,11 +746,8 @@ export async function missingFrames(env: RenderEnvironment, project: Readonly<Re
   const out: number[] = [];
   await env.prepare?.(project);
   for (const f of frames) {
-    // Wie renderFrame: animierte Bilder laufen als Video-Nodes; sonst wiche der Schlüssel ab und
-    // jeder Frame mit animiertem Bild gälte als fehlend (Story 18.9).
-    const scene = resolveAnimatedImages(env.assets, evaluateScene(project, compositionId, f, { registry: env.registry }));
-    const size = outputSize(scene, scale);
-    const key = frameKey(scene, env.versions, assetHashes(env, project), { width: size.width, height: size.height, extra: { scale, debug: null } });
+    // Wie renderFrame (auch animierte Bilder als Video-Nodes, Story 18.9).
+    const key = evaluateFrameKey(env, project, compositionId, f, scale);
     if (!(await env.cache.tier('frame').has(key))) out.push(f);
   }
   return out;

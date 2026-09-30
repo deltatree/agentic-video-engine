@@ -255,6 +255,55 @@ function motionStatesFor(ctx: PlanContext, capabilities: readonly string[], node
   );
 }
 
+/** Präfix der Code-Hashes geladener Plugin-Dateien in `env.versions` (Review m2). */
+export const PLUGIN_CODE_PREFIX = 'plugin-code:';
+
+/**
+ * Einträge der Versionen, die Code des Hosts beschreiben und darum auch in jeden Layer-Schlüssel
+ * gehören (Review m2): Hashes geladener Plugin-Dateien (`plugin-code:<name>`) und die Freigabe von
+ * HTML-Skripten (`html-scripts`). Ohne Plugins und ohne Skripte `undefined` – Layer-Schlüssel
+ * bleiben dann unverändert.
+ *
+ * @example
+ * ```ts
+ * hostCodeVersions({ openvideo: '0.1.0' }); // undefined
+ * hostCodeVersions({ 'plugin-code:hello': 'sha256:…' }); // { 'plugin-code:hello': 'sha256:…' }
+ * ```
+ */
+export function hostCodeVersions(versions: Readonly<Record<string, string>>): Record<string, string> | undefined {
+  const entries = Object.entries(versions).filter(([k]) => k.startsWith(PLUGIN_CODE_PREFIX) || k === 'html-scripts');
+  return entries.length === 0 ? undefined : Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * Frame-Schlüssel einer ausgewerteten Szene, genau wie {@link renderFrame} ihn bildet.
+ *
+ * @example
+ * ```ts
+ * const key = frameKeyOf(env, project, scene, 0.5);
+ * ```
+ */
+export function frameKeyOf(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, scene: EvaluatedScene, scale: number, debug?: DebugOptions): string {
+  const size = outputSize(scene, scale);
+  return frameKey(scene, env.versions, assetHashes(env, project), { width: size.width, height: size.height, extra: { scale, debug: debug ?? null } });
+}
+
+/**
+ * Wertet einen Frame aus und liefert seinen Frame-Schlüssel, ohne zu rendern (für Teil-Neurender
+ * und den Schlüssel der Ebene `encoding`). Setzt ein vorheriges `env.prepare(project)` voraus.
+ *
+ * @example
+ * ```ts
+ * await env.prepare?.(project);
+ * const key = evaluateFrameKey(env, project, 'main', 12, 1);
+ * ```
+ */
+export function evaluateFrameKey(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, compositionId: string | undefined, frame: number, scale: number): string {
+  // Wie renderFrame: animierte Bilder laufen als Video-Nodes (Story 18.9).
+  const scene = resolveAnimatedImages(env.assets, evaluateScene(project, compositionId, frame, { registry: env.registry }));
+  return frameKeyOf(env, project, scene, scale);
+}
+
 async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: readonly EvaluatedNode[], layerId: string): Promise<RgbaImage> {
   const backend = ctx.env.registry.backends.get(backendId);
   if (backend === undefined) {
@@ -272,7 +321,8 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
   const history = ctx.layerHistory;
   // Video-Render: zeitabhängige Layer treffen nie; weder lesen noch komprimieren (Story 18.3).
   const bypass = history !== undefined && !invariant;
-  const key = contentHash({ backend: backendId, versions: backend.versions(), nodes: nodes.map(invariant ? stripNodeTimeless : stripNode), ...(invariant ? { timeless: true } : {}), ...(motionStates !== undefined ? { motion: motionStates.map((m) => ({ offset: m.offset, nodes: m.nodes.map(stripNode) })) } : {}), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
+  const hostCode = hostCodeVersions(ctx.env.versions);
+  const key = contentHash({ backend: backendId, versions: backend.versions(), ...(hostCode !== undefined ? { hostCode } : {}), nodes: nodes.map(invariant ? stripNodeTimeless : stripNode), ...(invariant ? { timeless: true } : {}), ...(motionStates !== undefined ? { motion: motionStates.map((m) => ({ offset: m.offset, nodes: m.nodes.map(stripNode) })) } : {}), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
   const tier = ctx.env.cache.tier('layer');
   const previous = history?.get(layerId);
   history?.set(layerId, key);
@@ -505,7 +555,7 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
   const size = outputSize(scene, scale);
   const bounds = await time('bounds', () => computeBounds(scene, env.measurer));
   const diagnostics: Diagnostic[] = [...scene.diagnostics, ...analyzeScene(scene, bounds)];
-  const key = frameKey(scene, env.versions, assetHashes(env, project), { width: size.width, height: size.height, extra: { scale, debug: options.debug ?? null } });
+  const key = frameKeyOf(env, project, scene, scale, options.debug);
   const tier = env.cache.tier('frame');
   if (options.useCache !== false) {
     const hit = await time('frameCache', () => tier.get(key));

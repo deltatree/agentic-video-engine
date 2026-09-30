@@ -18,14 +18,15 @@ import { HARDWARE_FAMILIES, codecLicenses, createEncoder, probeCapabilities, typ
 import { loadFontSet } from '@agentic-video/fonts';
 import { createSkiaBackend, createSkiaTextMeasurer, loadCanvasKitNode, renderContactSheet, renderDebugOverlay } from '@agentic-video/renderer-skia';
 import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, resolveFromAudioTracks, synthesizeVoices, type FromAudioTranscript } from '@agentic-video/speech';
-import { registerSubtitles } from '@agentic-video/subtitles';
+import { subtitlesExpander } from '@agentic-video/subtitles';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
 import { browserGpuMode, createLazyBrowserBackends, describeHostGpu, probeHostGpu, type GraphicsProbeStore, type HostGpu } from '@agentic-video/renderer-browser';
 import { createBlenderBackend } from '@agentic-video/renderer-blender';
 import { createAudioEngine, type SynthesizedVoice } from './audio-engine.js';
 import type { EncodeOptions, FrameEncoder, GraphicsInfoLike, MediaTools, RenderEnvironment, RuntimeInfo } from './environment.js';
 import { OPENVIDEO_VERSION } from './version.js';
-import { PLUGIN_PREFIX, exporterEncoder, loadProjectPlugins, pluginExporter, pluginPolicyFromEnv, type PluginPolicy } from './plugins.js';
+import { PLUGIN_PREFIX, exporterEncoder, loadProjectPlugins, pluginCodeHashes, pluginExporter, pluginPolicyFromEnv, type PluginPolicy } from './plugins.js';
+import { PLUGIN_CODE_PREFIX } from './frame.js';
 
 /** Zusätzliche Backends, die ein Host bereitstellt (Browser, Blender), jeweils mit eigenem Aufräumen. */
 export interface BackendProvider {
@@ -33,6 +34,11 @@ export interface BackendProvider {
   register(registry: Registry, ctx: { readonly assets: ProjectAssets; readonly fonts: Awaited<ReturnType<typeof loadFontSet>>; readonly telemetry: Telemetry }): Promise<Readonly<Record<string, string>>>;
   /** Tatsächliche Versionen gestarteter Prozesse und Grafik-Probe (Story 21.5); optional. */
   runtime?(): { readonly versions: Readonly<Record<string, string>>; readonly graphics?: GraphicsInfoLike };
+  /**
+   * Vor jedem Schlüssel eines Projekts (aus `env.prepare`): z. B. die Grafik-Probe, sobald ein
+   * Projekt `scene3d` enthält, auch wenn das beim Anlegen der Umgebung noch nicht so war (Review M3).
+   */
+  prepare?(project: Readonly<Record<string, unknown>>): Promise<void>;
   dispose(): Promise<void>;
 }
 
@@ -145,6 +151,10 @@ function mediaTools(registry: Registry): MediaTools {
         },
       });
     },
+    async hardwareEncoders() {
+      caps ??= probeCapabilities();
+      return { ...(await caps).hardwareEncoders };
+    },
     async info() {
       caps ??= probeCapabilities();
       const c = await caps;
@@ -236,6 +246,20 @@ export interface DefaultProvidersOptions {
 export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>, options: DefaultProvidersOptions = {}): BackendProvider[] {
   let lazy: ReturnType<typeof createLazyBrowserBackends> | undefined;
   let blender: ReturnType<typeof createBlenderBackend> | undefined;
+  // Eine gescheiterte Probe (z. B. ohne Chromium) wird nicht vor jedem Schlüssel wiederholt; der
+  // Render des 3D-Layers meldet dann seine eigene Diagnose.
+  let probeFailed = false;
+  const probe = async (created: ReturnType<typeof createLazyBrowserBackends>, telemetry: Telemetry): Promise<void> => {
+    if (probeFailed || created.graphicsInfo() !== undefined) return;
+    try {
+      await created.prepareGraphics();
+    } catch (error) {
+      if (!(error instanceof OpenVideoError)) throw error;
+      probeFailed = true;
+      telemetry.logger.warn('browser graphics probe failed', { code: error.diagnostic.code, problem: error.diagnostic.problem });
+    }
+  };
+  let telemetryOf: Telemetry | undefined;
   return [
     {
       ids: ['browser', 'three', 'pixi'],
@@ -255,16 +279,15 @@ export function defaultProviders(projectDir: string, project: Readonly<Record<st
         });
         lazy = created;
         for (const b of [created.browser, created.three, created.pixi]) if (!registry.backends.has(b.id)) registry.registerBackend(b);
-        if (projectUsesScene3d(project)) {
-          try {
-            await created.prepareGraphics();
-          } catch (error) {
-            // Ohne Chromium scheitert erst der Render des 3D-Layers mit seiner eigenen Diagnose.
-            if (!(error instanceof OpenVideoError)) throw error;
-            ctx.telemetry.logger.warn('browser graphics probe failed', { code: error.diagnostic.code, problem: error.diagnostic.problem });
-          }
-        }
+        telemetryOf = ctx.telemetry;
+        if (projectUsesScene3d(project)) await probe(created, ctx.telemetry);
         return { chromium: created.browser.versions()['chromium'] ?? 'unknown' };
+      },
+      async prepare(p) {
+        // Die Render-Seite entscheidet `auto` nie live: Enthält das Projekt (inzwischen) `scene3d`,
+        // steht die Grafik-Probe vor dem ersten Schlüssel fest (Review M3).
+        if (lazy === undefined || telemetryOf === undefined || !projectUsesScene3d(p)) return;
+        await probe(lazy, telemetryOf);
       },
       runtime() {
         const versions = lazy?.runtimeVersions();
@@ -344,6 +367,42 @@ export function observeCacheTelemetry(cache: Cache, telemetry: Telemetry): void 
   });
 }
 
+/** Höchstzahl gemerkter Transkript-Sätze je Umgebung (je Stand der `fromAudio`-Deklarationen). */
+const TRANSCRIPT_SETS = 8;
+
+/**
+ * Transkripte je Deklarations-Schlüssel (Review m1), LRU-begrenzt auf {@link TRANSCRIPT_SETS}
+ * Sätze. Die Auswertung wählt den Satz ihres Projekts.
+ */
+class TranscriptSets {
+  private readonly sets = new Map<string, ReadonlyMap<string, FromAudioTranscript>>();
+  readonly pending = new Map<string, Promise<void>>();
+
+  has(key: string): boolean {
+    const set = this.sets.get(key);
+    if (set === undefined) return false;
+    // Zuletzt genutzt ans Ende (LRU).
+    this.sets.delete(key);
+    this.sets.set(key, set);
+    return true;
+  }
+
+  set(key: string, set: ReadonlyMap<string, FromAudioTranscript>): void {
+    this.sets.delete(key);
+    this.sets.set(key, set);
+    for (const oldest of this.sets.keys()) {
+      if (this.sets.size <= TRANSCRIPT_SETS) break;
+      this.sets.delete(oldest);
+    }
+  }
+
+  /** Satz zum Stand der Deklarationen eines Projekts, sonst `undefined` (nicht vorbereitet). */
+  forProject(project: Readonly<Record<string, unknown>>): ReadonlyMap<string, FromAudioTranscript> | undefined {
+    const declarations = fromAudioDeclarations(project);
+    return declarations.length === 0 ? undefined : this.sets.get(contentHash(declarations));
+  }
+}
+
 /** Einmalige GPU-Probe je Prozess (Name und Gesamtspeicher ändern sich nicht). */
 let hostGpu: Promise<HostGpu | undefined> | undefined;
 
@@ -389,30 +448,45 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   if (registry.voiceProviders.size === 0) await registerLocalSpeech(registry);
   const measurer = createSkiaTextMeasurer(canvasKit, fonts, defaultFont);
   // Transkripte der fromAudio-Tracks: erst bei `prepare`, je Stand der Deklarationen (Review Q3).
-  const transcripts: { current: ReadonlyMap<string, FromAudioTranscript>; key: string | undefined; readonly pending: Map<string, Promise<void>> } = { current: new Map(), key: undefined, pending: new Map() };
+  // Je Deklarations-Schlüssel ein eigener Satz (LRU): Jede Auswertung liest den Satz ihres eigenen
+  // Projekts, auch wenn parallel ein anderer Stand vorbereitet wird (Review m1).
+  const transcripts = new TranscriptSets();
   if (!registry.expanders.has('subtitles')) {
     const texts = new Map<string, string>();
     for (const a of assets.all()) if (a.type === 'subtitle') texts.set(a.id, await readFile(a.path, 'utf8'));
-    registerSubtitles(registry, {
+    // Projekt der laufenden Auswertung: `expand` ist synchron, der Wert gilt genau für diesen Aufruf.
+    let evaluating: Readonly<Record<string, unknown>> | undefined;
+    const expander = subtitlesExpander({
       loadTrackText: (id) => texts.get(id),
       // fromAudio-Tracks transkribiert `prepare` vor dem Render (Cache je Audio-Hash, Story 17.8, Review Q3).
-      transcript: (compositionId, trackId) => transcripts.current.get(`${compositionId}/${trackId}`),
+      transcript: (compositionId, trackId) => (evaluating === undefined ? undefined : transcripts.forProject(evaluating)?.get(`${compositionId}/${trackId}`)),
       // Umbruch mit echter Textmessung statt geschätzter Zeichenbreite.
       measureText: (text, style) =>
         measurer.measure({ id: '__subtitle-measure', type: 'text', props: { text, ...style }, children: [], time: { localFrame: 0, relFrame: 0, durationFrames: 1, progress: 0, compositionFrame: 0 }, pointer: '' }).width,
     });
+    registry.registerExpander({
+      type: expander.type,
+      expand: (node, ctx) => {
+        const outer = evaluating;
+        evaluating = ctx.project;
+        try {
+          return expander.expand(node, ctx);
+        } finally {
+          evaluating = outer;
+        }
+      },
+    });
   }
   const gpuMode = browserGpuMode(options.browserGpu, env);
-  const prepare = async (p: Readonly<Record<string, unknown>>): Promise<void> => {
+  const prepareTranscripts = async (p: Readonly<Record<string, unknown>>): Promise<void> => {
     const declarations = fromAudioDeclarations(p);
     if (declarations.length === 0) return;
     const key = contentHash(declarations);
-    if (transcripts.key === key) return;
+    if (transcripts.has(key)) return;
     let job = transcripts.pending.get(key);
     if (job === undefined) {
       job = resolveFromAudioTracks(p, { registry, assets, cache }).then((map) => {
-        transcripts.current = map;
-        transcripts.key = key;
+        transcripts.set(key, map);
       });
       transcripts.pending.set(key, job);
     }
@@ -446,6 +520,10 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   }
   const media = mediaTools(registry);
   for (const p of registry.plugins) versions[`plugin:${p.name}`] = p.version;
+  // Code der tatsächlich geladenen Plugin-Dateien (Review m2): gleiche Version, anderer Code → anderer Schlüssel.
+  for (const [name, hash] of Object.entries(pluginCodeHashes(registry))) versions[`${PLUGIN_CODE_PREFIX}${name}`] = hash;
+  // Freigabe von HTML-Skripten nur, wenn gesetzt: Standard-Schlüssel bleiben unverändert (Review m2).
+  if (options.allowHtmlScripts === true) versions['html-scripts'] = 'allowed';
   try {
     versions['ffmpeg'] = (await media.info()).version;
   } catch (error) {
@@ -516,7 +594,10 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
       browserGpu: gpuMode,
     },
     runtime,
-    prepare,
+    async prepare(p) {
+      await prepareTranscripts(p);
+      for (const provider of providers) await provider.prepare?.(p);
+    },
     async dispose() {
       measurer.dispose();
       await assets.close();

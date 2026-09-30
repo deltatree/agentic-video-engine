@@ -119,6 +119,12 @@ export interface AudioEngine {
 /** Medien-Werkzeuge (FFmpeg). */
 export interface MediaTools {
   createEncoder(options: EncodeOptions): Promise<FrameEncoder>;
+  /**
+   * Verfügbare Hardware-Encoder je Familie (`nvenc`, `vaapi` …). Zusammen mit Profil und `hardware`
+   * bestimmen sie, welcher Encoder tatsächlich kodiert; darum stehen sie bei `hardware` ≠ `none` im
+   * Schlüssel der Ebene `encoding` (Review m3). Ohne diese Methode gibt es dann keinen Ausgabe-Cache.
+   */
+  hardwareEncoders?(): Promise<Readonly<Record<string, boolean>>>;
   /** Versionen und Lizenzen für das Manifest. */
   info(): Promise<{ readonly version: string; readonly license: string; readonly configuration: string; readonly codecLicenses: Readonly<Record<string, string>> }>;
 }

@@ -10,6 +10,7 @@
  *   (`openvideo-plugin-hello`, aus `node_modules` des Projekts).
  */
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -234,6 +235,41 @@ async function pluginOf(mod: unknown, spec: string): Promise<Plugin> {
   });
 }
 
+/**
+ * SHA-256 der Moduldateien beim ersten Import je Pfad und Prozess (Review m2). Node lädt ein Modul
+ * je URL nur einmal; spätere Änderungen der Datei laufen erst in einem neuen Prozess. Darum zählt
+ * der Stand beim ersten Import – genau der Code, der tatsächlich läuft.
+ */
+const importedModuleHashes = new Map<string, string>();
+
+/** Code-Hash je Plugin-Name der aus Dateien geladenen Plugins eines Registers. */
+const registryCodeHashes = new WeakMap<Registry, Map<string, string>>();
+
+/**
+ * Hashes der tatsächlich geladenen Plugin-Dateien eines Registers (Plugin-Name → `sha256:…` der
+ * Moduldatei aus `settings.plugins`, Review m2). Sie stehen als `plugin-code:<name>` in den
+ * Versionen und damit in Frame-, Layer- und Ausgabe-Schlüsseln: gleiche Version, anderer Code →
+ * anderer Schlüssel. Gehasht wird die Einstiegsdatei; Plugins mit weiteren Modulen sollten gebündelt
+ * ausgeliefert werden oder ihre Version bei jeder Änderung erhöhen.
+ *
+ * @example
+ * ```ts
+ * await loadProjectPlugins(registry, options);
+ * pluginCodeHashes(registry); // { hello: 'sha256:…' }
+ * ```
+ */
+export function pluginCodeHashes(registry: Registry): Readonly<Record<string, string>> {
+  return Object.fromEntries([...(registryCodeHashes.get(registry) ?? new Map<string, string>())].sort(([a], [b]) => a.localeCompare(b)));
+}
+
+async function moduleHash(file: string): Promise<string> {
+  const known = importedModuleHashes.get(file);
+  if (known !== undefined) return known;
+  const hash = `sha256:${createHash('sha256').update(await readFile(file)).digest('hex')}`;
+  importedModuleHashes.set(file, hash);
+  return hash;
+}
+
 /** Optionen für {@link loadProjectPlugins}. */
 export interface LoadPluginsOptions {
   readonly projectDir: string;
@@ -269,6 +305,8 @@ export async function loadProjectPlugins(registry: Registry, options: LoadPlugin
   const loaded: string[] = [];
   for (const spec of specs) {
     const file = resolvePluginModule(options.projectDir, spec, options.allowOutsidePaths === true);
+    // Vor dem Import lesen: Der Hash beschreibt den Stand, den der (einmalige) Import lädt.
+    const code = await moduleHash(file);
     let mod: unknown;
     try {
       mod = await import(pathToFileURL(file).href);
@@ -278,6 +316,12 @@ export async function loadProjectPlugins(registry: Registry, options: LoadPlugin
     const plugin = await pluginOf(mod, spec);
     if (registry.plugins.some((p) => p.name === plugin.name)) continue;
     await registry.use(plugin, host, { origin: file });
+    let hashes = registryCodeHashes.get(registry);
+    if (hashes === undefined) {
+      hashes = new Map();
+      registryCodeHashes.set(registry, hashes);
+    }
+    hashes.set(plugin.name, code);
     loaded.push(plugin.name);
   }
   return loaded;
