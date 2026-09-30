@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Baut alle TypeScript-Pakete über Projekt-Referenzen und danach Zusatzschritte der Pakete.
 import { spawnSync } from 'node:child_process';
-import { readdirSync, existsSync, readFileSync } from 'node:fs';
+import { cpSync, readdirSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,3 +22,15 @@ for (const base of ['packages', 'apps']) {
     if (pkg.scripts?.['build:extra']) run('npm', ['run', 'build:extra', '--silent'], join(dir, name));
   }
 }
+
+// Story 22.7 (T3): Das gebaute Studio gehört ins veröffentlichte CLI-Paket (`files`: "studio"),
+// damit `npx @agentic-video/cli studio` ohne Repo-Checkout funktioniert. Die CLI sucht es unter
+// packages/cli/studio (neben dist/).
+const studioDist = join(root, 'apps', 'studio', 'dist');
+const cliStudio = join(root, 'packages', 'cli', 'studio');
+if (!existsSync(join(studioDist, 'index.html'))) {
+  console.error('apps/studio/dist/index.html fehlt nach dem Build; das CLI-Paket braucht das Studio.');
+  process.exit(1);
+}
+rmSync(cliStudio, { recursive: true, force: true });
+cpSync(studioDist, cliStudio, { recursive: true });

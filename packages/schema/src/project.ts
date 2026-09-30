@@ -272,11 +272,16 @@ export const VIDEO_CODECS = ['h264', 'h265', 'vp9', 'av1', 'prores', 'prores-444
 export const VideoCodec = Type.Enum(VIDEO_CODECS);
 export type VideoCodec = Static<typeof VideoCodec>;
 
+/** Verweis auf einen Exporter oder Codec aus einem Plugin (Story 21.1). */
+function PluginRef(description: string) {
+  return Type.String({ pattern: '^plugin:[A-Za-z][A-Za-z0-9_.-]{0,63}$', description });
+}
+
 export const RenderProfile = Type.Object(
   {
     id: Id,
-    format: OutputFormat,
-    codec: Type.Optional(VideoCodec),
+    format: Type.Union([OutputFormat, PluginRef('Exporter from a plugin (settings.plugins), e.g. "plugin:hello-frames".')]),
+    codec: Type.Optional(Type.Union([VideoCodec, PluginRef('Codec from a plugin (settings.plugins), e.g. "plugin:x264-film".')])),
     width: Type.Optional(Type.Integer({ minimum: 1, maximum: 16384 })),
     height: Type.Optional(Type.Integer({ minimum: 1, maximum: 16384 })),
     fps: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 240 })),
@@ -305,7 +310,11 @@ export const Settings = Type.Object(
     renderer2d: Type.Optional(Type.Union([Type.Literal('skia'), Type.Literal('pixi')])),
     workingColorSpace: Type.Optional(ColorSpace),
     outputColorSpace: Type.Optional(ColorSpace),
-    plugins: Type.Optional(Type.Array(Type.String())),
+    plugins: Type.Optional(
+      Type.Array(Type.String({ minLength: 1 }), {
+        description: 'Plugin modules: "./plugins/x.mjs" (inside the project) or an npm package name. Loaded only when the host allows plugins (--trusted or OPENVIDEO_ALLOW_PLUGINS=1); permissions via OPENVIDEO_PLUGIN_PERMISSIONS.',
+      }),
+    ),
   },
   { additionalProperties: false },
 );

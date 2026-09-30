@@ -28,8 +28,10 @@ renderer.dispose();
 ## Unterstützt
 
 group (mit `clip`), rect, ellipse, line, polyline, polygon, path, text (mit `background`, auch `perLine`),
-image, video, sprite, shader (GLSL), particles.
-Farben, lineare und radiale Verläufe, Kontur, Opacity als Gruppe, Blend Modes (ohne `hue`),
+rich-text (Spans mit Schrift, Größe, Gewicht, Stil, Füllung und Kontur über PixiJS-`tagStyles`),
+image, video, sprite, shader (GLSL; `sksl` und `glsl` dürfen gleichzeitig stehen, ADR 0020), particles.
+Farben, lineare und radiale Verläufe, Kontur, Opacity als Gruppe, alle Blend Modes des Schemas
+(`hue` über den eigenen `HueBlend`-Filter),
 Filter blur und alle Farbfilter, Masken (`alpha`, `luminance`, `invert`), Reveal-Clips.
 
 ## GLSL-Vertrag für `shader`
@@ -46,8 +48,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
 ## Einschränkungen
 
-- Nicht unterstützt: rich-text, svg, lottie, SkSL, konische Verläufe, `hue`, Schatten, `strokeDash`,
+- Nicht unterstützt: svg, lottie, reine SkSL-Shader, konische Verläufe, Schatten, `strokeDash`,
   `trim*`, `fillRule: 'evenodd'`, Text-Features (`textPath`, `textAnimation`, `maxLines`, `ellipsis`,
   `fontFeatures`, `fontVariations`, `decoration`, `rtl`, `fontStretch`).
+- Mit `settings.renderer2d: 'pixi'` rendert Skia jede Node mit einem dieser Merkmale automatisch
+  (Rückfall pro Node, Info `OV_PIXI_FALLBACK`, ADR 0018). Nur ein explizites `renderer: 'pixi'` an
+  der Node erzwingt PixiJS; dann gelten die Meldungen von `checkPixiNode`.
 - `blur` ist angenähert: PixiJS-Stärke = 2 · σ · `scale`.
 - Video mit `loop`: Die Eingabe kennt die Videodauer nicht; der Host klemmt die Zeit.

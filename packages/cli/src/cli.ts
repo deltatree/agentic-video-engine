@@ -31,11 +31,11 @@ import {
 import { encodePng } from '@agentic-video/png';
 import { defaultWorkerCount } from '@agentic-video/scheduler';
 import { createTemplateCatalog } from '@agentic-video/templates';
-import { checkProject, createNodeEnvironment, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
+import { cacheMaxBytesFromEnv, checkProject, createNodeEnvironment, describeScene, encoderThreadsFor, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
 import { cannotOpenReason, openBrowser } from './browser.js';
 import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
-import { createLocalServices, htmlScriptsAllowed, processRunner, type LocalServices } from './services.js';
+import { createLocalServices, htmlScriptsAllowed, processRunner, workersFromEnv, type LocalServices } from './services.js';
 import { createSourceService } from './sources.js';
 import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
 import { watchProject, type WatchEvent } from './watch.js';
@@ -66,7 +66,7 @@ Commands:
   dev [dir]             Studio with live preview; watches src/** and project.json, opens the browser (--no-open)
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
-  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>)
+  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>, default by cores and memory)
   render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
   op <name>             Run any Agent API operation, same as HTTP/MCP (--input <json|@file>; op --list)
@@ -82,14 +82,14 @@ Commands:
   mcp                   Start the MCP server on stdio (--project <dir> opens a project)
   migrate <file>        Upgrade an older project file (--write)
   worker                Start a render worker (--stdio or --coordinator <url>)
-  coordinator           Start the render coordinator for remote workers (--port --journal)
+  coordinator           Start the render coordinator for remote workers (--port --journal; role tokens OPENVIDEO_SUBMIT_TOKEN, OPENVIDEO_WORKER_TOKEN, OPENVIDEO_METRICS_TOKEN)
 
 Server options (serve, dev, studio):
   --host <addr>          Bind address (default 127.0.0.1; others need a token)
   --port <n>             Port (default 7788)
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
-  --workers <n>          Render videos with n local worker processes
+  --workers <n>          Render videos with n local worker processes (default by cores and memory; 1 = in process)
   --open / --no-open     Open the Studio in the browser (default on for dev/studio, off for serve)
 
 Project and workspace (serve, mcp, op):
@@ -230,6 +230,12 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
       process.once('SIGTERM', stop);
     }
   });
+}
+
+/** Cache-Obergrenze aus `OPENVIDEO_CACHE_MAX_BYTES` als Render-Option (Story 18.9). */
+function cacheBudget(env: Readonly<Record<string, string | undefined>>): { cacheMaxBytes?: number } {
+  const max = cacheMaxBytesFromEnv(env);
+  return max !== undefined ? { cacheMaxBytes: max } : {};
 }
 
 /** Erlaubte Host-Namen aus `--allowed-host` und `OPENVIDEO_ALLOWED_HOSTS` (kommagetrennt). */
@@ -492,10 +498,13 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           const range = values.start !== undefined || values.end !== undefined ? { start: values.start !== undefined ? frameOf(loaded.project, values.composition, values.start) : 0, end: values.end !== undefined ? frameOf(loaded.project, values.composition, values.end) : compositionDurationFrames(comp) } : undefined;
           let last = '';
           // Standard: mehrere Worker-Prozesse nach Kernen und Speicher (Story 18.7); `--workers 1` rendert im Prozess.
-          const workers = Math.max(1, Math.floor(num(values.workers, 'workers') ?? defaultWorkerCount()));
+          const workers = Math.max(1, Math.floor(num(values.workers, 'workers') ?? workersFromEnv(io.env) ?? defaultWorkerCount()));
           const runChunks = workers > 1 ? processRunner(env, loaded.project, workers, trusted) : undefined;
           const r = await renderVideo(env, loaded.project, {
             ...(runChunks !== undefined ? { runChunks, localRenderProcesses: workers } : {}),
+            // Encoder-Threads nach freien Kernen (Story 18.6) und Cache-Budget (Story 18.9) aus der Umgebung des Aufrufs.
+            encoderThreads: encoderThreadsFor(workers, io.env),
+            ...cacheBudget(io.env),
             ...(values.composition !== undefined ? { compositionId: values.composition } : {}),
             outPath,
             profile,

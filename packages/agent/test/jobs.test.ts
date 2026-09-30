@@ -26,7 +26,11 @@ describe('B7: JobManager', () => {
     expect(jobs.cancel(second).state).toBe('cancelled');
     release();
     await jobs.wait(first);
-    await new Promise((r) => setTimeout(r, 50));
+    // Sperre statt fester Wartezeit (Story 22.4): Ein dritter Job läuft bei Parallelität 1 erst,
+    // wenn alle vor ihm eingereihten Jobs dran waren. Ist er fertig, hätte der abgebrochene schon laufen müssen.
+    const third = jobs.start('c', 'p', () => Promise.resolve('after'));
+    await jobs.wait(third);
+    expect(jobs.status(third).state).toBe('succeeded');
     expect(ran).toBe(false);
     expect(jobs.status(second).state).toBe('cancelled');
   });

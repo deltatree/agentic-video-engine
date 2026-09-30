@@ -36,6 +36,27 @@ jobs:
       CHROMIUM_REVISION: '1243'
       CHROMIUM_SHA256: 8aac35011c18f6e2d10696154af89a5728ac2ddd6dc6fad24ffdf243c3fcfd5a
       CHROMIUM_HEADLESS_SHELL_SHA256: a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d
+      # Story 22.1 (T12): In CI wird nichts übersprungen außer GPU-Hardware. Jeder umgebungsbedingte
+      # Skip (skipUnless aus @agentic-video/testing) wird mit OPENVIDEO_REQUIRE_ALL=1 zum Fehler.
+      # Docker-Images per Digest (wie im Code bzw. dem Test-Basis-Image).
+      NODE_BASE_IMAGE: node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c
+      SANDBOX_IMAGE: node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+      SEAWEEDFS_IMAGE: chrislusf/seaweedfs@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+      # Piper (piper-tts 1.8.0, Abhängigkeiten mit Hashes in .github/ci/piper-requirements.txt) und die
+      # Stimme en_US-lessac-low aus rhasspy/piper-voices (Commit gepinnt, SHA-256 geprüft).
+      PIPER_VOICES_COMMIT: c10ece1aade47bb51c153c893d14e5bf8e5b7117
+      PIPER_VOICE_SHA256: f7d01dde371555732c4c314111ac79672b1a5ce2fc19266ab42178fd8df7f375
+      PIPER_VOICE_CONFIG_SHA256: 45754dfdebb3b8661c3fc564713772deec6e064feeb5b4e9594857dc7305193a
+      # whisper.cpp v1.9.4 (Commit geprüft) und das Modell ggml-tiny.en.bin (SHA-256 geprüft).
+      WHISPER_TAG: v1.9.4
+      WHISPER_COMMIT: 927cfce34f31707e17f2bff35c349632fb9e2c3a
+      WHISPER_MODELS_COMMIT: 5359861c739e955e79d9a303bcbc70fb988958b1
+      WHISPER_MODEL_SHA256: 921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f
+      OPENVIDEO_PIPER: /home/runner/.local/opt/piper-venv/bin/piper
+      OPENVIDEO_PIPER_MODEL: /home/runner/.local/opt/piper-voices/en_US-lessac-low.onnx
+      OPENVIDEO_WHISPER: /home/runner/.local/opt/whisper.cpp/build/bin/whisper-cli
+      OPENVIDEO_WHISPER_MODEL: /home/runner/.local/opt/whisper.cpp/models/ggml-tiny.en.bin
+      OPENVIDEO_ESPEAK: /usr/bin/espeak-ng
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -66,8 +87,55 @@ jobs:
             tar xJf blender.tar.xz -C ~/.local/opt
             rm blender.tar.xz
           fi
-          sudo apt-get update && sudo apt-get install -y espeak-ng libxi6 libxkbcommon0 libsm6 libgl1 libegl1 libegl-mesa0 libglx-mesa0 libxxf86vm1 libxfixes3 libxrender1
+          sudo apt-get update && sudo apt-get install -y espeak-ng python3-venv libxi6 libxkbcommon0 libsm6 libgl1 libegl1 libegl-mesa0 libglx-mesa0 libxxf86vm1 libxfixes3 libxrender1
           echo "OPENVIDEO_BLENDER=$HOME/.local/opt/blender-4.2.23-linux-x64/blender" >> "$GITHUB_ENV"
+      - name: Docker-Images vorab ziehen (Digest geprüft)
+        run: |
+          docker pull "$NODE_BASE_IMAGE"
+          # Der Scheduler-Test baut sein Worker-Image FROM node:22-bookworm-slim.
+          docker tag "$NODE_BASE_IMAGE" node:22-bookworm-slim
+          docker pull "$SANDBOX_IMAGE"
+          docker pull "$SEAWEEDFS_IMAGE"
+      - name: Piper und Stimme (Cache)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.local/opt/piper-venv
+            ~/.local/opt/piper-voices
+          key: piper-${{ runner.os }}-${{ hashFiles('.github/ci/piper-requirements.txt') }}-${{ env.PIPER_VOICE_SHA256 }}-${{ env.PIPER_VOICE_CONFIG_SHA256 }}
+      - name: Piper installieren (Hashes und SHA-256 geprüft)
+        run: |
+          if [ ! -x "$OPENVIDEO_PIPER" ]; then
+            python3 -m venv ~/.local/opt/piper-venv
+            ~/.local/opt/piper-venv/bin/pip install --no-cache-dir --require-hashes --only-binary=:all: -r .github/ci/piper-requirements.txt
+          fi
+          voices=~/.local/opt/piper-voices
+          base="https://huggingface.co/rhasspy/piper-voices/resolve/${PIPER_VOICES_COMMIT}/en/en_US/lessac/low"
+          mkdir -p "$voices"
+          [ -f "$voices/en_US-lessac-low.onnx" ] || curl -fsSL "$base/en_US-lessac-low.onnx" -o "$voices/en_US-lessac-low.onnx"
+          [ -f "$voices/en_US-lessac-low.onnx.json" ] || curl -fsSL "$base/en_US-lessac-low.onnx.json" -o "$voices/en_US-lessac-low.onnx.json"
+          echo "${PIPER_VOICE_SHA256}  $voices/en_US-lessac-low.onnx" | sha256sum -c -
+          echo "${PIPER_VOICE_CONFIG_SHA256}  $voices/en_US-lessac-low.onnx.json" | sha256sum -c -
+          echo "Hello." | "$OPENVIDEO_PIPER" -m "$OPENVIDEO_PIPER_MODEL" -f /tmp/piper-check.wav
+      - name: whisper.cpp (Cache)
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.local/opt/whisper.cpp
+          key: whisper-${{ runner.os }}-${{ env.WHISPER_COMMIT }}-${{ env.WHISPER_MODEL_SHA256 }}
+      - name: whisper.cpp bauen und Modell laden (Commit und SHA-256 geprüft)
+        run: |
+          dir=~/.local/opt/whisper.cpp
+          if [ ! -x "$OPENVIDEO_WHISPER" ]; then
+            rm -rf "$dir"
+            git clone --depth 1 --branch "$WHISPER_TAG" https://github.com/ggml-org/whisper.cpp "$dir"
+            test "$(git -C "$dir" rev-parse HEAD)" = "$WHISPER_COMMIT"
+            cmake -S "$dir" -B "$dir/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=OFF -DWHISPER_BUILD_TESTS=OFF
+            cmake --build "$dir/build" -j 4 --target whisper-cli
+          fi
+          mkdir -p "$dir/models"
+          [ -f "$OPENVIDEO_WHISPER_MODEL" ] || curl -fsSL "https://huggingface.co/ggerganov/whisper.cpp/resolve/${WHISPER_MODELS_COMMIT}/ggml-tiny.en.bin" -o "$OPENVIDEO_WHISPER_MODEL"
+          echo "${WHISPER_MODEL_SHA256}  $OPENVIDEO_WHISPER_MODEL" | sha256sum -c -
+          "$OPENVIDEO_WHISPER" --help > /dev/null
       - name: Abhängigkeiten
         run: npm ci
       - name: Chromium für Playwright (SHA-256 geprüft)
@@ -102,8 +170,29 @@ jobs:
         run: node scripts/licenses.mjs --check
       - name: Schwachstellen ab high
         run: npm audit --omit=dev --audit-level=high
-      - name: Tests (Unit, Property, Integration, Golden, Audio, E2E, Determinismus, Security)
-        run: npm test
+      - name: Tests mit Coverage (Unit, Property, Integration, Golden, Audio, E2E, Determinismus, Security)
+        # CI=true: fehlende Vitest-Snapshots sind ein Fehler statt still neu geschrieben.
+        env:
+          CI: 'true'
+          OPENVIDEO_REQUIRE_ALL: '1'
+        run: npm run test:coverage
+      - name: Coverage-Bericht
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+      - name: Studio-Screenshot
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: studio-screenshot
+          path: |
+            apps/studio/test/artifacts/
+            apps/studio/test/golden/*.actual.png
+            apps/studio/test/golden/*.diff.png
+          if-no-files-found: ignore
       - name: Diff-Bilder bei Golden-Fehlern
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -112,4 +201,29 @@ jobs:
           path: |
             packages/*/test/golden/*.actual.png
             packages/*/test/golden/*.diff.png
+            apps/*/test/golden/*.actual.png
+            apps/*/test/golden/*.diff.png
           if-no-files-found: ignore
+
+  # Story 22.7 (T3): Die npm-Pakete funktionieren außerhalb des Monorepos (npm pack → leeres Verzeichnis).
+  smoke-npx:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Abhängigkeiten
+        run: npm ci
+      - name: Build (inklusive Studio im CLI-Paket)
+        run: npm run build
+      - name: Veröffentlichungs-Metadaten (publishConfig, files, Versionen)
+        run: node scripts/release-packages.mjs check
+      - name: npm pack, Installation und openvideo create/validate/render-frame
+        run: node scripts/smoke-npx.mjs

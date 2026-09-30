@@ -1,0 +1,1049 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Template-Katalog (Snapshot) > jedes Template: Nodes und Assets der IR (Typen und IDs) entsprechen dem Snapshot 1`] = `
+{
+  "3d-product-showcase": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          {
+            "scene3d#stage": [
+              "camera3d#camera",
+              "light3d#ambient",
+              "light3d#key",
+              "light3d#rim",
+              {
+                "group3d#turntable": [
+                  "mesh3d#plinth",
+                  {
+                    "group3d#product": [
+                      "mesh3d#product-body",
+                      "mesh3d#product-fabric",
+                      "mesh3d#product-ring",
+                      "mesh3d#product-button",
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            "group#copy": [
+              "component#copy-eyebrow",
+              "text#copy-name",
+              "text#copy-tagline",
+            ],
+          },
+          {
+            "group#feature-1": [
+              "rect#feature-1-dot",
+              "text#feature-1-text",
+            ],
+          },
+          {
+            "group#feature-2": [
+              "rect#feature-2-dot",
+              "text#feature-2-text",
+            ],
+          },
+          {
+            "group#feature-3": [
+              "rect#feature-3-dot",
+              "text#feature-3-text",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  "architecture-diagram": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "component#grid",
+          "text#title",
+          "component#title-badge",
+          "component#link-web-gateway",
+          "component#link-agent-gateway",
+          "component#link-gateway-render",
+          "component#link-gateway-scheduler",
+          "component#link-scheduler-workers",
+          "component#link-render-cache",
+          "component#link-workers-storage",
+          {
+            "group#web": [
+              "rect#web-bg",
+              "rect#web-edge",
+              "text#web-label",
+              "text#web-sub",
+            ],
+          },
+          {
+            "group#agent": [
+              "rect#agent-bg",
+              "rect#agent-edge",
+              "text#agent-label",
+              "text#agent-sub",
+            ],
+          },
+          {
+            "group#gateway": [
+              "rect#gateway-bg",
+              "rect#gateway-edge",
+              "text#gateway-label",
+              "text#gateway-sub",
+            ],
+          },
+          {
+            "group#render": [
+              "rect#render-bg",
+              "rect#render-edge",
+              "text#render-label",
+              "text#render-sub",
+            ],
+          },
+          {
+            "group#scheduler": [
+              "rect#scheduler-bg",
+              "rect#scheduler-edge",
+              "text#scheduler-label",
+              "text#scheduler-sub",
+            ],
+          },
+          {
+            "group#workers": [
+              "rect#workers-bg",
+              "rect#workers-edge",
+              "text#workers-label",
+              "text#workers-sub",
+            ],
+          },
+          {
+            "group#cache": [
+              "rect#cache-bg",
+              "rect#cache-edge",
+              "text#cache-label",
+              "text#cache-sub",
+            ],
+          },
+          {
+            "group#storage": [
+              "rect#storage-bg",
+              "rect#storage-edge",
+              "text#storage-label",
+              "text#storage-sub",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  "cinematic-title": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "ellipse#light",
+          "component#dust",
+          "text#presents",
+          {
+            "group#title-group": [
+              "text#title",
+              "rect#rule",
+              "text#tagline",
+            ],
+          },
+          "text#date",
+          "component#vignette",
+          "rect#bar-top",
+          "rect#bar-bottom",
+        ],
+      },
+    ],
+  },
+  "code-tutorial": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          {
+            "group#header": [
+              "component#header-step",
+              "text#header-title",
+            ],
+          },
+          "component#editor",
+          "component#callout",
+          "component#terminal",
+        ],
+      },
+    ],
+  },
+  "comparison-video": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          {
+            "group#columns": [
+              "text#heading",
+              {
+                "group#before": [
+                  "rect#before-bg",
+                  "rect#before-top",
+                  "text#before-title",
+                  {
+                    "group#before-row-1": [
+                      "rect#before-row-1-icon",
+                      "text#before-row-1-symbol",
+                      "text#before-row-1-text",
+                    ],
+                  },
+                  {
+                    "group#before-row-2": [
+                      "rect#before-row-2-icon",
+                      "text#before-row-2-symbol",
+                      "text#before-row-2-text",
+                    ],
+                  },
+                  {
+                    "group#before-row-3": [
+                      "rect#before-row-3-icon",
+                      "text#before-row-3-symbol",
+                      "text#before-row-3-text",
+                    ],
+                  },
+                  {
+                    "group#before-row-4": [
+                      "rect#before-row-4-icon",
+                      "text#before-row-4-symbol",
+                      "text#before-row-4-text",
+                    ],
+                  },
+                ],
+              },
+              {
+                "group#after": [
+                  "rect#after-bg",
+                  "rect#after-top",
+                  "text#after-title",
+                  {
+                    "group#after-row-1": [
+                      "rect#after-row-1-icon",
+                      "text#after-row-1-symbol",
+                      "text#after-row-1-text",
+                    ],
+                  },
+                  {
+                    "group#after-row-2": [
+                      "rect#after-row-2-icon",
+                      "text#after-row-2-symbol",
+                      "text#after-row-2-text",
+                    ],
+                  },
+                  {
+                    "group#after-row-3": [
+                      "rect#after-row-3-icon",
+                      "text#after-row-3-symbol",
+                      "text#after-row-3-text",
+                    ],
+                  },
+                  {
+                    "group#after-row-4": [
+                      "rect#after-row-4-icon",
+                      "text#after-row-4-symbol",
+                      "text#after-row-4-text",
+                    ],
+                  },
+                ],
+              },
+              "line#divider",
+              "component#vs",
+            ],
+          },
+          {
+            "group#result": [
+              "text#result-label",
+              "component#result-counter",
+              "text#result-sub",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  "data-visualization": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          {
+            "group#kpis": [
+              "text#kpis-heading",
+              {
+                "group#kpi-1": [
+                  "rect#kpi-1-bg",
+                  "text#kpi-1-label",
+                  "component#kpi-1-value",
+                ],
+              },
+              {
+                "group#kpi-2": [
+                  "rect#kpi-2-bg",
+                  "text#kpi-2-label",
+                  "component#kpi-2-value",
+                ],
+              },
+              {
+                "group#kpi-3": [
+                  "rect#kpi-3-bg",
+                  "text#kpi-3-label",
+                  "component#kpi-3-value",
+                ],
+              },
+            ],
+          },
+          {
+            "group#trends": [
+              "text#trends-heading",
+              "component#revenue-chart",
+              "component#users-chart",
+            ],
+          },
+          {
+            "group#share": [
+              "text#share-heading",
+              "component#share-chart",
+              {
+                "group#share-note": [
+                  "text#share-note-value",
+                  "text#share-note-text",
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  "logo-reveal": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "ellipse#glow",
+          {
+            "group#mark": [
+              "component#mark-logo",
+            ],
+          },
+          "rich-text#wordmark",
+          "text#tagline",
+        ],
+      },
+    ],
+  },
+  "lower-third": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "component#lower-third",
+          {
+            "group#topic": [
+              "rect#topic-bg",
+              "rect#topic-dot",
+              "text#topic-text",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  "podcast-clip": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "rect#card",
+          "component#badge",
+          "text#show",
+          "text#episode",
+          {
+            "group#waveform": [
+              {
+                "group#wave-1": [
+                  "rect#bar-1",
+                  "rect#bar-4",
+                  "rect#bar-7",
+                  "rect#bar-10",
+                  "rect#bar-13",
+                  "rect#bar-16",
+                  "rect#bar-19",
+                  "rect#bar-22",
+                  "rect#bar-25",
+                  "rect#bar-28",
+                  "rect#bar-31",
+                  "rect#bar-34",
+                ],
+              },
+              {
+                "group#wave-2": [
+                  "rect#bar-2",
+                  "rect#bar-5",
+                  "rect#bar-8",
+                  "rect#bar-11",
+                  "rect#bar-14",
+                  "rect#bar-17",
+                  "rect#bar-20",
+                  "rect#bar-23",
+                  "rect#bar-26",
+                  "rect#bar-29",
+                  "rect#bar-32",
+                  "rect#bar-35",
+                ],
+              },
+              {
+                "group#wave-3": [
+                  "rect#bar-3",
+                  "rect#bar-6",
+                  "rect#bar-9",
+                  "rect#bar-12",
+                  "rect#bar-15",
+                  "rect#bar-18",
+                  "rect#bar-21",
+                  "rect#bar-24",
+                  "rect#bar-27",
+                  "rect#bar-30",
+                  "rect#bar-33",
+                  "rect#bar-36",
+                ],
+              },
+            ],
+          },
+          "text#quote",
+          {
+            "group#host": [
+              "ellipse#host-avatar",
+              "text#host-initials",
+              "text#host-name",
+              "text#host-label",
+            ],
+          },
+          {
+            "group#guest": [
+              "ellipse#guest-avatar",
+              "text#guest-initials",
+              "text#guest-name",
+              "text#guest-label",
+            ],
+          },
+          "rect#progress-track",
+          "rect#progress",
+        ],
+      },
+    ],
+  },
+  "presentation": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "rect#side-accent",
+          {
+            "group#slide-1": [
+              "component#slide-1-badge",
+              "component#slide-1-title",
+              "component#slide-1-sub",
+            ],
+          },
+          {
+            "group#slide-2": [
+              "text#slide-2-heading",
+              {
+                "group#bullet-1": [
+                  "rect#bullet-1-dot",
+                  "text#bullet-1-text",
+                ],
+              },
+              {
+                "group#bullet-2": [
+                  "rect#bullet-2-dot",
+                  "text#bullet-2-text",
+                ],
+              },
+              {
+                "group#bullet-3": [
+                  "rect#bullet-3-dot",
+                  "text#bullet-3-text",
+                ],
+              },
+              {
+                "group#bullet-4": [
+                  "rect#bullet-4-dot",
+                  "text#bullet-4-text",
+                ],
+              },
+            ],
+          },
+          {
+            "group#slide-3": [
+              "text#slide-3-heading",
+              "component#slide-3-table",
+            ],
+          },
+          "text#footer-title",
+          "rect#footer-track",
+          "rect#footer-progress",
+        ],
+      },
+    ],
+  },
+  "product-launch": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "component#glow",
+          "component#particles",
+          {
+            "group#intro": [
+              "component#intro-badge",
+              "component#intro-title",
+              "component#intro-tagline",
+            ],
+          },
+          {
+            "group#features": [
+              "text#features-heading",
+              "component#feature-1",
+              "component#feature-2",
+              "component#feature-3",
+            ],
+          },
+          {
+            "group#cta": [
+              {
+                "component#cta-window": [
+                  "rect#cta-hero",
+                  "rect#cta-line-1",
+                  "rect#cta-line-2",
+                  "rect#cta-chart",
+                  "rect#cta-bar",
+                ],
+              },
+              "text#cta-product",
+              "text#cta-line",
+              {
+                "group#cta-button": [
+                  "rect#cta-button-bg",
+                  "text#cta-button-label",
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  "saas-explainer": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "component#grid",
+          {
+            "group#problem": [
+              "component#problem-title",
+              "component#problem-sub",
+            ],
+          },
+          {
+            "group#product": [
+              "text#product-heading",
+              {
+                "component#product-laptop": [
+                  {
+                    "group#dashboard": [
+                      "rect#dash-sidebar",
+                      "rect#dash-logo",
+                      "rect#dash-nav-1",
+                      "rect#dash-nav-2",
+                      "rect#dash-nav-3",
+                      "rect#dash-nav-4",
+                      "rect#dash-kpi-1",
+                      "rect#dash-kpi-2",
+                      "rect#dash-kpi-3",
+                      "rect#dash-kpi-value-1",
+                      "rect#dash-kpi-value-2",
+                      "rect#dash-kpi-value-3",
+                      "rect#dash-chart",
+                      "rect#dash-bar-1",
+                      "rect#dash-bar-2",
+                      "rect#dash-bar-3",
+                      "rect#dash-bar-4",
+                      "rect#dash-bar-5",
+                      "rect#dash-bar-6",
+                      "rect#dash-bar-7",
+                      "rect#dash-button",
+                      "text#dash-button-label",
+                    ],
+                  },
+                ],
+              },
+              "component#product-cursor",
+              "component#product-callout",
+            ],
+          },
+          {
+            "group#steps": [
+              {
+                "group#step-1": [
+                  "ellipse#step-1-circle",
+                  "text#step-1-number",
+                  "text#step-1-label",
+                  "text#step-1-text",
+                ],
+              },
+              {
+                "group#step-2": [
+                  "ellipse#step-2-circle",
+                  "text#step-2-number",
+                  "text#step-2-label",
+                  "text#step-2-text",
+                ],
+              },
+              {
+                "group#step-3": [
+                  "ellipse#step-3-circle",
+                  "text#step-3-number",
+                  "text#step-3-label",
+                  "text#step-3-text",
+                ],
+              },
+              "component#step-link-1",
+              "component#step-link-2",
+              "text#steps-closing",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  "social-video": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "component#glow",
+          {
+            "group#hook": [
+              "component#hook-badge",
+              "component#hook-title",
+              "component#hook-counter",
+              "text#hook-stat",
+            ],
+          },
+          {
+            "group#tips": [
+              "text#tips-heading",
+              {
+                "group#tip-1": [
+                  "rect#tip-1-card",
+                  "rect#tip-1-accent",
+                  "text#tip-1-number",
+                  "text#tip-1-title",
+                  "text#tip-1-body",
+                ],
+              },
+              {
+                "group#tip-2": [
+                  "rect#tip-2-card",
+                  "rect#tip-2-accent",
+                  "text#tip-2-number",
+                  "text#tip-2-title",
+                  "text#tip-2-body",
+                ],
+              },
+              {
+                "group#tip-3": [
+                  "rect#tip-3-card",
+                  "rect#tip-3-accent",
+                  "text#tip-3-number",
+                  "text#tip-3-title",
+                  "text#tip-3-body",
+                ],
+              },
+            ],
+          },
+          {
+            "group#follow": [
+              "text#follow-title",
+              {
+                "group#follow-pill": [
+                  "rect#follow-pill-bg",
+                  "text#follow-pill-label",
+                ],
+              },
+            ],
+          },
+          "rect#progress-track",
+          "rect#progress-fill",
+        ],
+      },
+    ],
+  },
+  "subtitle-video": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "component#gradient",
+          {
+            "group#speaker": [
+              "ellipse#speaker-halo",
+              "ellipse#speaker-avatar",
+              "text#speaker-initials",
+            ],
+          },
+          "text#speaker-name",
+          "text#speaker-role",
+          "component#badge",
+          "subtitles#captions",
+        ],
+      },
+    ],
+  },
+  "youtube-intro": {
+    "assets": [],
+    "compositions": [
+      {
+        "composition#main": [
+          "rect#background",
+          "component#gradient",
+          "component#sparks",
+          {
+            "group#content": [
+              {
+                "group#icon": [
+                  "rect#icon-body",
+                  "polygon#icon-play",
+                ],
+              },
+              "text#channel",
+              "component#badge",
+              "text#episode",
+            ],
+          },
+        ],
+      },
+    ],
+  },
+}
+`;
+
+exports[`Template-Katalog (Snapshot) > list() entspricht dem eingecheckten Snapshot 1`] = `
+[
+  {
+    "description": "A procedurally built product turns on a plinth while the camera moves closer; features appear beside it.",
+    "durationSeconds": 10,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "3d-product-showcase",
+    "tags": [
+      "3d",
+      "product",
+      "16:9",
+    ],
+    "title": "3D Product Showcase",
+    "width": 1920,
+  },
+  {
+    "description": "Layered service diagram: boxes appear layer by layer, connectors show the data flow.",
+    "durationSeconds": 14,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "architecture-diagram",
+    "tags": [
+      "architecture",
+      "diagram",
+      "16:9",
+    ],
+    "title": "Architecture Diagram",
+    "width": 1920,
+  },
+  {
+    "description": "Letterboxed film title with dust, light and a closing tracking animation.",
+    "durationSeconds": 10,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "cinematic-title",
+    "tags": [
+      "cinematic",
+      "title",
+      "trailer",
+    ],
+    "title": "Cinematic Title",
+    "width": 1920,
+  },
+  {
+    "description": "A code editor types the source, a callout explains a line, a terminal shows the result.",
+    "durationSeconds": 15,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "code-tutorial",
+    "tags": [
+      "tutorial",
+      "code",
+      "16:9",
+    ],
+    "title": "Code Tutorial",
+    "width": 1920,
+  },
+  {
+    "description": "Side-by-side before and after columns, then the result as a counter.",
+    "durationSeconds": 12,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "comparison-video",
+    "tags": [
+      "comparison",
+      "marketing",
+      "16:9",
+    ],
+    "title": "Comparison Video",
+    "width": 1920,
+  },
+  {
+    "description": "KPI counters, then bar, line and donut charts with growth animation.",
+    "durationSeconds": 14,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "data-visualization",
+    "tags": [
+      "data",
+      "charts",
+      "16:9",
+    ],
+    "title": "Data Visualization",
+    "width": 1920,
+  },
+  {
+    "description": "The mark draws itself, slides left and the wordmark and tagline appear.",
+    "durationSeconds": 6,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "logo-reveal",
+    "tags": [
+      "brand",
+      "logo",
+      "16:9",
+    ],
+    "title": "Logo Reveal",
+    "width": 1920,
+  },
+  {
+    "description": "Name and role overlay on a transparent background, rendered with alpha.",
+    "durationSeconds": 6,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "lower-third",
+    "tags": [
+      "overlay",
+      "alpha",
+      "interview",
+    ],
+    "title": "Lower Third",
+    "width": 1920,
+  },
+  {
+    "description": "Square audiogram: waveform bars from audio amplitudes, quote and speakers.",
+    "durationSeconds": 12,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "src/waveform.ts",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "podcast-clip",
+    "tags": [
+      "podcast",
+      "audiogram",
+      "1:1",
+    ],
+    "title": "Podcast Clip",
+    "width": 1080,
+  },
+  {
+    "description": "Three slides (title, bullets, table) with footer and progress bar.",
+    "durationSeconds": 15,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "presentation",
+    "tags": [
+      "presentation",
+      "slides",
+      "16:9",
+    ],
+    "title": "Presentation",
+    "width": 1920,
+  },
+  {
+    "description": "Announce a product: name reveal, three benefit cards and a call to action with a browser mockup.",
+    "durationSeconds": 12,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "product-launch",
+    "tags": [
+      "marketing",
+      "launch",
+      "16:9",
+    ],
+    "title": "Product Launch",
+    "width": 1920,
+  },
+  {
+    "description": "Explain a SaaS product: the problem, the product in a laptop mockup with cursor, then three steps.",
+    "durationSeconds": 15,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "saas-explainer",
+    "tags": [
+      "explainer",
+      "saas",
+      "16:9",
+    ],
+    "title": "SaaS Explainer",
+    "width": 1920,
+  },
+  {
+    "description": "Vertical 9:16 clip with a hook, three tips and a follow call to action.",
+    "durationSeconds": 10,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1920,
+    "name": "social-video",
+    "tags": [
+      "social",
+      "vertical",
+      "9:16",
+    ],
+    "title": "Social Video",
+    "width": 1080,
+  },
+  {
+    "description": "Speaker layout with inline subtitles and word highlighting.",
+    "durationSeconds": 12,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "subtitle-video",
+    "tags": [
+      "subtitles",
+      "captions",
+      "16:9",
+    ],
+    "title": "Subtitle Video",
+    "width": 1920,
+  },
+  {
+    "description": "Channel intro: the play mark springs in, channel name and episode appear, then zoom out.",
+    "durationSeconds": 6,
+    "files": [
+      "README.md",
+      "src/video.tsx",
+      "template.json",
+    ],
+    "fps": 30,
+    "height": 1080,
+    "name": "youtube-intro",
+    "tags": [
+      "youtube",
+      "intro",
+      "16:9",
+    ],
+    "title": "YouTube Intro",
+    "width": 1920,
+  },
+]
+`;

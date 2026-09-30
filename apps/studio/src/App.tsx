@@ -14,6 +14,7 @@ import { Audio, Curves, Keyframes } from './panels/Animation.js';
 import { Code, Diagnostics, RenderQueue } from './panels/Bottom.js';
 import { Effects, Inspector } from './panels/Inspector.js';
 import { Assets, Components } from './panels/Library.js';
+import { PluginPanels, usePluginPanels } from './panels/PluginPanels.js';
 import { Preview } from './panels/Preview.js';
 import { SceneTree } from './panels/SceneTree.js';
 import { Timeline } from './panels/Timeline.js';
@@ -245,7 +246,8 @@ export function App(): ReactNode {
   const [studio, state] = useStudio();
   const [layout, setLayout] = useState<Layout>(() => loadLayout(window.innerWidth));
   const [leftTab, setLeftTab] = useState<'tree' | 'assets' | 'components'>('tree');
-  const [rightTab, setRightTab] = useState<'inspector' | 'properties' | 'effects'>('inspector');
+  const [rightTab, setRightTab] = useState<'inspector' | 'properties' | 'effects' | 'plugins'>('inspector');
+  const pluginPanels = usePluginPanels(state.projectId);
   const [midTab, setMidTab] = useState<'timeline' | 'audio' | 'keyframes' | 'curves'>('timeline');
   const [help, setHelp] = useState(false);
 
@@ -423,14 +425,16 @@ export function App(): ReactNode {
               { id: 'inspector', label: 'Inspector' },
               { id: 'properties', label: 'Properties' },
               { id: 'effects', label: 'Effects' },
+              // Panels aus Plugins (Story 21.1) nur, wenn das Projekt welche hat.
+              ...(pluginPanels.length > 0 ? [{ id: 'plugins' as const, label: 'Plugins' }] : []),
             ]}
-            active={rightTab}
+            active={rightTab === 'plugins' && pluginPanels.length === 0 ? 'inspector' : rightTab}
             onChange={setRightTab}
             onToggle={() => {
               togglePanel('right');
             }}
           >
-            {rightTab === 'effects' ? <Effects /> : <Inspector mode={rightTab} />}
+            {rightTab === 'effects' ? <Effects /> : rightTab === 'plugins' && pluginPanels.length > 0 ? <PluginPanels panels={pluginPanels} /> : <Inspector mode={rightTab === 'plugins' ? 'inspector' : rightTab} />}
           </Tabs>
         )}
       </div>

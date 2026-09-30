@@ -171,6 +171,31 @@ const cases: Record<string, PixiCase> = {
       ...['multiply', 'screen', 'difference', 'overlay'].map((mode, i) => ev('ellipse', { x: 10 + i * 47, y: 45, width: 60, height: 60, fill: '#FECA57', blendMode: mode })),
     ],
   },
+  'blend-hue': {
+    nodes: () => [
+      ev('rect', { width: WIDTH, height: HEIGHT, fill: linear('#FF6B6B', '#48DBFB') }),
+      ev('ellipse', { x: 20, y: 30, width: 90, height: 90, fill: '#1DD1A1', blendMode: 'hue' }),
+      ev('rect', { x: 110, y: 30, width: 70, height: 90, fill: '#5F27CD', blendMode: 'hue' }),
+    ],
+  },
+  'rich-text': {
+    nodes: () => [
+      bg(),
+      ev('rich-text', {
+        x: 10,
+        y: 20,
+        width: 180,
+        fontSize: 22,
+        fill: '#FFFFFF',
+        spans: [
+          { text: 'Rich ' },
+          { text: 'text', fill: '#FECA57', fontWeight: 800 },
+          { text: ' in ', fontStyle: 'italic' },
+          { text: 'PixiJS <b>', fontSize: 30, fill: linear('#FF6B6B', '#48DBFB'), stroke: '#000000', strokeWidth: 1 },
+        ],
+      }),
+    ],
+  },
   'filters-blur': {
     nodes: () => [bg(), ev('rect', { x: 40, y: 35, width: 120, height: 80, fill: '#FF6B6B', filters: [{ type: 'blur', radius: 6 }] })],
   },

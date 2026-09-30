@@ -3,6 +3,7 @@
  * `reverse` und `remap`. Prüft Klick-Onsets im gemischten Ton (FFmpeg dekodiert die Quellen).
  */
 import { describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -101,7 +102,7 @@ function expectOnsets(actual: readonly number[], expected: readonly number[]): v
   });
 }
 
-describe.skipIf(!ffmpegFound)('Audio in verschachtelten Compositions (Story 17.7)', () => {
+describe.skipIf(skipUnless(ffmpegFound, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('Audio in verschachtelten Compositions (Story 17.7)', () => {
   it('mischt den Ton einer composition-ref (Spur und Video) mit ihrem Versatz', async () => {
     const inner = {
       id: 'inner',

@@ -180,6 +180,19 @@ export class WebGPUBackend {
     return new WebGPUBackend(renderer);
   }
 
+  /** Größte Texturkante der GPU (`maxTextureDimension2D`, WebGPU-Standard 8192). */
+  get maxTextureSize(): number {
+    const backend: unknown = this.renderer.backend;
+    if (typeof backend === 'object' && backend !== null && 'device' in backend) {
+      const device: unknown = backend.device;
+      if (typeof device === 'object' && device !== null && 'limits' in device) {
+        const limits: unknown = device.limits;
+        if (typeof limits === 'object' && limits !== null && 'maxTextureDimension2D' in limits && typeof limits.maxTextureDimension2D === 'number') return limits.maxTextureDimension2D;
+      }
+    }
+    return 8192;
+  }
+
   /** Umgebungstextur eines Presets (einmal pro Backend erzeugt). */
   presetEnvironment(preset: EnvironmentPreset): Promise<Texture> {
     let tex = this.presets.get(preset);

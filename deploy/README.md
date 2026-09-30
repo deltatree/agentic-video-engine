@@ -205,6 +205,7 @@ Studio (es landet sonst in Logs und im Verlauf).
 | `overlays/local` | kind oder Laptop: kleine Ressourcen, Images mit Tag `local`, keine GPU, feste Test-Tokens. |
 | `overlays/production` | Images aus ghcr.io mit fester Version, Geheimnisse aus `secrets.env`. |
 | `overlays/prometheus` | `production` plus Skalierung über die Render-Dauer aus Prometheus. |
+| `overlays/production-ha` | `prometheus` plus Hochverfügbarkeit: PodDisruptionBudgets, Replikate und RollingUpdate für Studio und Worker, Priorität für die Single-Writer, GPU-Autoscaling über DCGM (siehe [Hochverfügbarkeit](#hochverfügbarkeit)). |
 
 ## Konfiguration
 
@@ -241,6 +242,10 @@ Weitere Variablen in den Deployments:
 | `OPENVIDEO_METRICS_TOKEN` | `coordinator` | Token der Rolle `metrics` (KEDA, nur `GET /v1/queue`). |
 | `OPENVIDEO_ALLOW_HTML_SCRIPTS` | – | `1` erlaubt HTML-Skripte, aber nur mit Chromium-OS-Sandbox. Standard: aus. |
 | `OPENVIDEO_METRICS` | `api` | `prometheus` exportiert Metriken auf Port 9464 (`OPENVIDEO_METRICS_PORT`). Das Overlay `prometheus` setzt das. |
+| `OPENVIDEO_WORKERS` | `api` | Lokale Worker-Prozesse, wenn die API selbst rendert (ohne `OPENVIDEO_COORDINATOR_URL`). Standard: Kerne − 1, begrenzt durch 1,5 GB je Worker (ADR 0026). In Pods mit CPU- oder Speichergrenze fest setzen: Node sieht die cgroup-Grenzen nicht. |
+| `OPENVIDEO_ENCODER_THREADS` | `api` | Threads des Video-Encoders. Standard: fest 4, damit die Videodatei über Maschinen hinweg bitgleich ist. `auto` nutzt die freien Kerne neben den Render-Prozessen (schneller, Datei nicht mehr maschinenübergreifend bitgleich; ADR 0026). |
+| `OPENVIDEO_CACHE_MAX_BYTES` | `api`, Worker | Obergrenze des lokalen Caches; nach jedem Video-Render räumt OpenVideo die ältesten Einträge bis dahin auf. Ohne Wert: kein Aufräumen. |
+| `OPENVIDEO_CHUNK_TIMEOUT_MS` | `api` | Höchstdauer eines Chunks auf einem lokalen Worker-Prozess; danach wird der Worker beendet und der Chunk wiederholt. |
 
 Erreichen Sie API oder Studio über einen Ingress-Namen, ergänzen Sie ihn in Ihrem Overlay:
 
@@ -378,6 +383,43 @@ Voraussetzungen:
 Das Overlay setzt in der API `OPENVIDEO_METRICS=prometheus`. Die API liefert ihre Metriken dann auf Port 9464.
 Die NetworkPolicy `prometheus-scrape` erlaubt Prometheus den Zugriff auf Koordinator und API.
 
+### Hochverfügbarkeit
+
+Das Overlay `production-ha` (ADR 0027) setzt KEDA, Prometheus und den NVIDIA GPU Operator mit
+DCGM-Exporter voraus, dazu mindestens drei Knoten:
+
+```bash
+kubectl apply -k deploy/k8s/overlays/production-ha
+```
+
+| Komponente | Replikate | Update | Unterbrechungen |
+|---|---|---|---|
+| `worker-cpu` | 2–20 (KEDA) | RollingUpdate, `maxUnavailable: 0`, über Knoten verteilt | PDB `maxUnavailable: 1` |
+| `worker-gpu`, `worker-blender` | 0–4 (KEDA) | RollingUpdate, `maxSurge: 0` (keine zweite GPU nötig) | PDB `maxUnavailable: 1` |
+| `studio` | 2 | RollingUpdate, `sessionAffinity: ClientIP` | PDB `minAvailable: 1` |
+| `coordinator` | 1 (Single-Writer, Journal) | Recreate | kein PDB; `PriorityClass openvideo-critical` |
+| `api` | 1 (Single-Writer, Workspace und Job-Manager) | Recreate | kein PDB; `PriorityClass openvideo-critical` |
+| `object-storage` | 1 | – | für echte HA ein verwaltetes S3 über `OPENVIDEO_S3_*` nutzen |
+
+Koordinator und API haben bewusst keine Leader-Wahl: Das RWO-PVC wirkt als Sperre, der neue Pod
+startet erst nach dem alten. Worker geben Chunks beim Beenden zurück und holen sie nach dem
+Neustart des Koordinators wieder; laufende Jobs stehen im Journal. Skalieren Sie diese beiden
+Deployments nicht hoch (Annotation `openvideo.io/single-writer`).
+
+**GPU-Autoscaling:** `worker-gpu` skaliert zusätzlich über die mittlere GPU-Auslastung
+(`DCGM_FI_DEV_GPU_UTIL`, Schwelle 80 %) und den belegten GPU-Speicher (Schwelle 85 %). Die Abfragen
+akzeptieren beide Label-Varianten des DCGM-Exporters (`pod`/`namespace` oder
+`exported_pod`/`exported_namespace`). Prüfen Sie die Metrik vorab:
+
+```bash
+kubectl -n monitoring port-forward svc/prometheus-operated 9090
+curl -s 'http://127.0.0.1:9090/api/v1/query?query=DCGM_FI_DEV_GPU_UTIL' | head -c 400
+```
+
+**Prüfen ohne Cluster:** `python3 deploy/test/check-manifests.py` baut alle Overlays mit einem
+kleinen Kustomize-Nachbau und prüft Patch-Ziele, PDB-Selektoren, Single-Writer und die HA-Eigenschaften.
+Mit kubectl zusätzlich: `kubectl kustomize deploy/k8s/overlays/production-ha`.
+
 ## Updates und Rollback
 
 Jede Version hat ein eigenes Image-Tag. Ein Update ist ein neues Tag. Ein Rollback ist das alte Tag.
@@ -439,6 +481,7 @@ kubectl -n openvideo logs -l app.kubernetes.io/component=worker --prefix | grep 
 | `bash deploy/docker/build.sh` | Alle Images bauen. |
 | `bash deploy/test/images.sh` | Jedes Image startet. `doctor` meldet FFmpeg, Chromium und Blender. Ein Frame und ein Video rendern ohne Netz und read-only. |
 | `bash deploy/test/kind.sh` | kind-Cluster, KEDA, Overlay `local`. Ein Video über die API. Hochskalieren unter Queue-Last. Danach wird der Cluster gelöscht. |
+| `python3 deploy/test/check-manifests.py` | Alle Overlays (auch `production-ha`) statisch bauen: gültiges YAML, jedes Patch-Ziel trifft, PDB-Selektoren, Single-Writer, HA-Eigenschaften. Braucht nur Python 3 mit PyYAML. |
 
 `kind.sh` lädt `kind` und `kubectl` bei Bedarf nach `~/.local/bin` und prüft ihre Prüfsummen.
 Mit `KEEP_CLUSTER=1` bleibt der Cluster für die Fehlersuche stehen.

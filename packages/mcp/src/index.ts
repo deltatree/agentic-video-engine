@@ -116,21 +116,43 @@ export function createMcpServer(services: AgentServices, options: McpServerOptio
   // Die Operationen haben JSON Schemas (TypeBox); darum die Protokoll-Ebene statt registerTool (zod).
   const server = mcp.server;
 
-  server.setRequestHandler(ListToolsRequestSchema, () =>
-    Promise.resolve({
-      tools: [...operations.values()].map((op) => ({
+  // Agent Tools aus Plugins des geöffneten Projekts (Story 21.1): MCP-Name → Operation `plugin.<name>`.
+  const pluginTools = new Map<string, string>();
+  const listPluginTools = async (): Promise<{ name: string; title: string; description: string; inputSchema: { type: 'object' } & Record<string, unknown> }[]> => {
+    if (options.projectId === undefined) return [];
+    const r = await invokeOperation(operations, 'plugins.list', { projectId: options.projectId }, { services, via: 'mcp' });
+    // Ein Projekt ohne erlaubte Plugins liefert hier einen Fehler; die eingebauten Tools bleiben nutzbar.
+    if (!r.ok || !isRecord(r.result) || !Array.isArray(r.result['tools'])) return [];
+    return r.result['tools'].filter(isRecord).flatMap((t) => {
+      const operation = t['operation'];
+      const input = t['input'];
+      if (typeof operation !== 'string' || !isRecord(input)) return [];
+      const name = toolName(operation);
+      pluginTools.set(name, operation);
+      const properties = isRecord(input['properties']) ? input['properties'] : {};
+      return [{ name, title: operation, description: `${typeof t['description'] === 'string' ? t['description'] : operation} (plugin tool; projectId defaults to "${options.projectId ?? ''}")`, inputSchema: { type: 'object' as const, properties: { projectId: { type: 'string' }, ...properties }, ...(Array.isArray(input['required']) ? { required: input['required'] } : {}) } }];
+    });
+  };
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      ...[...operations.values()].map((op) => ({
         name: toolName(op.name),
         title: op.name,
         description: `${op.summary}${op.job === true ? ' Returns a jobId; poll render_status.' : ''} Example: ${JSON.stringify(op.example.input)}`,
         inputSchema: { type: 'object' as const, ...Object.fromEntries(Object.entries(op.input).filter(([k]) => k !== 'type')) },
       })),
-    }),
-  );
+      ...(await listPluginTools()),
+    ],
+  }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<CallToolResult> => {
     const op = byTool.get(request.params.name) ?? operations.get(request.params.name);
-    const name = op?.name ?? request.params.name;
-    const r = await invokeOperation(operations, name, request.params.arguments ?? {}, { services, via: 'mcp' });
+    const pluginOp = op === undefined ? (pluginTools.get(request.params.name) ?? (request.params.name.startsWith('plugin.') ? request.params.name : undefined)) : undefined;
+    const name = op?.name ?? pluginOp ?? request.params.name;
+    const args = request.params.arguments ?? {};
+    const input = pluginOp !== undefined && options.projectId !== undefined && args['projectId'] === undefined ? { projectId: options.projectId, ...args } : args;
+    const r = await invokeOperation(operations, name, input, { services, via: 'mcp' });
     if (!r.ok) {
       return { isError: true, content: [{ type: 'text', text: `${formatDiagnostic(r.error)}\n\n${JSON.stringify({ error: r.error })}` }] };
     }

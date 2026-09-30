@@ -1,0 +1,6268 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Komponenten-Katalog (Snapshot) > Namen, Beschreibungen, Props-Schemas und Beispiele entsprechen dem Snapshot 1`] = `
+[
+  {
+    "description": "Large headline with per-word reveal and an optional accent bar. Colors, font and size come from the theme (fonts.heading, fontSizes.display, colors.text, colors.primary).",
+    "example": {
+      "align": "left",
+      "text": "Ship videos with agents",
+    },
+    "name": "Title",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "description": "Draw an accent bar under the title. Default true.",
+          "type": "boolean",
+        },
+        "align": {
+          "anyOf": [
+            {
+              "const": "left",
+              "type": "string",
+            },
+            {
+              "const": "center",
+              "type": "string",
+            },
+            {
+              "const": "right",
+              "type": "string",
+            },
+          ],
+        },
+        "color": {
+          "description": "Text color. Default: theme.colors.text.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "fontWeight": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "number",
+        },
+        "reveal": {
+          "enum": [
+            "words",
+            "chars",
+            "lines",
+            "none",
+          ],
+        },
+        "text": {
+          "description": "Headline text.",
+          "type": "string",
+        },
+        "width": {
+          "description": "Wrap width. Default: 80 % of the composition width.",
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "required": [
+        "text",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Secondary line below a title: body font, theme.fontSizes.lg, theme.colors.muted.",
+    "example": {
+      "text": "Deterministic rendering from a JSON composition",
+    },
+    "name": "Subtitle",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "const": "left",
+              "type": "string",
+            },
+            {
+              "const": "center",
+              "type": "string",
+            },
+            {
+              "const": "right",
+              "type": "string",
+            },
+          ],
+        },
+        "color": {
+          "description": "Default: theme.colors.muted.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "reveal": {
+          "enum": [
+            "words",
+            "chars",
+            "lines",
+            "none",
+          ],
+        },
+        "text": {
+          "type": "string",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "required": [
+        "text",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Name and role banner for the lower third of the frame. An accent bar grows first, then the panel opens and the text fades in.",
+    "example": {
+      "name": "Ada Lovelace",
+      "role": "Chief Engine Officer",
+    },
+    "name": "LowerThird",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Accent color. Default: theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "name": {
+          "type": "string",
+        },
+        "role": {
+          "type": "string",
+        },
+        "width": {
+          "description": "Panel width. Default 720.",
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "required": [
+        "name",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Annotation box with a leader line that draws to a target point. The box sits at the local origin; \`target\` is in the same local pixels.",
+    "example": {
+      "target": {
+        "x": -120,
+        "y": 160,
+      },
+      "text": "Frame-exact: every frame is a pure function of time.",
+    },
+    "name": "Callout",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Line and border color. Default: theme.colors.accent.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "target": {
+          "description": "Point the line points to. Default { x: -120, y: 160 }.",
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+        "text": {
+          "type": "string",
+        },
+        "width": {
+          "minimum": 40,
+          "type": "number",
+        },
+      },
+      "required": [
+        "text",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Pill-shaped label. \`variant\` picks a theme color; \`appearance: soft\` uses a tinted background with colored text.",
+    "example": {
+      "label": "NEW",
+      "variant": "accent",
+    },
+    "name": "Badge",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "appearance": {
+          "anyOf": [
+            {
+              "const": "solid",
+              "type": "string",
+            },
+            {
+              "const": "soft",
+              "type": "string",
+            },
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "label": {
+          "type": "string",
+        },
+        "variant": {
+          "enum": [
+            "primary",
+            "secondary",
+            "accent",
+            "success",
+            "warning",
+            "danger",
+            "muted",
+          ],
+        },
+      },
+      "required": [
+        "label",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Rounded surface with shadow, optional title, body text and children below the text.",
+    "example": {
+      "body": "Split frames across workers and stitch them losslessly.",
+      "height": 260,
+      "title": "Render farm",
+      "width": 480,
+    },
+    "name": "Card",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "accent": {
+          "description": "Color of the top strip. Default: theme.colors.primary. Use "transparent" to hide it.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "body": {
+          "type": "string",
+        },
+        "children": {
+          "description": "Child nodes shown in the content area (node children or props.children).",
+          "items": {},
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "title": {
+          "type": "string",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Browser window mockup with traffic-light buttons, address bar and a content area for children.",
+    "example": {
+      "children": [
+        {
+          "fill": "#FFFFFF",
+          "fontSize": 56,
+          "fontWeight": 800,
+          "id": "hero",
+          "text": "Video as code",
+          "type": "text",
+          "x": 48,
+          "y": 64,
+        },
+        {
+          "cornerRadius": 12,
+          "fill": "#4F7CFF",
+          "height": 56,
+          "id": "cta",
+          "type": "rect",
+          "width": 200,
+          "x": 48,
+          "y": 160,
+        },
+      ],
+      "height": 560,
+      "url": "https://openvideo.dev",
+      "width": 960,
+    },
+    "name": "BrowserWindow",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "children": {
+          "description": "Child nodes shown in the content area (node children or props.children).",
+          "items": {},
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 80,
+          "type": "number",
+        },
+        "url": {
+          "type": "string",
+        },
+        "width": {
+          "minimum": 120,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Code editor window with syntax highlighting (ts, js, json, python, bash, css, html, rust, go), line numbers, highlighted lines and an optional typing animation. Uses theme.fonts.mono.",
+    "example": {
+      "code": "// Render a frame
+export function render(frame: number): string {
+  const label = 'frame ' + frame;
+  return label.toUpperCase();
+}",
+      "highlightLines": [
+        3,
+      ],
+      "language": "ts",
+      "title": "render.ts",
+    },
+    "name": "CodeEditor",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "highlightLines": {
+          "description": "1-based line numbers to highlight.",
+          "items": {
+            "minimum": 1,
+            "type": "integer",
+          },
+          "type": "array",
+        },
+        "language": {
+          "enum": [
+            "ts",
+            "js",
+            "json",
+            "python",
+            "bash",
+            "css",
+            "html",
+            "rust",
+            "go",
+          ],
+        },
+        "lineNumbers": {
+          "type": "boolean",
+        },
+        "title": {
+          "description": "File name in the title bar.",
+          "type": "string",
+        },
+        "typing": {
+          "anyOf": [
+            {
+              "type": "boolean",
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "number",
+            },
+          ],
+          "description": "Typing animation. true or characters per second.",
+        },
+        "typingDelay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "width": {
+          "minimum": 100,
+          "type": "number",
+        },
+      },
+      "required": [
+        "code",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Terminal window. Each command is typed (bash highlighting), then its output appears. A cursor blinks on the last prompt. Uses theme.fonts.mono.",
+    "example": {
+      "commands": [
+        {
+          "command": "npx openvideo render hero.json --out hero.mp4",
+          "output": "Rendered 300 frames in 4.2s",
+        },
+        {
+          "command": "echo "done"",
+          "output": "done",
+        },
+      ],
+      "title": "zsh",
+    },
+    "name": "Terminal",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+              },
+              "output": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "command",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "height": {
+          "minimum": 60,
+          "type": "number",
+        },
+        "pause": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+          "description": "Pause after each command before its output. Default theme.motion.fast.",
+        },
+        "prompt": {
+          "description": "Prompt text. Default "$".",
+          "type": "string",
+        },
+        "title": {
+          "type": "string",
+        },
+        "typing": {
+          "anyOf": [
+            {
+              "type": "boolean",
+            },
+            {
+              "exclusiveMinimum": 0,
+              "type": "number",
+            },
+          ],
+          "description": "Typing animation. true or characters per second.",
+        },
+        "typingDelay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "width": {
+          "minimum": 100,
+          "type": "number",
+        },
+      },
+      "required": [
+        "commands",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Generic chart: \`type\` bar, line or pie with the props of BarChart, LineChart or PieChart.",
+    "example": {
+      "data": [
+        {
+          "label": "Q1",
+          "value": 42,
+        },
+        {
+          "label": "Q2",
+          "value": 68,
+        },
+        {
+          "label": "Q3",
+          "value": 55,
+        },
+        {
+          "label": "Q4",
+          "value": 91,
+        },
+      ],
+      "type": "bar",
+    },
+    "name": "Chart",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "type": "boolean",
+        },
+        "centerLabel": {
+          "type": "string",
+        },
+        "color": {
+          "description": "Single color for all bars/lines. Default: theme palette.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "data": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+              },
+              "value": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "label",
+              "value",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+          "description": "Growth duration. Default theme.motion.slow.",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "grid": {
+          "type": "boolean",
+        },
+        "height": {
+          "minimum": 80,
+          "type": "number",
+        },
+        "innerRadius": {
+          "description": "Donut hole as fraction of the radius. 0 = pie. Default 0.55.",
+          "maximum": 0.9,
+          "minimum": 0,
+          "type": "number",
+        },
+        "legend": {
+          "type": "boolean",
+        },
+        "progress": {
+          "description": "Growth 0..1. Overrides the time-based growth.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+        "series": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "color": {
+                "description": "Series color.",
+                "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+                "type": "string",
+              },
+              "data": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                    },
+                    "value": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "label",
+                    "value",
+                  ],
+                  "type": "object",
+                },
+                "type": "array",
+              },
+              "name": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "name",
+              "data",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "showPercent": {
+          "type": "boolean",
+        },
+        "showValues": {
+          "type": "boolean",
+        },
+        "size": {
+          "minimum": 40,
+          "type": "number",
+        },
+        "title": {
+          "type": "string",
+        },
+        "type": {
+          "enum": [
+            "bar",
+            "line",
+            "pie",
+          ],
+        },
+        "width": {
+          "minimum": 100,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Vertical bar chart with axes, grid, labels and value labels. Bars grow with stagger; colors cycle through the theme palette.",
+    "example": {
+      "data": [
+        {
+          "label": "Q1",
+          "value": 42,
+        },
+        {
+          "label": "Q2",
+          "value": 68,
+        },
+        {
+          "label": "Q3",
+          "value": 55,
+        },
+        {
+          "label": "Q4",
+          "value": 91,
+        },
+      ],
+      "title": "Renders per quarter",
+    },
+    "name": "BarChart",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Single color for all bars/lines. Default: theme palette.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "data": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+              },
+              "value": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "label",
+              "value",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+          "description": "Growth duration. Default theme.motion.slow.",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "grid": {
+          "type": "boolean",
+        },
+        "height": {
+          "minimum": 80,
+          "type": "number",
+        },
+        "progress": {
+          "description": "Growth 0..1. Overrides the time-based growth.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+        "showValues": {
+          "type": "boolean",
+        },
+        "title": {
+          "type": "string",
+        },
+        "width": {
+          "minimum": 100,
+          "type": "number",
+        },
+      },
+      "required": [
+        "data",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Line chart with one or more series (\`series\`, or \`data\` for one series). Lines draw on (trim), points pop in; one series gets a gradient area.",
+    "example": {
+      "series": [
+        {
+          "data": [
+            {
+              "label": "Q1",
+              "value": 42,
+            },
+            {
+              "label": "Q2",
+              "value": 68,
+            },
+            {
+              "label": "Q3",
+              "value": 55,
+            },
+            {
+              "label": "Q4",
+              "value": 91,
+            },
+          ],
+          "name": "Skia",
+        },
+        {
+          "data": [
+            {
+              "label": "Q1",
+              "value": 25,
+            },
+            {
+              "label": "Q2",
+              "value": 41,
+            },
+            {
+              "label": "Q3",
+              "value": 33,
+            },
+            {
+              "label": "Q4",
+              "value": 55,
+            },
+          ],
+          "name": "Browser",
+        },
+      ],
+      "title": "Frames per second",
+    },
+    "name": "LineChart",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "area": {
+          "type": "boolean",
+        },
+        "color": {
+          "description": "Single color for all bars/lines. Default: theme palette.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "data": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+              },
+              "value": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "label",
+              "value",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+          "description": "Growth duration. Default theme.motion.slow.",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "grid": {
+          "type": "boolean",
+        },
+        "height": {
+          "minimum": 80,
+          "type": "number",
+        },
+        "progress": {
+          "description": "Growth 0..1. Overrides the time-based growth.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+        "series": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "color": {
+                "description": "Series color.",
+                "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+                "type": "string",
+              },
+              "data": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                    },
+                    "value": {
+                      "type": "number",
+                    },
+                  },
+                  "required": [
+                    "label",
+                    "value",
+                  ],
+                  "type": "object",
+                },
+                "type": "array",
+              },
+              "name": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "name",
+              "data",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "title": {
+          "type": "string",
+        },
+        "width": {
+          "minimum": 100,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Pie or donut chart from path arcs with legend and percentages. Slices sweep in clockwise from 12 o'clock.",
+    "example": {
+      "centerLabel": "256",
+      "data": [
+        {
+          "label": "Q1",
+          "value": 42,
+        },
+        {
+          "label": "Q2",
+          "value": 68,
+        },
+        {
+          "label": "Q3",
+          "value": 55,
+        },
+        {
+          "label": "Q4",
+          "value": 91,
+        },
+      ],
+    },
+    "name": "PieChart",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "centerLabel": {
+          "type": "string",
+        },
+        "data": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string",
+              },
+              "value": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "label",
+              "value",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+          "description": "Growth duration. Default theme.motion.slow.",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "innerRadius": {
+          "description": "Donut hole as fraction of the radius. 0 = pie. Default 0.55.",
+          "maximum": 0.9,
+          "minimum": 0,
+          "type": "number",
+        },
+        "legend": {
+          "type": "boolean",
+        },
+        "progress": {
+          "description": "Growth 0..1. Overrides the time-based growth.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+        "showPercent": {
+          "type": "boolean",
+        },
+        "size": {
+          "minimum": 40,
+          "type": "number",
+        },
+        "title": {
+          "type": "string",
+        },
+      },
+      "required": [
+        "data",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Data table with a colored header, zebra rows and a staggered row reveal. Numeric cells are right-aligned.",
+    "example": {
+      "columns": [
+        "Backend",
+        "Frames",
+        "Time",
+      ],
+      "rows": [
+        [
+          "Skia",
+          300,
+          "4.2 s",
+        ],
+        [
+          "Browser",
+          300,
+          "9.8 s",
+        ],
+        [
+          "Blender",
+          120,
+          "61 s",
+        ],
+      ],
+    },
+    "name": "Table",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Header color. Default: theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "columnWidths": {
+          "description": "Relative column widths.",
+          "items": {
+            "exclusiveMinimum": 0,
+            "type": "number",
+          },
+          "type": "array",
+        },
+        "columns": {
+          "items": {
+            "type": "string",
+          },
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "rows": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string",
+                },
+                {
+                  "type": "number",
+                },
+              ],
+            },
+            "type": "array",
+          },
+          "type": "array",
+        },
+        "stagger": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+          "description": "Delay between rows. Default 3 frames.",
+        },
+        "width": {
+          "minimum": 100,
+          "type": "number",
+        },
+      },
+      "required": [
+        "columns",
+        "rows",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Logo from an image asset (\`asset\`), an SVG asset (\`svgAsset\`), inline SVG (\`markup\`) or SVG path data (\`path\`, drawn in \`color\`). Reveal: \`scale\` (pop in), \`mask\` (wipe from left), \`trim\` (outline draws, then fill fades in; needs \`path\`, otherwise falls back to \`mask\`).",
+    "example": {
+      "height": 200,
+      "path": "M 20 100 L 100 20 L 180 100 L 100 180 Z M 70 100 L 100 70 L 130 100 L 100 130 Z",
+      "reveal": "trim",
+      "viewBox": {
+        "height": 200,
+        "width": 200,
+      },
+      "width": 200,
+    },
+    "name": "Logo",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "asset": {
+          "description": "Image asset id.",
+          "type": "string",
+        },
+        "color": {
+          "description": "Color for \`path\`. Default: theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "markup": {
+          "description": "Inline SVG markup.",
+          "type": "string",
+        },
+        "path": {
+          "description": "SVG path data in viewBox coordinates.",
+          "type": "string",
+        },
+        "reveal": {
+          "enum": [
+            "scale",
+            "mask",
+            "trim",
+            "none",
+          ],
+        },
+        "svgAsset": {
+          "description": "SVG asset id.",
+          "type": "string",
+        },
+        "viewBox": {
+          "description": "Coordinate size of \`path\`. Default: width × height.",
+          "properties": {
+            "height": {
+              "exclusiveMinimum": 0,
+              "type": "number",
+            },
+            "width": {
+              "exclusiveMinimum": 0,
+              "type": "number",
+            },
+          },
+          "required": [
+            "width",
+            "height",
+          ],
+          "type": "object",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Device mockup (\`device\`: phone, tablet, laptop, desktop). Children render inside the screen, clipped to its rounded corners.",
+    "example": {
+      "children": [
+        {
+          "fill": "#FFFFFF",
+          "fontSize": 40,
+          "fontWeight": 700,
+          "id": "hello",
+          "text": "Hello",
+          "type": "text",
+          "x": 24,
+          "y": 80,
+        },
+      ],
+      "device": "tablet",
+      "width": 480,
+    },
+    "name": "DeviceFrame",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "bodyColor": {
+          "description": "Body color. Default: theme.colors.surface darkened.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "children": {
+          "description": "Child nodes shown in the content area (node children or props.children).",
+          "items": {},
+          "type": "array",
+        },
+        "device": {
+          "enum": [
+            "phone",
+            "tablet",
+            "laptop",
+            "desktop",
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "screenColor": {
+          "description": "Screen background. Default: theme.colors.background tinted with theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "width": {
+          "description": "Body width in pixels.",
+          "minimum": 40,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Smartphone mockup with dynamic island and side buttons. Children render inside the screen.",
+    "example": {
+      "children": [
+        {
+          "fill": "#FFFFFF",
+          "fontSize": 40,
+          "fontWeight": 700,
+          "id": "hello",
+          "text": "Hello",
+          "type": "text",
+          "x": 24,
+          "y": 80,
+        },
+      ],
+      "width": 320,
+    },
+    "name": "Phone",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "bodyColor": {
+          "description": "Body color. Default: theme.colors.surface darkened.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "children": {
+          "description": "Child nodes shown in the content area (node children or props.children).",
+          "items": {},
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "screenColor": {
+          "description": "Screen background. Default: theme.colors.background tinted with theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "width": {
+          "description": "Body width in pixels.",
+          "minimum": 40,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Laptop mockup with lid, camera and base. \`width\` is the lid width. Children render inside the screen.",
+    "example": {
+      "children": [
+        {
+          "fill": "#FFFFFF",
+          "fontSize": 40,
+          "fontWeight": 700,
+          "id": "hello",
+          "text": "Hello",
+          "type": "text",
+          "x": 24,
+          "y": 80,
+        },
+      ],
+      "width": 800,
+    },
+    "name": "Laptop",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "bodyColor": {
+          "description": "Body color. Default: theme.colors.surface darkened.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "children": {
+          "description": "Child nodes shown in the content area (node children or props.children).",
+          "items": {},
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "screenColor": {
+          "description": "Screen background. Default: theme.colors.background tinted with theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "width": {
+          "description": "Body width in pixels.",
+          "minimum": 40,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Mouse pointer that moves through \`points\` over \`duration\` (or follows an animated \`position\`) and shows a ripple at each time in \`clicks\`.",
+    "example": {
+      "clicks": [
+        "1.2s",
+      ],
+      "duration": "2s",
+      "points": [
+        {
+          "x": 40,
+          "y": 40,
+        },
+        {
+          "x": 360,
+          "y": 180,
+        },
+        {
+          "x": 200,
+          "y": 320,
+        },
+      ],
+    },
+    "name": "Cursor",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "clicks": {
+          "description": "Click times (local), e.g. ["1s", 45].",
+          "items": {
+            "anyOf": [
+              {
+                "type": "number",
+              },
+              {
+                "type": "string",
+              },
+            ],
+          },
+          "type": "array",
+        },
+        "color": {
+          "description": "Pointer fill. Default: theme.colors.text.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "points": {
+          "description": "Waypoints in local pixels.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "number",
+              },
+              "y": {
+                "type": "number",
+              },
+            },
+            "required": [
+              "x",
+              "y",
+            ],
+            "type": "object",
+          },
+          "type": "array",
+        },
+        "position": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+        "size": {
+          "minimum": 4,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Arrow from \`from\` to \`to\` that draws itself (trim) and then shows its head. \`curve\` bends it (fraction of its length, sign = side).",
+    "example": {
+      "curve": 0.25,
+      "from": {
+        "x": 20,
+        "y": 200,
+      },
+      "to": {
+        "x": 380,
+        "y": 40,
+      },
+    },
+    "name": "Arrow",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Default: theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "curve": {
+          "maximum": 1,
+          "minimum": -1,
+          "type": "number",
+        },
+        "dashed": {
+          "type": "boolean",
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "from": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+        "headSize": {
+          "minimum": 0,
+          "type": "number",
+        },
+        "strokeWidth": {
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+        "to": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+      },
+      "required": [
+        "from",
+        "to",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Diagram connector between two points: straight, elbow or curve, with end dots, optional arrow head and a pulse that travels along it.",
+    "example": {
+      "arrow": true,
+      "from": {
+        "x": 20,
+        "y": 40,
+      },
+      "style": "elbow",
+      "to": {
+        "x": 380,
+        "y": 220,
+      },
+    },
+    "name": "Connector",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "arrow": {
+          "type": "boolean",
+        },
+        "color": {
+          "description": "Default: theme.colors.accent.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "dashed": {
+          "type": "boolean",
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "from": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+        "pulse": {
+          "description": "A dot travels along the line (loops). Default true.",
+          "type": "boolean",
+        },
+        "strokeWidth": {
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+        "style": {
+          "enum": [
+            "straight",
+            "elbow",
+            "curve",
+          ],
+        },
+        "to": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+      },
+      "required": [
+        "from",
+        "to",
+      ],
+      "type": "object",
+    },
+  },
+  {
+    "description": "Background grid of lines or dots with major lines, an optional drift and a radial fade toward the edges.",
+    "example": {
+      "drift": {
+        "x": 10,
+        "y": 0,
+      },
+      "majorEvery": 4,
+      "style": "lines",
+    },
+    "name": "Grid",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Default: theme.colors.muted.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "drift": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fade": {
+          "type": "boolean",
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "majorEvery": {
+          "description": "Every n-th line is stronger. 0 = none. Default 4.",
+          "minimum": 0,
+          "type": "integer",
+        },
+        "spacing": {
+          "description": "Cell size. Default theme.spacing.xl.",
+          "minimum": 4,
+          "type": "number",
+        },
+        "style": {
+          "anyOf": [
+            {
+              "const": "lines",
+              "type": "string",
+            },
+            {
+              "const": "dots",
+              "type": "string",
+            },
+          ],
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Ambient particle field (seeded, deterministic) drifting upward across the box. Colors fade from theme.colors.primary to theme.colors.accent. Pre-warmed: particles are visible from frame 0.",
+    "example": {
+      "count": 150,
+    },
+    "name": "ParticleField",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "colorEnd": {
+          "description": "Default: theme.colors.accent.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "colorStart": {
+          "description": "Default: theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "count": {
+          "maximum": 20000,
+          "minimum": 1,
+          "type": "integer",
+        },
+        "direction": {
+          "description": "Drift direction in degrees (0 = right, 270 = up). Default 270.",
+          "type": "number",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "size": {
+          "description": "Start size in px. Default 6.",
+          "minimum": 0.5,
+          "type": "number",
+        },
+        "speed": {
+          "description": "Mean speed in px/s. Default 30.",
+          "minimum": 0,
+          "type": "number",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Full-frame animated background: a slowly rotating linear gradient from theme colors plus soft, drifting color blobs.",
+    "example": {
+      "angle": 135,
+      "speed": 8,
+    },
+    "name": "GradientBackground",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "angle": {
+          "description": "Start angle in degrees. Default 135.",
+          "type": "number",
+        },
+        "blobs": {
+          "description": "Soft drifting blobs. Default true.",
+          "type": "boolean",
+        },
+        "colors": {
+          "description": "Gradient colors. Default: background, primary and secondary tints.",
+          "items": {
+            "type": "string",
+          },
+          "minItems": 2,
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "speed": {
+          "description": "Rotation in degrees per second. Default 8.",
+          "type": "number",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Dims the frame except a soft circle around \`target\`. The circle closes in from a larger size (iris). Animate \`target\` or \`radius\` to move it.",
+    "example": {
+      "radius": 160,
+      "target": {
+        "x": 640,
+        "y": 360,
+      },
+    },
+    "name": "Spotlight",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Dim color. Default: theme.colors.background.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "dim": {
+          "description": "Darkness outside the circle. Default 0.7.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "radius": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "ring": {
+          "type": "boolean",
+        },
+        "softness": {
+          "description": "Edge blur in px. Default 24.",
+          "minimum": 0,
+          "type": "number",
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "type": "number",
+            },
+            "y": {
+              "type": "number",
+            },
+          },
+          "required": [
+            "x",
+            "y",
+          ],
+          "type": "object",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Translucent panel with border, shadow and a gloss gradient. Real backdrop blur (blurring what lies behind the panel) is not possible in a pure node tree; \`childBlur\` blurs only the panel's own children through a layer with a blur effect.",
+    "example": {
+      "children": [
+        {
+          "fill": "#FFFFFF",
+          "fontSize": 48,
+          "id": "label",
+          "text": "Glass",
+          "type": "text",
+          "x": 32,
+          "y": 32,
+        },
+      ],
+      "height": 300,
+      "width": 520,
+    },
+    "name": "GlassPanel",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "childBlur": {
+          "description": "Blur radius for the children (layer effect). Default 0.",
+          "minimum": 0,
+          "type": "number",
+        },
+        "children": {
+          "description": "Child nodes shown in the content area (node children or props.children).",
+          "items": {},
+          "type": "array",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "opacity": {
+          "description": "Tint strength. Default 0.1.",
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+        "tint": {
+          "description": "Glass tint. Default: theme.colors.text (light glass on dark themes).",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Rounded progress bar with gradient fill and optional percentage label. \`progress\` (0..1) drives it; without it the bar fills over \`duration\` (default: the component's duration).",
+    "example": {
+      "label": true,
+      "width": 640,
+    },
+    "name": "ProgressBar",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Default: theme.colors.primary.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "height": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "label": {
+          "description": "Show a percentage label. Default true.",
+          "type": "boolean",
+        },
+        "progress": {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Animated number that counts from \`from\` to \`to\` over \`duration\` (default theme.motion.slow × 2). Set \`value\` to drive it directly (e.g. with keyframes).",
+    "example": {
+      "from": 0,
+      "label": "monthly renders",
+      "prefix": "$",
+      "suffix": "+",
+      "to": 12500,
+    },
+    "name": "Counter",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Default: theme.colors.text.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "decimal": {
+          "description": "Decimal separator. Default ".".",
+          "type": "string",
+        },
+        "decimals": {
+          "maximum": 10,
+          "minimum": 0,
+          "type": "integer",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "ease": {
+          "type": "string",
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "from": {
+          "type": "number",
+        },
+        "label": {
+          "type": "string",
+        },
+        "prefix": {
+          "type": "string",
+        },
+        "suffix": {
+          "type": "string",
+        },
+        "thousands": {
+          "description": "Thousands separator. Default ",".",
+          "type": "string",
+        },
+        "to": {
+          "type": "number",
+        },
+        "value": {
+          "description": "Explicit value; overrides from/to.",
+          "type": "number",
+        },
+      },
+      "type": "object",
+    },
+  },
+  {
+    "description": "Types text character by character with a blinking cursor. \`speed\` is characters per second (default 20).",
+    "example": {
+      "speed": 18,
+      "text": "Hello, agentic video.",
+    },
+    "name": "Typewriter",
+    "propsSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "description": "Default: theme.colors.text.",
+          "pattern": "^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent)$",
+          "type": "string",
+        },
+        "cursor": {
+          "type": "boolean",
+        },
+        "cursorChar": {
+          "minLength": 1,
+          "type": "string",
+        },
+        "delay": {
+          "anyOf": [
+            {
+              "type": "number",
+            },
+            {
+              "type": "string",
+            },
+          ],
+        },
+        "enter": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "exit": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "fade",
+                "slide-up",
+                "slide-down",
+                "slide-left",
+                "slide-right",
+                "scale",
+              ],
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "distance": {
+                  "description": "Slide distance in pixels. Default: theme.spacing.xl.",
+                  "minimum": 0,
+                  "type": "number",
+                },
+                "duration": {
+                  "anyOf": [
+                    {
+                      "description": "Time in frames.",
+                      "type": "number",
+                    },
+                    {
+                      "description": "Time with unit: "2s", "500ms", "48f", "00:00:02:00", "marker:intro+10f".",
+                      "pattern": "^(-?[0-9]+(\\.[0-9]+)?(s|ms|f)|[0-9]{2}:[0-9]{2}:[0-9]{2}[:;][0-9]{2}|marker:[A-Za-z][A-Za-z0-9_.-]*([+-][0-9]+(\\.[0-9]+)?(s|ms|f))?)$",
+                      "type": "string",
+                    },
+                  ],
+                  "description": "Frames as number or a string with unit.",
+                  "examples": [
+                    "2s",
+                  ],
+                },
+                "ease": {
+                  "description": "Easing name. Default: theme.easing.enter / theme.easing.exit.",
+                  "type": "string",
+                },
+                "type": {
+                  "enum": [
+                    "none",
+                    "fade",
+                    "slide-up",
+                    "slide-down",
+                    "slide-left",
+                    "slide-right",
+                    "scale",
+                  ],
+                },
+              },
+              "required": [
+                "type",
+              ],
+              "type": "object",
+            },
+          ],
+        },
+        "fontSize": {
+          "minimum": 1,
+          "type": "number",
+        },
+        "mono": {
+          "description": "Use theme.fonts.mono. Default false.",
+          "type": "boolean",
+        },
+        "speed": {
+          "exclusiveMinimum": 0,
+          "type": "number",
+        },
+        "text": {
+          "type": "string",
+        },
+        "width": {
+          "minimum": 1,
+          "type": "number",
+        },
+      },
+      "required": [
+        "text",
+      ],
+      "type": "object",
+    },
+  },
+]
+`;
+
+exports[`Komponenten-Katalog (Snapshot) > das Beispiel jeder Komponente expandiert zu denselben Nodes (Typen und IDs, Frame 45) 1`] = `
+{
+  "Arrow": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "path#c/shaft",
+            "polygon#c/head",
+          ],
+        },
+      ],
+    },
+  ],
+  "Badge": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "text#c/label",
+          ],
+        },
+      ],
+    },
+  ],
+  "BarChart": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "text#c/title",
+            "text#c/tick-0",
+            "line#c/grid-1",
+            "text#c/tick-1",
+            "line#c/grid-2",
+            "text#c/tick-2",
+            "line#c/grid-3",
+            "text#c/tick-3",
+            "line#c/grid-4",
+            "text#c/tick-4",
+            "line#c/axis-y",
+            "line#c/axis-x",
+            "rect#c/bar-0",
+            "text#c/label-0",
+            "text#c/value-0",
+            "rect#c/bar-1",
+            "text#c/label-1",
+            "text#c/value-1",
+            "rect#c/bar-2",
+            "text#c/label-2",
+            "text#c/value-2",
+            "rect#c/bar-3",
+            "text#c/label-3",
+            "text#c/value-3",
+          ],
+        },
+      ],
+    },
+  ],
+  "BrowserWindow": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/frame",
+            "ellipse#c/dot-0",
+            "ellipse#c/dot-1",
+            "ellipse#c/dot-2",
+            "rect#c/address",
+            "text#c/url",
+            {
+              "group#c/screen": [
+                "rect#c/screen-bg",
+                {
+                  "group#c/content": [
+                    "text#c/hero",
+                    "rect#c/cta",
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "Callout": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "line#c/line",
+            "ellipse#c/pulse",
+            "ellipse#c/dot",
+            "rect#c/box",
+            "text#c/text",
+          ],
+        },
+      ],
+    },
+  ],
+  "Card": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/bg",
+            {
+              "group#c/strip": [
+                "rect#c/strip-bar",
+              ],
+            },
+            "text#c/title",
+            "text#c/body",
+          ],
+        },
+      ],
+    },
+  ],
+  "Chart": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "text#c/tick-0",
+            "line#c/grid-1",
+            "text#c/tick-1",
+            "line#c/grid-2",
+            "text#c/tick-2",
+            "line#c/grid-3",
+            "text#c/tick-3",
+            "line#c/grid-4",
+            "text#c/tick-4",
+            "line#c/axis-y",
+            "line#c/axis-x",
+            "rect#c/bar-0",
+            "text#c/label-0",
+            "text#c/value-0",
+            "rect#c/bar-1",
+            "text#c/label-1",
+            "text#c/value-1",
+            "rect#c/bar-2",
+            "text#c/label-2",
+            "text#c/value-2",
+            "rect#c/bar-3",
+            "text#c/label-3",
+            "text#c/value-3",
+          ],
+        },
+      ],
+    },
+  ],
+  "CodeEditor": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/frame",
+            "rect#c/bar",
+            "ellipse#c/dot-0",
+            "ellipse#c/dot-1",
+            "ellipse#c/dot-2",
+            "text#c/title",
+            "rect#c/highlight-3",
+            "rect#c/highlight-mark-3",
+            "text#c/numbers",
+            "rich-text#c/code",
+          ],
+        },
+      ],
+    },
+  ],
+  "Connector": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "path#c/line",
+            "ellipse#c/start",
+            "polygon#c/head",
+            "ellipse#c/pulse",
+          ],
+        },
+      ],
+    },
+  ],
+  "Counter": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "text#c/value",
+            "text#c/label",
+          ],
+        },
+      ],
+    },
+  ],
+  "Cursor": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            {
+              "group#c/cursor": [
+                "ellipse#c/ripple-0",
+                "polygon#c/pointer",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "DeviceFrame": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/body",
+            {
+              "group#c/screen": [
+                "rect#c/screen-bg",
+                {
+                  "group#c/content": [
+                    "text#c/hello",
+                  ],
+                },
+              ],
+            },
+            "ellipse#c/camera",
+          ],
+        },
+      ],
+    },
+  ],
+  "GlassPanel": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/bg",
+            "rect#c/gloss",
+            "rect#c/border",
+            "rect#c/tint-edge",
+            {
+              "group#c/content": [
+                "text#c/label",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "GradientBackground": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            {
+              "group#c/background": [
+                "rect#c/gradient",
+                "ellipse#c/blob-0",
+                "ellipse#c/blob-1",
+                "ellipse#c/blob-2",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "Grid": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            {
+              "group#c/grid": [
+                "path#c/minor",
+                "path#c/major",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "Laptop": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/lid",
+            {
+              "group#c/screen": [
+                "rect#c/screen-bg",
+                {
+                  "group#c/content": [
+                    "text#c/hello",
+                  ],
+                },
+              ],
+            },
+            "ellipse#c/camera",
+            "polygon#c/base",
+            "rect#c/notch",
+          ],
+        },
+      ],
+    },
+  ],
+  "LineChart": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "text#c/title",
+            "text#c/tick-0",
+            "line#c/grid-1",
+            "text#c/tick-1",
+            "line#c/grid-2",
+            "text#c/tick-2",
+            "line#c/grid-3",
+            "text#c/tick-3",
+            "line#c/grid-4",
+            "text#c/tick-4",
+            "line#c/axis-y",
+            "line#c/axis-x",
+            "text#c/label-0",
+            "text#c/label-1",
+            "text#c/label-2",
+            "text#c/label-3",
+            "polyline#c/line-0",
+            "ellipse#c/point-0-0",
+            "ellipse#c/point-0-1",
+            "ellipse#c/point-0-2",
+            "ellipse#c/point-0-3",
+            "polyline#c/line-1",
+            "ellipse#c/point-1-0",
+            "ellipse#c/point-1-1",
+            "ellipse#c/point-1-2",
+            "ellipse#c/point-1-3",
+            "rect#c/legend-swatch-1",
+            "text#c/legend-1",
+            "rect#c/legend-swatch-0",
+            "text#c/legend-0",
+          ],
+        },
+      ],
+    },
+  ],
+  "Logo": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            {
+              "group#c/mark": [
+                "path#c/fill",
+                "path#c/outline",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "LowerThird": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/panel",
+            "rect#c/bar",
+            "text#c/name",
+            "text#c/role",
+          ],
+        },
+      ],
+    },
+  ],
+  "ParticleField": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            {
+              "group#c/field": [
+                "particles#c/particles",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "Phone": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/body",
+            {
+              "group#c/screen": [
+                "rect#c/screen-bg",
+                {
+                  "group#c/content": [
+                    "text#c/hello",
+                  ],
+                },
+              ],
+            },
+            "rect#c/island",
+            "rect#c/button-power",
+            "rect#c/button-volume",
+          ],
+        },
+      ],
+    },
+  ],
+  "PieChart": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "path#c/slice-0",
+            "text#c/percent-0",
+            "path#c/slice-1",
+            "text#c/percent-1",
+            "path#c/slice-2",
+            "text#c/percent-2",
+            "path#c/slice-3",
+            "text#c/percent-3",
+            "text#c/center",
+            "rect#c/legend-swatch-0",
+            "text#c/legend-0",
+            "rect#c/legend-swatch-1",
+            "text#c/legend-1",
+            "rect#c/legend-swatch-2",
+            "text#c/legend-2",
+            "rect#c/legend-swatch-3",
+            "text#c/legend-3",
+          ],
+        },
+      ],
+    },
+  ],
+  "ProgressBar": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/track",
+            "rect#c/fill",
+            "text#c/label",
+          ],
+        },
+      ],
+    },
+  ],
+  "Spotlight": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/dim",
+            "ellipse#c/ring",
+          ],
+        },
+      ],
+    },
+  ],
+  "Subtitle": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "text#c/text",
+          ],
+        },
+      ],
+    },
+  ],
+  "Table": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/bg",
+            "rect#c/header",
+            "text#c/head-0",
+            "text#c/head-1",
+            "text#c/head-2",
+            {
+              "group#c/row-0": [
+                "line#c/rule-0",
+                "text#c/cell-0-0",
+                "text#c/cell-0-1",
+                "text#c/cell-0-2",
+              ],
+            },
+            {
+              "group#c/row-1": [
+                "rect#c/zebra-1",
+                "line#c/rule-1",
+                "text#c/cell-1-0",
+                "text#c/cell-1-1",
+                "text#c/cell-1-2",
+              ],
+            },
+            {
+              "group#c/row-2": [
+                "text#c/cell-2-0",
+                "text#c/cell-2-1",
+                "text#c/cell-2-2",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "Terminal": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rect#c/frame",
+            "rect#c/bar",
+            "ellipse#c/dot-0",
+            "ellipse#c/dot-1",
+            "ellipse#c/dot-2",
+            "text#c/title",
+            {
+              "group#c/content": [
+                "rich-text#c/text",
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+  "Title": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "text#c/text",
+            "rect#c/accent",
+          ],
+        },
+      ],
+    },
+  ],
+  "Typewriter": [
+    {
+      "group#c": [
+        {
+          "group#c/root": [
+            "rich-text#c/text",
+          ],
+        },
+      ],
+    },
+  ],
+}
+`;

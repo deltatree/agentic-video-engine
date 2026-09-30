@@ -537,7 +537,7 @@ function pathGlyphs(layout: TextLayout, textPath: Readonly<Record<string, unknow
   };
   const offset = typeof textPath['offset'] === 'number' ? textPath['offset'] : 0;
   const glyphs: PathGlyph[] = [];
-  const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  const segmenter = new Intl.Segmenter('und', { granularity: 'grapheme' });
   for (const seg of segmenter.segment(layout.text)) {
     const rect = rangeRects(layout.fill, ck, seg.index, seg.index + seg.segment.length).filter((r) => r.r > r.l)[0];
     if (rect === undefined) continue;

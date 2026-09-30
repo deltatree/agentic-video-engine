@@ -142,3 +142,53 @@ Beobachtungen aus dieser Messung:
 - Gegenüber der ersten Basis sind `image-heavy` etwa 17-mal, `text-heavy` 14-mal und `mixed` 3,5-mal schneller (1080p30). Ursache war eine Skia-Surface mit nicht vormultipliziertem Alpha und ein Gauß-Weichzeichner, der das ganze Bild faltete.
 - `mixed` und `3d-heavy` hängen am Software-Rendering von Chromium (SwiftShader): Rücklesen der WebGL-Pixel und das Abfangen der Frame-Übertragung durch Playwright.
 - 1080p60 und 4k60 kosten pro Frame etwa so viel wie 30 fps. Ein Video mit 60 fps braucht also doppelt so lange.
+
+## Vorher/Nachher Epic 18 (2026-09-30, andere Maschine)
+
+Diese Messung stammt **nicht** von der Referenzmaschine oben: 4 Kerne, 15 GB RAM, Linux x64, keine GPU, FFmpeg 6.1,
+geteilt mit anderen Agenten (Load 3–15 während der Messung). `baseline.json` bleibt darum unverändert; die Werte
+stehen in [`results-2026-09-30.json`](results-2026-09-30.json). Vorher und nachher liefen **abwechselnd** je Szenario
+(`--scenario <s> --resolution <r> --frames 5`, jede Messung in eigenem Prozess), damit beide dieselbe Fremdlast
+sehen. Aussagekräftig sind die Verhältnisse, nicht die absoluten Werte.
+
+Seit Epic 18 misst die Schleife wie ein Chunk im Video-Render (mit Layer-Historie, Story 18.3): Animierte Layer
+werden nicht mehr in den Layer-Cache komprimiert. Der Frame-Cache wird weiter geschrieben.
+
+| Szenario | Auflösung | fps vorher | fps nachher | Faktor | ms/Frame vorher | ms/Frame nachher | Frame-Hashes |
+|---|---|---:|---:|---:|---:|---:|---|
+| text-heavy | 1080p30 | 1.81 | 2.74 | 1.52 | 552 | 364 | gleich |
+| vector-heavy | 1080p30 | 2.12 | 2.92 | 1.38 | 472 | 342 | gleich |
+| image-heavy | 1080p30 | 1.12 | 1.54 | 1.38 | 896 | 651 | gleich |
+| video-heavy | 1080p30 | 0.72 | 1.04 | 1.44 | 1388 | 962 | gleich |
+| 3d-heavy | 1080p30 | 0.63 | 0.59 | 0.93 | 1576 | 1693 | gleich |
+| mixed | 1080p30 | 0.42 | 0.74 | 1.76 | 2389 | 1356 | gleich |
+| audio-heavy | 1080p30 | 14.53 | 19.54 | 1.35 | 69 | 51 | gleich |
+| text-heavy | 4k30 | 0.78 | 1.00 | 1.27 | 1275 | 1003 | gleich |
+| vector-heavy | 4k30 | 1.66 | 2.52 | 1.52 | 601 | 396 | gleich |
+| image-heavy | 4k30 | 0.58 | 0.68 | 1.18 | 1722 | 1463 | gleich |
+| video-heavy | 4k30 | 0.64 | 0.72 | 1.12 | 1554 | 1390 | gleich |
+| 3d-heavy | 4k30 | 0.19 | 0.17 | 0.89 | 5181 | 5812 | gleich |
+| mixed | 4k30 | 0.17 | 0.23 | 1.34 | 5901 | 4414 | gleich |
+| audio-heavy | 4k30 | 2.91 | 7.67 | 2.64 | 344 | 130 | gleich |
+
+Ganzer Video-Render (`renderVideo`, 180 Frames 1080p30, ohne Ton; Ersatz für die DoD-Kurzvariante, die auf der
+belegten Maschine nicht vorher/nachher lief):
+
+| Szenario | vorher, 1 Prozess (alter Standard) | vorher, 4 Worker | nachher, 1 Prozess | nachher, 3 Worker (neuer Standard) |
+|---|---:|---:|---:|---:|
+| vector-heavy | 53.5 s | 48.4 s | 33.2 s | 26.3 s |
+| text-heavy | 93.6 s | 94.4 s | 85.7 s | 66.9 s |
+| mixed | 380.9 s | 216.9 s | 235.1 s | 200.6 s |
+
+Frame- und Chunk-Hashes sind in allen Läufen gleich; `deterministic` ist überall `true`.
+
+Einordnung:
+
+- Gewinne je Frame: Compositor auf Inhalts-Bounds und ein Durchlauf für reine Bild-Layer (4K-Compositor mit einem
+  Layer etwa 250 → 60 ms), native Frame-Hashes (4K etwa 190 → 25 ms), keine Kompression animierter Layer, statische
+  Layer aus dem Speicher, HTML-Aufnahme nur im Inhaltsbereich (`mixed` 1080p: Browser-Layer etwa 230 → 120 ms).
+- Ganzer Render: Der Encoder läuft parallel zum Rendern, und der Standard nutzt mehrere Worker-Prozesse.
+- `3d-heavy` hängt fast nur am Software-Rendering von Three.js in SwiftShader; die Abweichung liegt im Rauschen
+  der geteilten Maschine.
+- Die Encoder-fps der Tabelle oben sind nicht mehr vergleichbar: `ffmpeg` misst jetzt die Zeit, die der Encoder den
+  Ablauf aufhält (Schreiben parallel zum Rendern plus Abschluss), mit Threads nach freien Kernen (hier 3 statt 4).

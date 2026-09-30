@@ -3,7 +3,8 @@
  */
 import type { EvaluatedNode } from '@agentic-video/core';
 import { describe, expect, it } from 'vitest';
-import { THREE_CAPABILITIES, THREE_VERSION, checkThreeNode, detectFormat, instanceTransforms, particles3d, requiresWebGL2 } from '../src/index.js';
+import { formatDiagnostic } from '@agentic-video/core';
+import { THREE_CAPABILITIES, THREE_VERSION, checkThreeNode, detectFormat, fitTextureSize, instanceTransforms, particles3d, requiresWebGL2, textureTooLargeError } from '../src/index.js';
 
 const scene = (props: Record<string, unknown>, children: Record<string, unknown>[] = []): Record<string, unknown> => ({ id: 'hero', type: 'scene3d', width: 640, height: 360, ...props, children });
 const codes = (node: Record<string, unknown>): string[] => checkThreeNode(node).map((d) => d.code);
@@ -140,5 +141,28 @@ describe('instanceTransforms', () => {
       expect(Math.abs(x.position[0])).toBeLessThanOrEqual(1);
       expect(Math.abs(x.position[2])).toBeLessThanOrEqual(3);
     }
+  });
+});
+
+describe('Texturgrenzen (Story 21.7)', () => {
+  it('fitTextureSize hält das Seitenverhältnis und die Grenze', () => {
+    expect(fitTextureSize(16384, 8192, 8192)).toEqual({ width: 8192, height: 4096 });
+    expect(fitTextureSize(100, 50, 8192)).toEqual({ width: 100, height: 50 });
+    expect(fitTextureSize(1, 20000, 8192)).toEqual({ width: 1, height: 8192 });
+  });
+
+  it('formatiert den Fehler wie im Auftrag §40', () => {
+    const error = textureTooLargeError({ maxSize: 8192, downscale: false, nodeId: 'product-model', frame: 184, assetId: 'hero-texture.png' }, 16384, 16384);
+    expect(formatDiagnostic(error.diagnostic)).toBe(
+      [
+        'ThreeRendererError',
+        'Node:\nproduct-model',
+        'Frame:\n184',
+        'Problem:\nThe selected texture exceeds the GPU maximum texture size.',
+        'Asset:\nhero-texture.png\n16384 × 16384',
+        'GPU maximum:\n8192 × 8192',
+        'Suggested actions:\n1. Resize the asset to <= 8192 px.\n2. Enable automatic texture downscaling: set textureDownscale: true on the scene3d node (or ThreeLayerRenderer option downscaleTextures).\n3. Use the Blender backend.',
+      ].join('\n\n'),
+    );
   });
 });

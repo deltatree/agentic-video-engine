@@ -253,4 +253,32 @@ async function renderError(name: string, backend: string): Promise<string> {
   }
 }
 
-Object.assign(window, { ovRender: render, ovRenderError: renderError, ovReady: true });
+/** Rendert den Fall `textures` (64-px-Texturen) mit einer Texturgrenze von 32 px (Story 21.7). */
+async function renderTextureLimit(option: boolean, nodeProp?: boolean): Promise<{ ok: boolean; diagnostic?: unknown; width?: number }> {
+  const assets = await assetsPromise;
+  const c = THREE_CASES['textures'];
+  if (c === undefined) throw new Error('unknown case textures');
+  const node = c.build(0);
+  const renderer = new ThreeLayerRenderer({ preferredBackend: 'webgl2', maxTextureSize: 32, downscaleTextures: option });
+  try {
+    const canvas = await renderer.render({
+      node: { ...node, props: { ...node.props, ...(nodeProp !== undefined ? { textureDownscale: nodeProp } : {}) } },
+      width: WIDTH,
+      height: HEIGHT,
+      scale: 1,
+      frame: 7,
+      time: 7 / FPS,
+      fps: FPS,
+      seed: 1,
+      assetUrl: (id) => assets[id] ?? `/missing/${id}`,
+    });
+    return { ok: true, width: canvas.width };
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'diagnostic' in error) return { ok: false, diagnostic: error.diagnostic };
+    return { ok: false, diagnostic: String(error) };
+  } finally {
+    renderer.dispose();
+  }
+}
+
+Object.assign(window, { ovRender: render, ovRenderError: renderError, ovTextureLimit: renderTextureLimit, ovReady: true });

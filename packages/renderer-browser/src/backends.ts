@@ -7,6 +7,7 @@ import { checkPixiNode, PIXI_CAPABILITIES } from '@agentic-video/renderer-pixi';
 import { checkThreeNode, THREE_CAPABILITIES } from '@agentic-video/renderer-three';
 import { checkHtmlNode, checkResult, HTML_CAPABILITIES } from './html-check.js';
 import { createBrowserHost, type BrowserHost, type BrowserHostOptions } from './host.js';
+import { hostLayerError } from './page-error.js';
 import type { BrowserLayerKind, BrowserLayerPayload } from './protocol.js';
 
 /** Node-Typen, die das `pixi`-Backend rendert (Teilmenge von Skia, siehe `checkPixiNode`). */
@@ -85,7 +86,12 @@ export async function createBrowserBackends(options: BrowserHostOptions): Promis
             throw new OpenVideoError({ code: 'OV_BROWSER_UNSUPPORTED', errorClass: 'BrowserRendererError', problem: 'The browser backend cannot apply a node mask to an html node.', nodeId: masked.id, pointer: masked.pointer, suggestions: ['Wrap the html node in a group and put the mask on the group.'] });
           }
         }
-        return host.render(kind, toPayload(request));
+        try {
+          return await host.render(kind, toPayload(request));
+        } catch (error) {
+          // Fehler der Seite kommen als Text; die Diagnose darin wird wieder ein OpenVideoError (Story 21.7).
+          throw hostLayerError(error, kind, request.nodes.map((n) => n.id));
+        }
       },
       async dispose() {
         if (disposed) return;
@@ -99,7 +105,7 @@ export async function createBrowserBackends(options: BrowserHostOptions): Promis
   const pixiCheck = (node: Readonly<Record<string, unknown>>): BackendCheck => checkResult(checkPixiNode(node));
   return {
     host,
-    browser: make('browser', 'html', ['html'], HTML_CAPABILITIES, true, checkHtmlNode, undefined),
+    browser: make('browser', 'html', ['html'], HTML_CAPABILITIES, true, (n) => checkHtmlNode(n, { allowScripts: options.allowHtmlScripts === true }), undefined),
     three: make('three', 'three', ['scene3d'], THREE_CAPABILITIES, false, threeCheck, 'three'),
     pixi: make('pixi', 'pixi', PIXI_NODE_TYPES, PIXI_CAPABILITIES, true, pixiCheck, 'pixi'),
   };

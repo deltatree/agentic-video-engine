@@ -103,20 +103,29 @@ function throwIfCancelled(signal: CancelSignal | undefined): void {
   if (signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
 }
 
+/** Standard-Threadzahl des Encoders; fest, damit die Videodatei auf jeder Maschine bitgleich ist (§20). */
+export const DEFAULT_ENCODER_THREADS = 4;
+
 /**
- * Encoder-Threads nach freien Kernen (Story 18.6): Kerne minus lokale Render-Prozesse, mindestens
- * 2, höchstens 16; `OPENVIDEO_ENCODER_THREADS` hat Vorrang.
+ * Encoder-Threads (Story 18.6). Standard ist {@link DEFAULT_ENCODER_THREADS}: x264 teilt die Arbeit
+ * je Thread auf, eine von der Maschine abhängige Zahl würde die Bytes der Videodatei ändern.
+ * `OPENVIDEO_ENCODER_THREADS=<n>` legt die Zahl fest; `OPENVIDEO_ENCODER_THREADS=auto` nutzt die
+ * freien Kerne (Kerne minus lokale Render-Prozesse, 2–16) und tauscht Reproduzierbarkeit der Datei
+ * gegen Geschwindigkeit; die Frame-Hashes bleiben in jedem Fall gleich.
  *
  * @example
  * ```ts
  * encoderThreadsFor(4, {}, 8); // 4
- * encoderThreadsFor(1, { OPENVIDEO_ENCODER_THREADS: '4' }); // 4
+ * encoderThreadsFor(1, { OPENVIDEO_ENCODER_THREADS: 'auto' }, 8); // 7
+ * encoderThreadsFor(1, { OPENVIDEO_ENCODER_THREADS: '8' }); // 8
  * ```
  */
 export function encoderThreadsFor(localRenderProcesses: number, env: Readonly<Record<string, string | undefined>> = process.env, cores: number = availableParallelism()): number {
-  const fixed = Number(env['OPENVIDEO_ENCODER_THREADS']);
-  if (Number.isInteger(fixed) && fixed > 0) return Math.min(64, fixed);
-  return Math.max(2, Math.min(16, cores - Math.max(0, Math.floor(localRenderProcesses))));
+  const raw = env['OPENVIDEO_ENCODER_THREADS']?.trim();
+  if (raw === 'auto') return Math.max(2, Math.min(16, cores - Math.max(0, Math.floor(localRenderProcesses))));
+  const fixed = Number(raw);
+  if (raw !== undefined && raw !== '' && Number.isInteger(fixed) && fixed > 0) return Math.min(64, fixed);
+  return DEFAULT_ENCODER_THREADS;
 }
 
 /** Liest `OPENVIDEO_CACHE_MAX_BYTES` (Bytes, auch mit Exponent wie `5e10`); ungültig oder leer: keine Grenze. */

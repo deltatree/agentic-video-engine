@@ -24,6 +24,7 @@ import { checkProject, describeScene, inspectTimeline, profileById, renderFrame,
 import { assertFps, assertFrameCount, assertImageSize, sampleFrames } from './guards.js';
 import { describeOperations } from './describe.js';
 import { projectImport } from './importing.js';
+import { pluginsList } from './plugins.js';
 import { assertProjectAccess } from './project-access.js';
 import { defineOperation, type OperationContext, type OperationDefinition } from './operation.js';
 import { PatchSchema, checkPatchList, toCorePatches } from './patch-schema.js';
@@ -818,6 +819,7 @@ export const OPERATIONS: ReadonlyMap<string, OperationDefinition> = new Map<stri
     sceneTreeOp,
     timelineInspect,
     benchmarkRun,
+    pluginsList,
   ].map((op): [string, OperationDefinition] => [op.name, op]),
 );
 

@@ -92,6 +92,28 @@ describe('Semantik', () => {
   });
 });
 
+describe('Texturgrenzen (Story 21.7, Auftrag §40)', () => {
+  type LimitResult = { ok: boolean; diagnostic?: { code?: string; nodeId?: string; frame?: number; details?: Record<string, unknown>; suggestions?: string[] }; width?: number };
+  const limit = (option: boolean, nodeProp?: boolean): Promise<LimitResult> =>
+    page.evaluate(([o, n]) => (window as unknown as { ovTextureLimit: (o: boolean, n?: boolean) => Promise<LimitResult> }).ovTextureLimit(o, n), [option, nodeProp] as const);
+
+  it('wirft OV_THREE_TEXTURE_TOO_LARGE mit Node, Frame, Asset-Maßen und GPU-Maximum', async () => {
+    const result = await limit(false);
+    expect(result.ok).toBe(false);
+    expect(result.diagnostic?.code).toBe('OV_THREE_TEXTURE_TOO_LARGE');
+    expect(result.diagnostic?.frame).toBe(7);
+    expect(result.diagnostic?.nodeId).toMatch(/.+/u);
+    expect(result.diagnostic?.details).toEqual({ Asset: 'checker\n64 × 64', 'GPU maximum': '32 × 32' });
+    expect(result.diagnostic?.suggestions?.[0]).toBe('Resize the asset to <= 32 px.');
+  });
+
+  it('verkleinert mit downscaleTextures oder textureDownscale an der Node', async () => {
+    expect(await limit(true)).toEqual({ ok: true, width: 160 });
+    expect(await limit(false, true)).toEqual({ ok: true, width: 160 });
+    expect((await limit(true, false)).ok).toBe(false);
+  });
+});
+
 describe('Determinismus', () => {
   it('Animation Clip bei Frame n in frischem Browser gleich wie nach Frames 0..n', async () => {
     const n = 20;

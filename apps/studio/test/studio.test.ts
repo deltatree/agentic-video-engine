@@ -10,6 +10,8 @@ import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startAgentServer, type AgentServer } from '@agentic-video/agent';
 import { createLocalServices, type LocalServices } from '@agentic-video/cli';
+import { decodePng } from '@agentic-video/png';
+import { expectGolden } from '@agentic-video/testing';
 import { chromium, type Browser, type Page } from 'playwright';
 import { build } from 'vite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -17,6 +19,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 const APP = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const DIST = join(APP, 'dist');
 const ARTIFACTS = join(APP, 'test', 'artifacts');
+const GOLDEN = join(APP, 'test', 'golden', 'studio.png');
 const CHROMIUM_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--font-render-hinting=none', '--force-color-profile=srgb'];
 const MIME: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.json': 'application/json' };
 
@@ -129,9 +132,10 @@ beforeEach(async () => {
 
 describe('OpenVideo Studio', () => {
   it('shows every panel of the layout', async () => {
-    await expect.poll(() => page.getByRole('toolbar', { name: 'Main toolbar' }).isVisible()).toBe(true);
-    await expect.poll(() => page.getByRole('region', { name: 'Preview' }).isVisible()).toBe(true);
-    await expect.poll(() => page.getByRole('tree', { name: 'Scene tree' }).isVisible()).toBe(true);
+    // Großzügige Poll-Zeit (Story 22.4): der erste Test nach dem Vite-Build läuft unter Last.
+    await expect.poll(() => page.getByRole('toolbar', { name: 'Main toolbar' }).isVisible(), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => page.getByRole('region', { name: 'Preview' }).isVisible(), { timeout: 15_000 }).toBe(true);
+    await expect.poll(() => page.getByRole('tree', { name: 'Scene tree' }).isVisible(), { timeout: 15_000 }).toBe(true);
     const tabs = ['Scene Tree', 'Assets', 'Components', 'Inspector', 'Properties', 'Effects', 'Timeline', 'Audio', 'Keyframes', 'Curves', 'Code', 'Diagnostics', 'Render Queue'];
     for (const name of tabs) {
       const tab = page.getByRole('tab', { name, exact: true });
@@ -262,14 +266,21 @@ describe('OpenVideo Studio', () => {
     }
   });
 
-  it('stores a screenshot for visual review', async () => {
+  it('matches the screenshot golden (tolerant) and stores it for review', async () => {
     await selectInTree('title');
     await selectInTree('disc', 'Control');
     await page.getByRole('tab', { name: 'Diagnostics', exact: true }).click();
     await page.getByRole('button', { name: /OV_TEXT_OVERFLOW/ }).waitFor({ timeout: 15_000 });
     mkdirSync(ARTIFACTS, { recursive: true });
-    await page.screenshot({ path: join(ARTIFACTS, 'studio.png') });
+    // Veränderliche Stellen (Projekt-ID je Testreihenfolge, Live-Status, blinkender Cursor) maskieren;
+    // feste Breiten halten die übrige Werkzeugleiste an ihrem Platz.
+    const png = await page.screenshot({ path: join(ARTIFACTS, 'studio.png'), mask: [page.locator('.toolbar .project'), page.locator('.toolbar .live')], caret: 'hide', animations: 'disabled', style: '.toolbar .project, .toolbar .live { display: inline-block; width: 90px; overflow: hidden; }' });
     expect(pageErrors).toEqual([]);
+    // Golden mit Toleranz (Story 22.5): Schriftkanten dürfen zwischen Chromium-Builds leicht abweichen,
+    // ein verschobenes Panel oder ein fehlendes Element nicht. Abweichungen landen als .actual/.diff
+    // neben dem Golden und in CI als Artefakt.
+    const result = expectGolden(decodePng(new Uint8Array(png)), GOLDEN, { maxChannelDelta: 64, maxDiffRatio: 0.02 });
+    expect(result.pass).toBe(true);
   });
 });
 

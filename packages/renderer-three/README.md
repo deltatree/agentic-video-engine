@@ -45,6 +45,15 @@ renderer.dispose();
 | Depth of Field | Eigene Rechnung, in beiden Backends gleich: `blur = clamp(|focus − Abstand| · aperture, 0, maxBlur)`. |
 | Asset-Format | Erst Dateiendung, dann erste Bytes (Host-URLs haben oft keine Endung). HDR über `HDRLoader` (Nachfolger von `RGBELoader`). |
 
+## Texturgrenzen
+
+Bildtexturen (`map`, `normalMap`, `roughnessMap`) werden gegen das GPU-Maximum geprüft
+(WebGL2 `MAX_TEXTURE_SIZE`, WebGPU `maxTextureDimension2D`, optional zusätzlich die Option
+`maxTextureSize`). Ist eine Textur größer, wirft der Renderer `OV_THREE_TEXTURE_TOO_LARGE` mit Node,
+Frame, Asset-Maßen, GPU-Maximum und Vorschlägen (Auftrag §40). Mit `textureDownscale: true` an der
+`scene3d`-Node oder `new ThreeLayerRenderer({ downscaleTextures: true })` wird die Textur stattdessen
+seitenverhältnistreu auf die Grenze verkleinert (die Node-Property hat Vorrang).
+
 ## Einschränkungen
 
 - GLSL-`ShaderMaterial` läuft nur unter WebGL2 (`OV_THREE_BACKEND_FEATURE`).

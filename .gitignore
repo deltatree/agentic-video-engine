@@ -1,6 +1,8 @@
 # Abhängigkeiten und Build-Ausgaben
 node_modules/
 dist/
+# Studio-Kopie im CLI-Paket (scripts/build.mjs, Story 22.7)
+packages/cli/studio/
 *.tsbuildinfo
 coverage/
 .vite/

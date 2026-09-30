@@ -19,7 +19,7 @@
  * auf das Dokument (Uhr, Schriften, Animationen). Die Grenze ist dann der Container (ADR 0008).
  * `css` kann das `<style>`-Element in keinem Modus verlassen.
  */
-import type { EvaluatedNode } from '@agentic-video/core';
+import { OpenVideoError, type EvaluatedNode } from '@agentic-video/core';
 import { DOCUMENT_NAME_PREFIX, type BrowserLayerPayload, type DocumentConfig, type FrameState, type HtmlRenderOptions } from '../protocol.js';
 import { applyFrame, seekAnimations } from './animations.js';
 import { clearDefs, defineColorMatrices } from './defs.js';
@@ -131,12 +131,30 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload, options: Htm
   const docs: Document[] = [document];
   let index = 0;
   for (const node of payload.nodes) {
-    if (node.type !== 'html') throw new TypeError(`Node "${node.id}" has type "${node.type}"; the browser backend renders only "html" nodes.`);
+    if (node.type !== 'html') {
+      throw new OpenVideoError({
+        code: 'OV_BROWSER_PAYLOAD',
+        errorClass: 'BrowserRendererError',
+        problem: `Node "${node.id}" has type "${node.type}"; the browser backend renders only "html" nodes.`,
+        nodeId: node.id,
+        pointer: node.pointer,
+        suggestions: ['Set renderer only on html nodes to "browser"; other node types use their default backend.'],
+      });
+    }
     const html = typeof node.props['html'] === 'string' ? node.props['html'] : '';
     const css = typeof node.props['css'] === 'string' ? node.props['css'] : '';
     const signature = JSON.stringify([html, css, payload.seed, payload.fps, scripts]);
     const timeMs = (node.time.localFrame / payload.fps) * 1000;
-    if (!Number.isFinite(timeMs)) throw new RangeError(`OV_BROWSER_PAYLOAD: node "${node.id}" has a non-finite local time.`);
+    if (!Number.isFinite(timeMs)) {
+      throw new OpenVideoError({
+        code: 'OV_BROWSER_PAYLOAD',
+        errorClass: 'BrowserRendererError',
+        problem: `HTML node "${node.id}" has a non-finite local time.`,
+        nodeId: node.id,
+        pointer: node.pointer,
+        suggestions: ['Check the fps of the composition and the timing of the node (from, duration, speed).'],
+      });
+    }
     let slot = slots.get(node.id);
     if (slot === undefined || slot.signature !== signature || timeMs < slot.now) {
       slot?.container.remove();
@@ -164,12 +182,30 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload, options: Htm
     c.clipPath = style.clipPath;
     c.background = style.background;
     const doc = slot.iframe.contentDocument;
-    if (doc === null) throw new Error(`HTML node "${node.id}" has no readable document.`);
+    if (doc === null) {
+      throw new OpenVideoError({
+        code: 'OV_BROWSER_HTML_DOCUMENT',
+        errorClass: 'BrowserRendererError',
+        problem: `HTML node "${node.id}" has no readable document.`,
+        nodeId: node.id,
+        pointer: node.pointer,
+        suggestions: ['Render again; the document frame was replaced while loading.', 'Remove navigation (location changes, meta refresh) from the HTML.'],
+      });
+    }
     await loadFonts(doc);
     const state: FrameState = { timeMs, frame: node.time.localFrame, fps: payload.fps, progress: node.time.progress, seed: payload.seed, key: node.id };
     if (slot.scripts) {
       const clock = slot.iframe.contentWindow?.__ovClock;
-      if (clock === undefined) throw new Error(`HTML node "${node.id}" has no virtual clock.`);
+      if (clock === undefined) {
+        throw new OpenVideoError({
+          code: 'OV_BROWSER_HTML_CLOCK',
+          errorClass: 'BrowserRendererError',
+          problem: `HTML node "${node.id}" has no virtual clock; its scripts replaced or blocked the injected clock.`,
+          nodeId: node.id,
+          pointer: node.pointer,
+          suggestions: ['Do not overwrite window.__ovClock, Date or performance in the HTML scripts.', 'Render the node without scripts (remove --trusted) if it does not need them.'],
+        });
+      }
       clock.frame(state);
     } else {
       // Ohne Skripte läuft keine Uhr im Dokument; die Host-Seite stellt es von außen.

@@ -66,6 +66,42 @@ export interface EncoderOptions extends FfmpegLocateOptions {
   readonly threads?: number;
   /** Timeout für das Schreiben eines Frames und für den Abschluss in Millisekunden (Standard 600 000). */
   readonly timeoutMs?: number;
+  /**
+   * Codec aus einem Plugin (Story 21.1): ersetzt `codec` und die eingebauten Video-Argumente.
+   * `formats` begrenzt die Container; `args` wird geprüft (keine zusätzlichen Eingaben, kein Netz).
+   */
+  readonly customCodec?: CustomCodec;
+}
+
+/** Ein Video-Codec aus einem Plugin (`CodecDefinition` in core). */
+export interface CustomCodec {
+  readonly id: string;
+  readonly formats: readonly string[];
+  /** FFmpeg-Argumente des Video-Encoders, z. B. `['-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p']`. */
+  readonly args: readonly string[];
+}
+
+/** Optionen, die Video-Argumente eines Plugins nicht setzen dürfen: weitere Eingaben, Ausgaben, Muxer, Mappings. */
+const FORBIDDEN_CUSTOM_ARGS: ReadonlySet<string> = new Set(['-i', '-f', '-y', '-n', '-map', '-filter_complex', '-lavfi', '-protocol_whitelist', '-attach', '-dump_attachment', '-stats_enc_pre', '-stats_enc_post', '-vstats_file', '-passlogfile', '-report']);
+
+/**
+ * Prüft die FFmpeg-Argumente eines Plugin-Codecs (Story 21.1).
+ *
+ * @example
+ * ```ts
+ * checkCustomCodecArgs({ id: 'x264-film', formats: ['mp4'], args: ['-c:v', 'libx264', '-tune', 'film'] });
+ * ```
+ */
+export function checkCustomCodecArgs(codec: CustomCodec): void {
+  for (const arg of codec.args) {
+    const name = arg.split(':')[0] ?? arg;
+    if (FORBIDDEN_CUSTOM_ARGS.has(name) || arg.includes('://') || /\b(?:a?movie|sendcmd|zmq)\s*=/iu.test(arg)) {
+      throw encodeError('OV_ENCODE_CODEC_ARGS', `Codec "plugin:${codec.id}" uses the FFmpeg argument "${arg}", which plugins may not set.`, ['Only pass video encoder options (e.g. -c:v, -crf, -preset, -pix_fmt, -vf).', 'Inputs, outputs, muxers, stream mappings and URLs are set by OpenVideo.'], { codec: codec.id, argument: arg });
+    }
+  }
+  if (!codec.args.includes('-c:v') && !codec.args.includes('-codec:v') && !codec.args.includes('-vcodec')) {
+    throw encodeError('OV_ENCODE_CODEC_ARGS', `Codec "plugin:${codec.id}" does not choose an encoder with -c:v.`, ['Return e.g. ["-c:v", "libx264", ...] from encoderArgs.'], { codec: codec.id });
+  }
 }
 
 /** Ergebnis eines abgeschlossenen Encodings (für das Manifest). */
@@ -76,7 +112,8 @@ export interface EncodeResult {
   /** Dauer in Sekunden (`frames / fps`). */
   readonly duration: number;
   readonly format: OutputFormat;
-  readonly codec: VideoCodec | 'jpeg';
+  /** Codec; Plugin-Codecs als `plugin:<id>`. */
+  readonly codec: VideoCodec | 'jpeg' | `plugin:${string}`;
   /** Verwendeter FFmpeg-Encoder, z. B. `libx264`. */
   readonly encoder: string;
   readonly audioEncoder: string | undefined;
@@ -139,7 +176,9 @@ function defaultCodec(format: OutputFormat, alpha: boolean): VideoCodec | 'jpeg'
 /** Geprüfte, vollständige Encoder-Einstellungen. */
 interface Plan {
   readonly format: OutputFormat;
-  readonly codec: VideoCodec | 'jpeg';
+  readonly codec: VideoCodec | 'jpeg' | `plugin:${string}`;
+  /** Video-Argumente eines Plugin-Codecs. */
+  readonly custom?: CustomCodec;
   readonly alpha: boolean;
   readonly quality: number;
   readonly threads: number;
@@ -154,8 +193,18 @@ interface Plan {
 function resolvePlan(o: EncoderOptions): Plan {
   const alpha = o.alpha ?? false;
   const allowed = FORMAT_CODECS[o.format];
-  const codec = o.codec ?? defaultCodec(o.format, alpha);
-  if (o.codec !== undefined && !allowed.includes(o.codec)) {
+  const custom = o.customCodec;
+  if (custom !== undefined) {
+    if (!custom.formats.includes(o.format)) {
+      throw encodeError('OV_ENCODE_CODEC_UNSUPPORTED', `Codec "plugin:${custom.id}" is not supported in format "${o.format}".`, [`Use one of: ${custom.formats.join(', ')}.`], { format: o.format, codec: `plugin:${custom.id}` });
+    }
+    if (SEQUENCE_EXT[o.format] !== undefined) {
+      throw encodeError('OV_ENCODE_CODEC_UNSUPPORTED', `Plugin codecs cannot write image sequences ("${o.format}").`, ['Use a container format such as mp4, mov or webm.'], { format: o.format, codec: `plugin:${custom.id}` });
+    }
+    checkCustomCodecArgs(custom);
+  }
+  const codec: Plan['codec'] = custom !== undefined ? `plugin:${custom.id}` : (o.codec ?? defaultCodec(o.format, alpha));
+  if (custom === undefined && o.codec !== undefined && !allowed.includes(o.codec)) {
     throw encodeError(
       'OV_ENCODE_CODEC_UNSUPPORTED',
       `Codec "${o.codec}" is not supported in format "${o.format}".`,
@@ -163,7 +212,7 @@ function resolvePlan(o: EncoderOptions): Plan {
       { format: o.format, codec: o.codec },
     );
   }
-  if (alpha && !ALPHA_COMBINATIONS.includes(`${o.format}/${codec}`)) {
+  if (alpha && custom === undefined && !ALPHA_COMBINATIONS.includes(`${o.format}/${codec}`)) {
     throw encodeError('OV_ENCODE_ALPHA_UNSUPPORTED', `Format "${o.format}" with codec "${codec}" cannot store alpha.`, [
       'Use format "webm" with codec "vp9" (yuva420p).',
       'Use format "mov" with codec "prores-4444" (yuva444p10le).',
@@ -199,6 +248,7 @@ function resolvePlan(o: EncoderOptions): Plan {
   return {
     format: o.format,
     codec,
+    ...(custom !== undefined ? { custom } : {}),
     alpha,
     quality,
     threads: Math.max(1, Math.floor(o.threads ?? 4)),
@@ -245,6 +295,10 @@ function videoArgs(plan: Plan, caps: FfmpegCapabilities, hw: HardwareFamily | un
     ...extra,
   ];
   const mp4Tag = plan.format === 'mp4' || plan.format === 'mov';
+  if (plan.custom !== undefined) {
+    const at = plan.custom.args.findIndex((a) => a === '-c:v' || a === '-codec:v' || a === '-vcodec');
+    return { encoder: plan.custom.args[at + 1] ?? plan.custom.id, args: [...plan.custom.args] };
+  }
   if (hw !== undefined && (plan.codec === 'h264' || plan.codec === 'h265')) {
     const encoder = need(caps, [`${plan.codec === 'h264' ? 'h264' : 'hevc'}_${hw}`], plan.codec);
     const crf = String(plan.codec === 'h264' ? Math.round(35 - 0.23 * q) : Math.round(38 - 0.24 * q));
@@ -307,6 +361,9 @@ function videoArgs(plan: Plan, caps: FfmpegCapabilities, hw: HardwareFamily | un
     }
     case 'jpeg':
       return { encoder: 'mjpeg', args: ['-pix_fmt', 'yuvj420p', '-c:v', need(caps, ['mjpeg'], 'jpeg'), '-q:v', String(Math.round(31 - 0.29 * q))] };
+    default:
+      // Plugin-Codecs sind oben behandelt; ohne ihre Argumente gibt es keinen Encoder.
+      throw encodeError('OV_ENCODE_CODEC_UNSUPPORTED', `Codec "${plan.codec}" has no encoder arguments.`, ['Register the codec with a plugin (settings.plugins) or use a built-in codec.'], { codec: plan.codec });
   }
 }
 

@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -358,7 +359,7 @@ describe('Job-Datei an Blender (ohne Blender, mit Test-Programm)', () => {
   });
 });
 
-describe.skipIf(!blenderAvailable)('Blender-Render (Blender 4.2)', () => {
+describe.skipIf(skipUnless(blenderAvailable, SKIP_REASON))('Blender-Render (Blender 4.2)', () => {
   const backend = createBlenderBackend({ workDir, threads: 4 });
 
   beforeAll(() => {

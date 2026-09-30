@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { FileStore, createCache } from '@agentic-video/cache';
 import { SCHEMA_VERSION, sha256Hex } from '@agentic-video/core';
 import { createNodeEnvironment, renderVideo, type NodeEnvironment } from '@agentic-video/render';
@@ -116,7 +115,9 @@ describe('Koordinator und HTTP-Worker (Story 10.3)', () => {
   it('vergibt abgelaufene Leases neu und nimmt beim Beenden (SIGTERM) den laufenden Chunk zurück', async () => {
     const dir = tmp('ov-lease-');
     const store = new FileStore(join(dir, 'shared'));
-    const coordinator = await startCoordinator({ port: 0, host: '127.0.0.1', store, journalDir: join(dir, 'journal'), leaseSeconds: 1 });
+    // Injizierte Uhr statt Schlaf (Story 22.4): Der Test stellt die Zeit selbst vor.
+    let clock = 1_000_000;
+    const coordinator = await startCoordinator({ port: 0, host: '127.0.0.1', store, journalDir: join(dir, 'journal'), leaseSeconds: 1, now: () => clock });
     const post = (path: string, body: unknown) => fetch(`${coordinator.url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
     const queue = async () => (await (await fetch(`${coordinator.url}/v1/queue`)).json()) as { queueLength: number; leasesActive: number };
     const submitted = (await (await post('/v1/jobs', { project, files: [], chunks: [{ compositionId: 'main', start: 0, end: 90, scale: 1, step: 1, offset: 0 }] })).json()) as { jobId: string };
@@ -124,14 +125,16 @@ describe('Koordinator und HTTP-Worker (Story 10.3)', () => {
     // Lease ohne Heartbeat läuft ab und steht danach wieder in der Warteschlange.
     expect((await post('/v1/lease', { worker: 'silent' })).status).toBe(200);
     expect(await queue()).toMatchObject({ queueLength: 0, leasesActive: 1 });
-    await sleep(1300);
+    clock += 999;
+    expect(await queue()).toMatchObject({ queueLength: 0, leasesActive: 1 });
+    clock += 301;
     expect(await queue()).toMatchObject({ queueLength: 1, leasesActive: 0 });
 
     // Worker beginnt zu rendern und wird abgebrochen: der Chunk geht ohne Fehlversuch zurück.
     const stop = new AbortController();
     const worker = runWorkerHttp({ coordinatorUrl: coordinator.url, store, worker: 'w', signal: stop.signal, pollIntervalMs: 50, telemetry: quiet() });
-    for (let i = 0; i < 200 && (await queue()).leasesActive === 0; i++) await sleep(20);
-    await sleep(300);
+    // Der Worker rendert, sobald er die Lease hält: Abbruch mitten im Chunk (90 Frames).
+    await expect.poll(async () => (await queue()).leasesActive, { timeout: 30_000, interval: 20 }).toBe(1);
     stop.abort();
     const summary = await worker;
     expect(summary).toMatchObject({ released: 1, completed: 0 });

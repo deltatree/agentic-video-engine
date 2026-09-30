@@ -68,7 +68,7 @@ export function createLazyBrowserBackends(options: BrowserHostOptions): LazyBrow
       await (await real)[id].dispose();
     },
   });
-  const browser = make('browser', ['html'], HTML_CAPABILITIES, true, checkHtmlNode, {});
+  const browser = make('browser', ['html'], HTML_CAPABILITIES, true, (n) => checkHtmlNode(n, { allowScripts: options.allowHtmlScripts === true }), {});
   const three = make('three', ['scene3d'], THREE_CAPABILITIES, false, (n) => toCheck(checkThreeNode(n)), { three: THREE_VERSION });
   const pixi = make('pixi', PIXI_NODE_TYPES, PIXI_CAPABILITIES, true, (n) => toCheck(checkPixiNode(n)), { 'pixi.js': PIXI_VERSION });
   return {

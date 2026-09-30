@@ -24,12 +24,12 @@ afterAll(async () => {
 });
 
 describe('Agent API (FR-21, FR-23)', () => {
-  it('listet alle 30 Operationen mit Schemas', async () => {
+  it('listet alle 31 Operationen mit Schemas', async () => {
     const res = await fetch(`${server.url}/v1/operations`, { headers: { authorization: `Bearer ${TOKEN}` } });
     const json = (await res.json()) as { operations: { name: string; input: unknown; output: unknown; example: unknown }[] };
     const names = json.operations.map((o) => o.name);
-    expect(names).toHaveLength(30);
-    for (const expected of ['capabilities.get', 'schema.get', 'project.open', 'project.import', 'frame.renderMany', 'subtitles.transcribe', 'project.create', 'project.inspect', 'composition.create', 'composition.get', 'composition.validate', 'composition.patch', 'asset.import', 'asset.inspect', 'frame.render', 'frame.inspect', 'preview.render', 'preview.contactSheet', 'video.render', 'render.status', 'render.cancel', 'diagnostics.get', 'fonts.list', 'templates.list', 'templates.inspect', 'scene.describe', 'scene.tree', 'timeline.inspect', 'benchmark.run']) {
+    expect(names).toHaveLength(31);
+    for (const expected of ['capabilities.get', 'schema.get', 'project.open', 'project.import', 'frame.renderMany', 'subtitles.transcribe', 'project.create', 'project.inspect', 'composition.create', 'composition.get', 'composition.validate', 'composition.patch', 'asset.import', 'asset.inspect', 'frame.render', 'frame.inspect', 'preview.render', 'preview.contactSheet', 'video.render', 'render.status', 'render.cancel', 'diagnostics.get', 'fonts.list', 'templates.list', 'templates.inspect', 'scene.describe', 'scene.tree', 'timeline.inspect', 'benchmark.run', 'plugins.list']) {
       expect(names).toContain(expected);
     }
     expect(json.operations.every((o) => o.input !== undefined && o.output !== undefined && o.example !== undefined)).toBe(true);

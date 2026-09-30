@@ -20,6 +20,7 @@ import { extname } from 'node:path';
 import { OpenVideoError, type Diagnostic } from '@agentic-video/core';
 import { invokeOperation, type OperationDefinition } from './operation.js';
 import { OPERATIONS, readProjectFile } from './operations.js';
+import { PLUGIN_PANEL_PATH, servePluginPanel, type PanelResponse } from './plugins.js';
 import { assertProjectAccess } from './project-access.js';
 import { RevisionWatcher, revisionOf, sseMessage } from './server-events.js';
 import type { AgentServices } from './services.js';
@@ -246,6 +247,23 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
       res.end();
       return;
     }
+    // Studio-Panels aus Plugins (Story 21.1): iframes senden kein Bearer-Token; die signierte URL
+    // aus plugins.list ist die Berechtigung. Unbekannte oder falsch signierte Pfade: 404.
+    if (req.method === 'GET' && url.pathname.startsWith(PLUGIN_PANEL_PATH)) {
+      let panel: PanelResponse | undefined;
+      try {
+        panel = await servePluginPanel(services, url.pathname);
+      } catch (error) {
+        if (!(error instanceof OpenVideoError)) throw error;
+        panel = undefined;
+      }
+      if (panel === undefined) send(res, 404, apiError('OV_API_NOT_FOUND', 'Unknown plugin panel.', ['Use the url from plugins.list.']));
+      else {
+        res.writeHead(panel.status, panel.headers);
+        res.end(panel.body);
+      }
+      return;
+    }
     if (url.pathname.startsWith('/v1/') && token !== undefined && !tokenOk(req.headers.authorization, token)) {
       send(res, 401, apiError('OV_API_UNAUTHORIZED', 'Missing or wrong bearer token.', ['Send "Authorization: Bearer <OPENVIDEO_API_TOKEN>".']), cors);
       return;
@@ -299,7 +317,8 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
       await sendFile(res, ctx, fileMatch[1], fileMatch[2], cors);
       return;
     }
-    const opMatch = /^\/v1\/([a-z]+\.[A-Za-z]+)$/u.exec(url.pathname);
+    // Eingebaute Operationen `bereich.verb`; Agent Tools aus Plugins `plugin.<name>` (Story 21.1).
+    const opMatch = /^\/v1\/([a-z]+\.[A-Za-z]+|plugin\.[A-Za-z][A-Za-z0-9_.-]{0,63})$/u.exec(url.pathname);
     if (req.method === 'POST' && opMatch?.[1] !== undefined) {
       const contentType = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase();
       if (contentType !== 'application/json') {

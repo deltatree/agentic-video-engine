@@ -2,7 +2,7 @@
  * Gemeinsame Ausgabe für Three- und Pixi-Layer: Canvas in Ausgabegröße zeichnen,
  * Pixel lesen und per `POST /frame/<id>` an den Host senden.
  */
-import { localMatrix, multiply, scale as scaleMatrix, getTransform, type EvaluatedNode, type Matrix2D } from '@agentic-video/core';
+import { OpenVideoError, localMatrix, multiply, scale as scaleMatrix, getTransform, type EvaluatedNode, type Matrix2D } from '@agentic-video/core';
 import type { BrowserLayerPayload } from '../protocol.js';
 import { clearDefs, defineColorMatrices } from './defs.js';
 import { cssFilter } from './style.js';
@@ -55,7 +55,16 @@ export async function sendCanvas(
   out.width = width;
   out.height = height;
   const ctx = out.getContext('2d', { colorSpace: 'srgb', willReadFrequently: true });
-  if (ctx === null) throw new Error('2D canvas context is not available.');
+  if (ctx === null) {
+    throw new OpenVideoError({
+      code: 'OV_BROWSER_CANVAS',
+      errorClass: 'BrowserRendererError',
+      problem: `A ${String(width)} × ${String(height)} 2D canvas context is not available in the render page.`,
+      ...(place !== undefined ? { nodeId: place.node.id } : {}),
+      details: { width, height },
+      suggestions: ['Reduce the output size or the preview scale.', 'Run `openvideo doctor` to check the browser setup.'],
+    });
+  }
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   if (place === undefined) {
@@ -75,5 +84,14 @@ export async function sendCanvas(
   // Als Blob senden: Ein TypedArray als Body kostet in Chromium bei 1080p über eine Sekunde,
   // ein Blob mit denselben Bytes nur einen Bruchteil davon.
   const response = await fetch(frameUrl, { method: 'POST', body: new Blob([data]), headers: { 'content-type': 'application/octet-stream' } });
-  if (!response.ok) throw new Error(`Frame upload failed with HTTP ${String(response.status)}.`);
+  if (!response.ok) {
+    throw new OpenVideoError({
+      code: 'OV_BROWSER_FRAME_UPLOAD',
+      errorClass: 'BrowserRendererError',
+      problem: `The layer pixels could not be sent to the render host (HTTP ${String(response.status)}).`,
+      ...(place !== undefined ? { nodeId: place.node.id } : {}),
+      details: { status: response.status, width, height },
+      suggestions: ['Render again; the host may have cancelled the frame after a timeout.', 'Check the host log for a size mismatch (HTTP 413).'],
+    });
+  }
 }

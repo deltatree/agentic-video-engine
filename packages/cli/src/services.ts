@@ -100,6 +100,8 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
   // Rolle `submit` (Story 16.3); ein gemeinsames Token (`openvideo coordinator --token`) bleibt als Rückfall.
   const coordinatorToken = nonEmpty((options.env ?? process.env)['OPENVIDEO_SUBMIT_TOKEN']) ?? nonEmpty((options.env ?? process.env)['OPENVIDEO_WORKER_TOKEN']);
   const create = options.createEnvironment ?? createNodeEnvironment;
+  // Lokale Worker (Story 18.7): `--workers`, sonst `OPENVIDEO_WORKERS`, sonst nach Kernen und Speicher.
+  const localWorkers = options.workers ?? workersFromEnv(options.env ?? process.env) ?? defaultWorkerCount();
   // LRU mit Referenzzählung (B14): Die Map-Reihenfolge ist die Nutzungsreihenfolge.
   const envs = new Map<string, EnvEntry>();
 
@@ -174,8 +176,8 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
       ? { chunkRunner: options.chunkRunner }
       : coordinatorUrl !== undefined
         ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => remoteRunner(env, project, coordinatorUrl, coordinatorToken) }
-        : (options.workers ?? defaultWorkerCount()) > 1
-        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, options.workers ?? defaultWorkerCount(), isolation === 'trusted') }
+        : localWorkers > 1
+        ? { chunkRunner: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => processRunner(env, project, localWorkers, isolation === 'trusted') }
         : {}),
     ...(options.benchmark !== undefined ? { benchmark: options.benchmark } : {}),
     assets: {
@@ -237,6 +239,20 @@ export function telemetryFromEnv(env: Readonly<Record<string, string | undefined
     throw new OpenVideoError({ code: 'OV_TELEMETRY_EXPORTER', errorClass: 'ConfigError', problem: `OPENVIDEO_METRICS_PORT="${String(env['OPENVIDEO_METRICS_PORT'])}" is not a TCP port.`, suggestions: ['Set a port between 1 and 65535, e.g. 9464.'] });
   }
   return createTelemetry({ serviceName: 'openvideo', exporter, ...(exporter === 'prometheus' ? { prometheusPort: port } : {}) });
+}
+
+/**
+ * Worker-Zahl aus `OPENVIDEO_WORKERS` (ganze Zahl ≥ 1), sonst `undefined`. In Containern, deren
+ * CPU- oder Speichergrenze Node nicht sieht, legt die Variable die Zahl fest.
+ *
+ * @example
+ * ```ts
+ * workersFromEnv({ OPENVIDEO_WORKERS: '2' }); // 2
+ * ```
+ */
+export function workersFromEnv(env: Readonly<Record<string, string | undefined>>): number | undefined {
+  const n = Number(env['OPENVIDEO_WORKERS'] ?? '');
+  return Number.isInteger(n) && n >= 1 ? n : undefined;
 }
 
 function nonEmpty(value: string | undefined): string | undefined {

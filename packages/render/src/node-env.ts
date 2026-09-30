@@ -13,7 +13,7 @@ import { createCache, storeFromEnv, type Cache } from '@agentic-video/cache';
 import { registerComponents } from '@agentic-video/components';
 import { accumulateFrames, compositeFrame, parseCubeLut, type Lut } from '@agentic-video/compositor';
 import { OUTPUT_FORMATS, OpenVideoError, Registry, VIDEO_CODECS, isRecord, type RgbaImage } from '@agentic-video/core';
-import { HARDWARE_FAMILIES, codecLicenses, createEncoder, probeCapabilities, type FfmpegCapabilities } from '@agentic-video/ffmpeg';
+import { HARDWARE_FAMILIES, codecLicenses, createEncoder, probeCapabilities, type CustomCodec, type FfmpegCapabilities } from '@agentic-video/ffmpeg';
 import { loadFontSet } from '@agentic-video/fonts';
 import { createSkiaBackend, createSkiaTextMeasurer, loadCanvasKitNode, renderContactSheet, renderDebugOverlay } from '@agentic-video/renderer-skia';
 import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, resolveFromAudioTracks, synthesizeVoices } from '@agentic-video/speech';
@@ -24,6 +24,7 @@ import { createBlenderBackend } from '@agentic-video/renderer-blender';
 import { createAudioEngine, type SynthesizedVoice } from './audio-engine.js';
 import type { EncodeOptions, FrameEncoder, MediaTools, RenderEnvironment } from './environment.js';
 import { OPENVIDEO_VERSION } from './version.js';
+import { PLUGIN_PREFIX, exporterEncoder, loadProjectPlugins, pluginExporter, pluginPolicyFromEnv, type PluginPolicy } from './plugins.js';
 
 /** Zusätzliche Backends, die ein Host bereitstellt (Browser, Blender), jeweils mit eigenem Aufräumen. */
 export interface BackendProvider {
@@ -55,6 +56,13 @@ export interface NodeEnvironmentOptions {
   readonly skipDefaultProviders?: boolean;
   /** Ordner für erzeugte Stimmen (Standard `<projekt>/.openvideo/voices`). */
   readonly voicesDir?: string;
+  /**
+   * Plugins aus `settings.plugins` (Story 21.1, ADR 0012). Standard: laden nur mit `trusted` oder
+   * `OPENVIDEO_ALLOW_PLUGINS=1`; Rechte nur aus `OPENVIDEO_PLUGIN_PERMISSIONS`.
+   */
+  readonly plugins?: PluginPolicy;
+  /** Umgebungsvariablen (Standard `process.env`), z. B. für Plugin-Rechte. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 /** Umgebung mit Aufräumfunktion. */
@@ -72,18 +80,39 @@ function pick<T extends string>(values: readonly T[], value: string | undefined,
   return hit;
 }
 
-function mediaTools(): MediaTools {
+/** Codec `plugin:<id>` aus dem Register als FFmpeg-Codec (Story 21.1). */
+function pluginCodec(registry: Registry, codec: string | undefined, quality: number, alpha: boolean): CustomCodec | undefined {
+  if (codec === undefined || !codec.startsWith(PLUGIN_PREFIX)) return undefined;
+  const id = codec.slice(PLUGIN_PREFIX.length);
+  const def = registry.codecs.get(id);
+  if (def === undefined) {
+    throw new OpenVideoError({
+      code: 'OV_RENDER_PROFILE',
+      errorClass: 'RenderError',
+      problem: `Codec "${codec}" is not registered by any loaded plugin.`,
+      suggestions: [registry.codecs.size > 0 ? `Use one of: ${[...registry.codecs.keys()].map((k) => PLUGIN_PREFIX + k).join(', ')}.` : 'Add the plugin that provides it to settings.plugins.', `Or use a built-in codec: ${VIDEO_CODECS.join(', ')}.`],
+    });
+  }
+  return { id, formats: def.formats, args: def.encoderArgs({ quality, alpha }) };
+}
+
+function mediaTools(registry: Registry): MediaTools {
   let caps: Promise<FfmpegCapabilities> | undefined;
   return {
     createEncoder(options: EncodeOptions): Promise<FrameEncoder> {
+      // Exporter aus Plugins schreiben ein eigenes Ausgabeformat (`format: 'plugin:<id>'`).
+      const exporter = pluginExporter(registry, options.format);
+      if (exporter !== undefined) return Promise.resolve(exporterEncoder(exporter, options));
       const format = pick(OUTPUT_FORMATS, options.format, 'format') ?? 'mp4';
-      const codec = pick(VIDEO_CODECS, options.codec, 'codec');
+      const customCodec = pluginCodec(registry, options.codec, options.quality, options.alpha);
+      const codec = customCodec === undefined ? pick(VIDEO_CODECS, options.codec, 'codec') : undefined;
       const hardware = options.hardware === 'auto' || options.hardware === 'none' ? options.hardware : pick(HARDWARE_FAMILIES, options.hardware, 'hardware encoder');
       const audioCodec = pick(['aac', 'opus', 'pcm'] as const, options.audioCodec, 'audio codec');
       const encoder = createEncoder({
         output: options.outPath,
         format,
         ...(codec !== undefined ? { codec } : {}),
+        ...(customCodec !== undefined ? { customCodec } : {}),
         width: options.width,
         height: options.height,
         fps: options.fps,
@@ -112,7 +141,7 @@ function mediaTools(): MediaTools {
         version: c.version,
         license: c.license,
         configuration: c.configuration,
-        codecLicenses: Object.fromEntries(Object.entries(codecLicenses).map(([k, v]) => [k, v.license])),
+        codecLicenses: { ...Object.fromEntries(Object.entries(codecLicenses).map(([k, v]) => [k, v.license])), ...Object.fromEntries([...registry.codecs.values()].map((c) => [PLUGIN_PREFIX + c.id, c.license])) },
       };
     },
   };
@@ -197,8 +226,12 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   const telemetry = options.telemetry ?? createTelemetry({ serviceName: 'openvideo', exporter: 'none' });
   const cache = options.cache ?? createCache(storeFromEnv(process.env, projectDir));
   const registry = options.registry ?? new Registry();
+  // Plugins vor den Assets: Asset Loader aus Plugins gelten schon beim Auflösen (Story 21.1).
+  const env = options.env ?? process.env;
+  await loadProjectPlugins(registry, { projectDir, project, env, policy: options.plugins ?? pluginPolicyFromEnv(env, options.trusted === true), ...(options.allowOutsidePaths !== undefined ? { allowOutsidePaths: options.allowOutsidePaths } : {}) });
   const assets = await resolveProjectAssets(projectDir, project, {
     cache,
+    ...(registry.assetLoaders.size > 0 ? { loaders: [...registry.assetLoaders.values()] } : {}),
     ...(options.offline !== undefined ? { offline: options.offline } : {}),
     ...(options.allowOutsidePaths !== undefined ? { allowOutsidePaths: options.allowOutsidePaths } : {}),
   });
@@ -239,7 +272,8 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
     versions[`backend:${b.id}`] = Object.values(b.versions()).join('+') || '1';
     Object.assign(versions, b.versions());
   }
-  const media = mediaTools();
+  const media = mediaTools(registry);
+  for (const p of registry.plugins) versions[`plugin:${p.name}`] = p.version;
   try {
     versions['ffmpeg'] = (await media.info()).version;
   } catch (error) {

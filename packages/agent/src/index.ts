@@ -22,3 +22,4 @@ export * from './guards.js';
 export * from './server.js';
 export * from './server-events.js';
 export * from './project-access.js';
+export * from './plugins.js';

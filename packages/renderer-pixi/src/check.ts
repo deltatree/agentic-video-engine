@@ -5,9 +5,9 @@
 import { isRecord, type Diagnostic, type Severity } from '@agentic-video/core';
 
 /** Node-Typen, die der PixiJS-Renderer zeichnet. */
-export const PIXI_NODE_TYPES: readonly string[] = ['group', 'rect', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'text', 'image', 'video', 'sprite', 'shader', 'particles'];
+export const PIXI_NODE_TYPES: readonly string[] = ['group', 'rect', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'text', 'rich-text', 'image', 'video', 'sprite', 'shader', 'particles'];
 
-/** Blend Modes, die PixiJS (mit `pixi.js/advanced-blend-modes`) kennt. */
+/** Blend Modes, die PixiJS (mit `pixi.js/advanced-blend-modes` und dem eigenen `hue`-Filter) kennt. */
 export const PIXI_BLEND_MODES: readonly string[] = [
   'normal',
   'multiply',
@@ -21,6 +21,7 @@ export const PIXI_BLEND_MODES: readonly string[] = [
   'soft-light',
   'difference',
   'exclusion',
+  'hue',
   'saturation',
   'color',
   'luminosity',
@@ -59,6 +60,21 @@ const TEXT_PROPS: readonly (readonly [string, string])[] = [
   ['fontVariations', 'Variable font axes (fontVariations) are not supported by PixiJS.'],
 ];
 
+/** Stil-Eigenschaften eines Textes oder Spans, die PixiJS nicht darstellt. */
+function checkTextStyle(style: Readonly<Record<string, unknown>>, pointer: string, node: Readonly<Record<string, unknown>>, ctx: Ctx): void {
+  const decoration = style['decoration'];
+  if (decoration !== undefined && decoration !== 'none') report(ctx, node, `${pointer}/decoration`, 'Text decoration is not supported by PixiJS.', 'text.decoration');
+  if (style === node && node['direction'] === 'rtl') report(ctx, node, `${pointer}/direction`, 'Right-to-left text is not supported by PixiJS.', 'text.rtl');
+  const stretch = style['fontStretch'];
+  if (stretch !== undefined && stretch !== 100) report(ctx, node, `${pointer}/fontStretch`, 'fontStretch is not supported by PixiJS.', 'text.fontStretch');
+  for (const key of ['fontFeatures', 'fontVariations']) {
+    if (style !== node && style[key] !== undefined) report(ctx, node, `${pointer}/${key}`, `${key} in a span is not supported by PixiJS.`, `text.${key}`);
+  }
+  for (const key of ['fill', 'stroke']) {
+    if (style !== node && isConic(style[key])) report(ctx, node, `${pointer}/${key}`, 'Conic gradients are not supported by PixiJS.', 'gradient.conic', 'warning', ['Use a linear or radial gradient.']);
+  }
+}
+
 function checkOne(node: Readonly<Record<string, unknown>>, pointer: string, ctx: Ctx): void {
   const type = String(node['type']);
   if (!PIXI_NODE_TYPES.includes(type)) {
@@ -76,13 +92,15 @@ function checkOne(node: Readonly<Record<string, unknown>>, pointer: string, ctx:
     if (node[key] !== undefined) report(ctx, node, `${pointer}/${key}`, `Stroke trimming (${key}) is not supported by PixiJS.`, 'trim');
   }
   if (node['fillRule'] === 'evenodd') report(ctx, node, `${pointer}/fillRule`, 'fillRule "evenodd" is not supported by PixiJS.', 'fillRule.evenodd');
-  if (type === 'text') {
+  if (type === 'text' || type === 'rich-text') {
     for (const [key, problem] of TEXT_PROPS) if (node[key] !== undefined) report(ctx, node, `${pointer}/${key}`, problem, `text.${key}`);
-    const decoration = node['decoration'];
-    if (decoration !== undefined && decoration !== 'none') report(ctx, node, `${pointer}/decoration`, 'Text decoration is not supported by PixiJS.', 'text.decoration');
-    if (node['direction'] === 'rtl') report(ctx, node, `${pointer}/direction`, 'Right-to-left text is not supported by PixiJS.', 'text.rtl');
-    const stretch = node['fontStretch'];
-    if (stretch !== undefined && stretch !== 100) report(ctx, node, `${pointer}/fontStretch`, 'fontStretch is not supported by PixiJS.', 'text.fontStretch');
+    checkTextStyle(node, pointer, node, ctx);
+    const spans = node['spans'];
+    if (type === 'rich-text' && Array.isArray(spans)) {
+      spans.forEach((span: unknown, i) => {
+        if (isRecord(span)) checkTextStyle(span, `${pointer}/spans/${String(i)}`, node, ctx);
+      });
+    }
   }
   if (type === 'image' && node['smoothing'] === 'cubic') report(ctx, node, `${pointer}/smoothing`, 'Cubic smoothing is not supported by PixiJS; linear is used.', 'image.smoothing.cubic', 'info');
   if (type === 'video' && node['loop'] === true) {

@@ -44,7 +44,7 @@ describe('MCP-Server (FR-22)', () => {
     const client = new Client({ name: 'test', version: '1.0.0' });
     await Promise.all([server.connect(a), client.connect(b)]);
     const tools = await client.listTools();
-    expect(tools.tools).toHaveLength(30);
+    expect(tools.tools).toHaveLength(31);
     expect(tools.tools.map((t) => t.name)).toContain('composition_validate');
     expect(tools.tools.every((t) => /^[A-Za-z0-9_-]{1,64}$/u.test(t.name))).toBe(true);
     const created = await client.callTool({ name: toolName('project.create'), arguments: { name: 'Mcp', project: { schemaVersion: '1.0.0', compositions: [{ id: 'main', width: 8, height: 8, fps: 10, duration: 5, nodes: [] }] } } });
@@ -73,7 +73,7 @@ describe('MCP-Server (FR-22)', () => {
     const schema = JSON.parse(((await client.readResource({ uri: 'openvideo://schema.json' })).contents[0] as { text: string }).text) as { $defs: object };
     expect(schema.$defs).toHaveProperty('Node_text');
     const caps = JSON.parse(((await client.readResource({ uri: 'openvideo://capabilities.json' })).contents[0] as { text: string }).text) as { operations: unknown[] };
-    expect(caps.operations).toHaveLength(30);
+    expect(caps.operations).toHaveLength(31);
     await expect(client.readResource({ uri: 'openvideo://nope' })).rejects.toThrow();
     expect(client.getInstructions()).toContain('The project "launch" is open');
     expect(client.getInstructions()).toContain('capabilities_get');

@@ -13,7 +13,7 @@ Commands:
   dev [dir]             Studio with live preview; watches src/** and project.json, opens the browser (--no-open)
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
-  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>)
+  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>, default by cores and memory)
   render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
   op <name>             Run any Agent API operation, same as HTTP/MCP (--input <json|@file>; op --list)
@@ -29,14 +29,14 @@ Commands:
   mcp                   Start the MCP server on stdio (--project <dir> opens a project)
   migrate <file>        Upgrade an older project file (--write)
   worker                Start a render worker (--stdio or --coordinator <url>)
-  coordinator           Start the render coordinator for remote workers (--port --journal)
+  coordinator           Start the render coordinator for remote workers (--port --journal; role tokens OPENVIDEO_SUBMIT_TOKEN, OPENVIDEO_WORKER_TOKEN, OPENVIDEO_METRICS_TOKEN)
 
 Server options (serve, dev, studio):
   --host <addr>          Bind address (default 127.0.0.1; others need a token)
   --port <n>             Port (default 7788)
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
-  --workers <n>          Render videos with n local worker processes
+  --workers <n>          Render videos with n local worker processes (default by cores and memory; 1 = in process)
   --open / --no-open     Open the Studio in the browser (default on for dev/studio, off for serve)
 
 Project and workspace (serve, mcp, op):

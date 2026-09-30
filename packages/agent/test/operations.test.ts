@@ -155,13 +155,18 @@ describe('B9: Grenzen gegen Überlast', () => {
     const gate = new Promise<void>((r) => {
       release = r;
     });
-    const slow = defineOperation({ name: 'test.slow', summary: 'waits', input: Type.Object({}), output: Type.Object({}), example: { input: {} }, handler: async () => { await gate; return {}; } });
+    // Zweite Sperre statt fester Wartezeit (Story 22.4): meldet, dass der langsame Handler läuft.
+    let entered: () => void = () => undefined;
+    const running = new Promise<void>((r) => {
+      entered = r;
+    });
+    const slow = defineOperation({ name: 'test.slow', summary: 'waits', input: Type.Object({}), output: Type.Object({}), example: { input: {} }, handler: async () => { entered(); await gate; return {}; } });
     const server = await startAgentServer({ services, port: 0, maxBodyBytes: 100, maxConcurrentRequests: 1, maxQueuedRequests: 0, extraOperations: new Map([[slow.name, slow]]) });
     try {
       const big = await fetch(`${server.url}/v1/project.inspect`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ pad: 'x'.repeat(500) }) });
       expect(big.status).toBe(413);
       const first = fetch(`${server.url}/v1/test.slow`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
-      await new Promise((r) => setTimeout(r, 50));
+      await running;
       const second = await fetch(`${server.url}/v1/project.inspect`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       expect(second.status).toBe(503);
       release();

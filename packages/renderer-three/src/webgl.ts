@@ -122,6 +122,11 @@ export class WebGLBackend {
     this.pmrem = new PMREMGenerator(this.renderer);
   }
 
+  /** Größte Texturkante der GPU (`MAX_TEXTURE_SIZE`). */
+  get maxTextureSize(): number {
+    return this.renderer.capabilities.maxTextureSize;
+  }
+
   /** Umgebungstextur eines Presets (einmal pro Backend erzeugt). */
   presetEnvironment(preset: EnvironmentPreset): Promise<Texture> {
     let tex = this.presets.get(preset);

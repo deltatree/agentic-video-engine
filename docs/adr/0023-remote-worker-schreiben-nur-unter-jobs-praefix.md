@@ -43,6 +43,11 @@ großen Assets teuer und brächte keinen Schutz, weil Worker ohnehin alle Jobs r
 - Worker teilen keinen Render-Cache mehr über S3; wiederholte Renders im Cluster rendern auf einem
   frischen Worker neu. Die API behält ihren gemeinsamen Cache.
 - Ein Worker kann für den eigenen Chunk weiterhin falsche Bilder liefern (ohne Neu-Rendern nicht prüfbar).
+- Restrisiko Verfügbarkeit (Review-Befund M4): Worker dürfen unter `jobs/*` schreiben, also auch Schlüssel
+  fremder Jobs vorab belegen. Ehrliche Worker überschreiben ihre Frames darum immer (kein `has`-Vorabtest);
+  ein Angreifer, der **nach** dem ehrlichen Worker schreibt, lässt den Job an der Hash-Prüfung scheitern
+  (`OV_SCHEDULER_CONTENT_MISMATCH`, Denial of Service), kann aber keine falschen Pixel einschleusen. Abhilfe
+  wäre ein Schreibrecht nur auf das eigene Job-Präfix (kurzlebige S3-Zugangsdaten je Lease).
 - Ein Koordinator-Neustart verliert keine Leases mehr; späte Ergebnisse abgelaufener Leases zählen nicht.
 - Betreiber pflegen drei S3-Identitäten und vier Tokens (`deploy/README.md`). Fremder S3-Speicher braucht
   entsprechende Policies und eine Lifecycle-Regel für `inputs/`.

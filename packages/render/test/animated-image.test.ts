@@ -3,6 +3,7 @@
  * Das GIF erzeugt der Test mit FFmpeg: 0,5 s rot, dann 0,5 s blau, Endlosschleife.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -67,12 +68,12 @@ function center(image: RgbaImage): number[] {
 }
 
 describe('Animierte Bilder in image-Nodes (Story 17.4)', () => {
-  it.skipIf(ffmpeg === undefined)('erkennt das GIF als animiert', () => {
+  it.skipIf(skipUnless(ffmpeg !== undefined, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('erkennt das GIF als animiert', () => {
     expect(env?.assets.get('anim')?.metadata['animated']).toBe(true);
     expect(env?.assetDiagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   });
 
-  it.skipIf(ffmpeg === undefined)('zeigt den Frame zur lokalen Zeit und läuft in einer Schleife', async () => {
+  it.skipIf(skipUnless(ffmpeg !== undefined, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('zeigt den Frame zur lokalen Zeit und läuft in einer Schleife', async () => {
     const e = env;
     if (e === undefined) throw new Error('environment missing');
     const at = async (frame: number) => {
@@ -90,14 +91,14 @@ describe('Animierte Bilder in image-Nodes (Story 17.4)', () => {
     expect(loopRed).toEqual(red);
   });
 
-  it.skipIf(ffmpeg === undefined)('trennt Frame-Schlüssel animierter Bilder nach Zeit', async () => {
+  it.skipIf(skipUnless(ffmpeg !== undefined, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('trennt Frame-Schlüssel animierter Bilder nach Zeit', async () => {
     if (env === undefined) throw new Error('environment missing');
     const a = await renderFrame(env, project, { frame: 3 });
     const b = await renderFrame(env, project, { frame: 21 });
     expect(a.key).not.toBe(b.key);
   });
 
-  it.skipIf(ffmpeg === undefined)('spielt auch APNG über den Video-Frame-Pfad ab', async () => {
+  it.skipIf(skipUnless(ffmpeg !== undefined, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('spielt auch APNG über den Video-Frame-Pfad ab', async () => {
     if (apngEnv === undefined) throw new Error('environment missing');
     expect(apngEnv.assets.get('anim')?.metadata['animated']).toBe(true);
     const first = center((await renderFrame(apngEnv, apngProject, { frame: 3 })).image);

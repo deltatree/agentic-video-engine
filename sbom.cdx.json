@@ -1546,6 +1546,182 @@
           "expression": "ISC"
         }
       ]
+    },
+    {
+      "type": "application",
+      "name": "Node.js",
+      "version": "22 (node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4)",
+      "licenses": [
+        {
+          "expression": "MIT AND others (OpenSSL Apache-2.0, ICU Unicode-3.0, …)"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "Debian base system",
+      "version": "Debian 13 (trixie), apt snapshot 20260918T000000Z",
+      "licenses": [
+        {
+          "expression": "Various (GPL-2.0-or-later, LGPL-2.1-or-later, MIT, BSD, …)"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "tini",
+      "version": "0.19.0-3+b8",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "fontconfig",
+      "version": "2.15.0-2.3",
+      "licenses": [
+        {
+          "expression": "HPND-sell-variant"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "DejaVu fonts (fonts-dejavu-core)",
+      "version": "Debian package",
+      "licenses": [
+        {
+          "expression": "Bitstream-Vera AND LicenseRef-DejaVu-public-domain"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "ca-certificates",
+      "version": "Debian package",
+      "licenses": [
+        {
+          "expression": "MPL-2.0 AND GPL-2.0-or-later"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-base, openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-studio, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "FFmpeg",
+      "version": "7:7.1.5-0+deb13u1",
+      "licenses": [
+        {
+          "expression": "GPL-2.0-or-later"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "Chromium (Chrome for Testing)",
+      "version": "153.0.8010.12 (revision 1243)",
+      "licenses": [
+        {
+          "expression": "BSD-3-Clause AND others (LGPL-2.1, MPL-2.0, Apache-2.0, … of bundled third-party code)"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "Chromium system libraries",
+      "version": "Debian 13 (trixie), apt snapshot 20260918T000000Z",
+      "licenses": [
+        {
+          "expression": "Various (LGPL-2.1-or-later, MIT, BSD, …)"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-render-cpu, openvideo-render-gpu, openvideo-blender, openvideo-worker"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "Blender",
+      "version": "4.2.23",
+      "licenses": [
+        {
+          "expression": "GPL-3.0-or-later"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-blender"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "name": "Mesa and X11 client libraries",
+      "version": "Debian 13 (trixie), apt snapshot 20260918T000000Z",
+      "licenses": [
+        {
+          "expression": "MIT AND others"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openvideo:images",
+          "value": "openvideo-blender"
+        }
+      ]
     }
   ]
 }

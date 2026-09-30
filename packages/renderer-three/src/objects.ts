@@ -70,6 +70,8 @@ export interface BuildContext {
   readonly aspect: number;
   /** Alle Ressourcen, die nach dem Frame freigegeben werden. */
   readonly disposables: { dispose(): void }[];
+  /** Texturgrenze der GPU und Composition-Frame (Auftrag §40); fehlt sie, wird nicht geprüft. */
+  readonly textureLimit?: { readonly maxSize: number; readonly downscale: boolean; readonly frame: number };
 }
 
 /** Lokale Zeit einer Node in Sekunden. */
@@ -163,7 +165,7 @@ function uniformValue(v: unknown): unknown {
  * const m = await createMaterial({ type: 'physical', color: '#88CCFF', transmission: 0.8 }, ctx, 1.5, 45);
  * ```
  */
-export async function createMaterial(spec: unknown, ctx: BuildContext, timeSeconds: number, frame: number): Promise<Material> {
+export async function createMaterial(spec: unknown, ctx: BuildContext, timeSeconds: number, frame: number, nodeId = ''): Promise<Material> {
   const m = isRecord(spec) ? spec : {};
   const type = typeof m['type'] === 'string' ? m['type'] : 'standard';
   const { color, alpha } = toColor(m['color'], '#FFFFFF');
@@ -172,7 +174,9 @@ export async function createMaterial(spec: unknown, ctx: BuildContext, timeSecon
   const wireframe = m['wireframe'] === true;
   const texture = async (key: string, srgb: boolean) => {
     const id = m[key];
-    return typeof id === 'string' ? ctx.assets.texture(ctx.assetUrl(id), srgb) : null;
+    if (typeof id !== 'string') return null;
+    const limit = ctx.textureLimit;
+    return ctx.assets.texture(ctx.assetUrl(id), srgb, limit === undefined ? undefined : { ...limit, nodeId, assetId: id });
   };
   let material: Material;
   if (type === 'shader') {
@@ -325,7 +329,7 @@ function applyShadowFlags(obj: Object3D, node: EvaluatedNode): void {
 export async function createMesh(node: EvaluatedNode, ctx: BuildContext): Promise<Mesh> {
   const geometry = createGeometry(node.props['geometry']);
   ctx.disposables.push(geometry);
-  const mesh = new Mesh(geometry, await createMaterial(node.props['material'], ctx, localSeconds(node, ctx.fps), node.time.localFrame));
+  const mesh = new Mesh(geometry, await createMaterial(node.props['material'], ctx, localSeconds(node, ctx.fps), node.time.localFrame, node.id));
   applyTransform(mesh, node);
   applyShadowFlags(mesh, node);
   return mesh;
@@ -350,7 +354,7 @@ export async function createModel(node: EvaluatedNode, ctx: BuildContext): Promi
   applyTransform(root, node);
   applyShadowFlags(root, node);
   if (node.props['material'] !== undefined) {
-    const material = await createMaterial(node.props['material'], ctx, localSeconds(node, ctx.fps), node.time.localFrame);
+    const material = await createMaterial(node.props['material'], ctx, localSeconds(node, ctx.fps), node.time.localFrame, node.id);
     root.traverse((o) => {
       if (isMesh(o)) o.material = material;
     });
@@ -403,7 +407,7 @@ export async function createInstances(node: EvaluatedNode, ctx: BuildContext): P
   const transforms = instanceTransforms(node, localSeconds(node, ctx.fps), ctx.seed);
   const geometry = createGeometry(node.props['geometry']);
   ctx.disposables.push(geometry);
-  const mesh = new InstancedMesh(geometry, await createMaterial(node.props['material'], ctx, localSeconds(node, ctx.fps), node.time.localFrame), Math.max(1, transforms.length));
+  const mesh = new InstancedMesh(geometry, await createMaterial(node.props['material'], ctx, localSeconds(node, ctx.fps), node.time.localFrame, node.id), Math.max(1, transforms.length));
   mesh.count = transforms.length;
   const m = new Matrix4();
   const q = new Quaternion();

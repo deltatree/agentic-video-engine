@@ -724,6 +724,7 @@ export const Scene3DNode = node(
     ...Scene3DFields,
     backend: Type.Optional(Type.Union([Type.Literal('auto'), Type.Literal('webgpu'), Type.Literal('webgl2')], { description: 'auto = WebGPU preferred, WebGL2 fallback.' })),
     antialias: Type.Optional(Type.Boolean()),
+    textureDownscale: Type.Optional(Type.Boolean({ description: 'Downscale image textures larger than the GPU maximum texture size instead of failing with OV_THREE_TEXTURE_TOO_LARGE.' })),
     postprocessing: Type.Optional(PostProcessing),
   },
   'Real-time 3D scene rendered with Three.js.',

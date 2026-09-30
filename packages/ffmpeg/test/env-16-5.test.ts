@@ -3,6 +3,7 @@
  * beim Encoder und beim Frame-Reader. Ein Wrapper-Skript protokolliert die Umgebung jedes Aufrufs.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -44,7 +45,7 @@ describe('minimale Umgebung für FFmpeg (Story 16.5, M2)', () => {
     expect(ffmpegEnv({ PATH: '/bin', OPENVIDEO_S3_SECRET_ACCESS_KEY: 'x', AWS_ACCESS_KEY_ID: 'y', CUDA_VISIBLE_DEVICES: '1', LIBVA_DRIVER_NAME: 'iHD' })).toEqual({ PATH: '/bin', CUDA_VISIBLE_DEVICES: '1', LIBVA_DRIVER_NAME: 'iHD' });
   });
 
-  it.skipIf(bins === undefined)('runProcess, Encoder und Frame-Reader starten FFmpeg ohne Tokens', async () => {
+  it.skipIf(skipUnless(bins !== undefined, 'FFmpeg fehlt: OPENVIDEO_FFMPEG und OPENVIDEO_FFPROBE setzen'))('runProcess, Encoder und Frame-Reader starten FFmpeg ohne Tokens', async () => {
     await runProcess(wrapper, ['-hide_banner', '-version']);
     const out = join(dir, 'clip.mp4');
     const enc = createEncoder({ output: out, format: 'mp4', codec: 'h264', width: 16, height: 16, fps: 10, ffmpegPath: wrapper, ...(bins !== undefined ? { ffprobePath: bins.ffprobe } : {}) });

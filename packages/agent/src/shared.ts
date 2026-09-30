@@ -128,13 +128,15 @@ export function shortHash(value: unknown): string {
   return contentHash(value).slice('sha256:'.length, 'sha256:'.length + 10);
 }
 
-/** Prüft ein Ausgabeformat gegen {@link OUTPUT_FORMATS}. */
-export function outputFormat(value: unknown): (typeof OUTPUT_FORMATS)[number] {
+/**
+ * Prüft ein Ausgabeformat gegen {@link OUTPUT_FORMATS}; `plugin:<id>` nennt einen Exporter aus
+ * einem Plugin (die Render-Umgebung prüft, ob er registriert ist).
+ */
+export function outputFormat(value: unknown): (typeof OUTPUT_FORMATS)[number] | `plugin:${string}` {
   const hit = OUTPUT_FORMATS.find((f) => f === value);
-  if (hit === undefined) {
-    throw new OpenVideoError({ code: 'OV_RENDER_PROFILE', errorClass: 'RenderError', problem: `Unknown output format "${String(value)}".`, suggestions: [`Use one of: ${OUTPUT_FORMATS.join(', ')}.`] });
-  }
-  return hit;
+  if (hit !== undefined) return hit;
+  if (typeof value === 'string' && /^plugin:[A-Za-z][A-Za-z0-9_.-]{0,63}$/u.test(value)) return `plugin:${value.slice('plugin:'.length)}`;
+  throw new OpenVideoError({ code: 'OV_RENDER_PROFILE', errorClass: 'RenderError', problem: `Unknown output format "${String(value)}".`, suggestions: [`Use one of: ${OUTPUT_FORMATS.join(', ')}.`, 'Exporters from plugins are "plugin:<id>" (see plugins.list).'] });
 }
 
 export function rangeError(problem: string): OpenVideoError {

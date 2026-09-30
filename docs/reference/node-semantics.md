@@ -63,6 +63,7 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
   Das Backend rendert die Node dann ohne diese Eigenschaften (mit Transform und Opacity), der Compositor wendet Reveal, Maske (mit der Node-Matrix transformiert) und Blend Mode auf den fertigen Layer an. Reveal-Kanten werden mit 4 × 4 Stichproben geglättet.
 - **`filters` und `shadow` an `scene3d` und `blender`:** Three.js und Blender zeichnen sie nicht selbst. Der Compositor wendet sie auf den fertigen Layer an (Reihenfolge Maske → `filters` → `shadow` → Reveal), isoliert oder nicht; Blur-Radien skalieren mit √|det| der Node-Matrix, Schatten-Offsets mit ihrem linearen Anteil. 2D-Backends und `html` (CSS) zeichnen sie selbst.
 - Blend Modes innerhalb eines 2D-Layers ohne Hintergrundfarbe rechnet das Backend selbst (Skia/PixiJS).
+- **2D-Backend (`settings.renderer2d`):** Standard ist Skia. Mit `renderer2d: 'pixi'` rendert PixiJS jede 2D-Node, deren eigene Eigenschaften es darstellen kann; alle anderen rendert Skia (Rückfall pro Node, Info `OV_PIXI_FALLBACK`, ADR 0018). Kann Pixi die Eigenschaften einer Gruppe nicht zeichnen, rendert Skia die ganze Gruppe. Ein explizites `renderer` an der Node hat Vorrang.
 
 ### 1.7 Farbräume
 
@@ -132,16 +133,16 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 
 ### Effekte
 
-- **shader**: füllt die Box. SkSL-Signatur `half4 main(float2 coord)`, `coord` in lokalen Pixeln. Uniforms `time` (Sekunden), `frame`, `resolution` (float2) plus eigene.
+- **shader**: füllt die Box. SkSL-Signatur `half4 main(float2 coord)`, `coord` in lokalen Pixeln. Uniforms `time` (Sekunden), `frame`, `resolution` (float2) plus eigene. `sksl` (Skia) und `glsl` (PixiJS, `mainImage(out vec4, in vec2)`) dürfen gleichzeitig stehen; jedes Backend nimmt seine Quelle (ADR 0020).
 - **particles**: Zustand aus `particles2d(node, localTimeSeconds, fps)`. Form `circle` (Standard), `square`, `spark` (Strich in Bewegungsrichtung, Länge = 3 × Größe). Koordinaten relativ zur Box.
 
 ### Browser
 
-- **html**: Chromium rendert `html` + `css` in eine Box `width × height`; die Box wird mit der Node-Matrix platziert. Die Seite erhält pro Frame die Zeit über `window.openvideo` (siehe Browser-Renderer-Doku). CSS-Animationen werden pausiert und auf die lokale Zeit gesetzt.
+- **html**: Chromium rendert `html` + `css` in eine Box `width × height`; die Box wird mit der Node-Matrix platziert. Die Seite erhält pro Frame die Zeit über `window.openvideo` (siehe Browser-Renderer-Doku). CSS-Animationen werden pausiert und auf die lokale Zeit gesetzt. Skripte laufen nur ausdrücklich erlaubt (`--trusted`, ADR 0008); ohne Skripte bleiben `<canvas>` (2D, WebGL, WebGPU) und Custom Elements ohne deklaratives Shadow DOM leer – `openvideo check` warnt mit `OV_HTML_CANVAS_NO_SCRIPTS` bzw. `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
 
 ### 3D
 
-- **scene3d**: rendert Kinder mit Three.js in eine Box `width × height`, platziert mit der Node-Matrix. `background` Standard transparent. `camera` Standard: erste `camera3d`; ohne Kamera eine Perspektivkamera bei `[0, 0, 5]` mit Blick auf den Ursprung.
+- **scene3d**: rendert Kinder mit Three.js in eine Box `width × height`, platziert mit der Node-Matrix. Bildtexturen über dem GPU-Maximum sind ein Fehler `OV_THREE_TEXTURE_TOO_LARGE`, mit `textureDownscale: true` werden sie verkleinert. `background` Standard transparent. `camera` Standard: erste `camera3d`; ohne Kamera eine Perspektivkamera bei `[0, 0, 5]` mit Blick auf den Ursprung.
 - **camera3d**: `fov` 50, `near` 0.1, `far` 1000, `projection` `perspective`. `target` bestimmt die Blickrichtung, sonst gilt `rotation`.
 - **light3d**: `intensity` 1, `color` `#FFFFFF`.
 - **mesh3d**, **model3d**, **instances3d**, **particles3d**, **group3d**: Position in Metern, Rotation XYZ in Grad.

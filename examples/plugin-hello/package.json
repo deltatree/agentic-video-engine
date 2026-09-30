@@ -1,0 +1,9 @@
+{
+  "name": "openvideo-plugin-hello",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example OpenVideo plugin: agent tool, codec, exporter, asset loader and Studio panel.",
+  "type": "module",
+  "exports": { ".": "./index.mjs" },
+  "license": "Apache-2.0"
+}

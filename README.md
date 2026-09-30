@@ -33,6 +33,23 @@ Frame 471 ist bitgleich, egal ob Frame 470 vorher gerendert wurde.
 
 Voraussetzung: Node.js 22.13 oder neuer und FFmpeg.
 
+> **Noch nicht auf npm:** Die Pakete `@agentic-video/*` sind bis zur ersten Veröffentlichung
+> (Release-Workflow bei einem Tag `v*`) nicht in der npm-Registry; `npx @agentic-video/cli` findet
+> sie bis dahin nicht. Installiere die CLI so lange aus dem Repository:
+
+```bash
+git clone https://github.com/deltatree/agentic-video-engine.git
+cd agentic-video-engine
+npm ci && npm run build          # baut alle Pakete und kopiert das Studio ins CLI-Paket
+alias openvideo="node $PWD/packages/cli/dist/bin.js"
+cd .. && openvideo create hello
+cd hello
+openvideo render-frame --frame 2s --out out/frame.png
+openvideo render --format mp4
+```
+
+Nach der ersten Veröffentlichung geht es ohne Checkout:
+
 ```bash
 npx @agentic-video/cli create hello
 cd hello
@@ -40,7 +57,7 @@ npx @agentic-video/cli render-frame --frame 2s --out out/frame.png
 npx @agentic-video/cli render --format mp4
 ```
 
-`openvideo doctor` prüft die Umgebung und nennt für jede Lücke eine Lösung.
+`openvideo doctor` (bzw. `npx @agentic-video/cli doctor`) prüft die Umgebung und nennt für jede Lücke eine Lösung.
 Mehr steht in [Erste Schritte](docs/guide/getting-started.md).
 
 ## Für Coding Agents
@@ -65,6 +82,8 @@ Nach jedem Patch rendert OpenVideo nur die Frames neu, die sich wirklich ändern
 | [Rezepte](docs/guide/recipes.md) | Fertige IR-Bausteine für typische Aufgaben |
 | [Agent API](docs/guide/api.md) | Alle Operationen mit Beispielen |
 | [Kommandozeile](docs/guide/cli.md) | Alle Befehle von `openvideo` |
+| [Plugins](docs/guide/plugins.md) | Agent Tools, Codecs, Exporter, Asset Loader und Studio-Panels aus Plugins; Rechte |
+| [Maintainer](docs/guide/maintainers.md) | Branch-Schutz für `main` als Ruleset (gh api), Pflicht-Checks, Repository-Einstellungen |
 | [API-Referenz](docs/api/README.md) | Alle exportierten Funktionen und Typen je Paket (TypeDoc) |
 | [Render-Semantik](docs/reference/node-semantics.md) | Verbindliche Bedeutung jedes Node-Typs |
 | [Architektur-Entscheidungen](docs/adr/README.md) | ADR 0001–0017 |
@@ -122,4 +141,4 @@ Wie du beiträgst, steht in [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Lizenz
 
 Apache-2.0. Siehe [LICENSE](LICENSE).
-Lizenzen der Abhängigkeiten: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), SBOM in `sbom.cdx.json`.
+Lizenzen der Abhängigkeiten und der Inhalte jedes Container-Images (FFmpeg, Chromium, Blender im Image `openvideo-blender`): [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), `licenses.json`, SBOM in `sbom.cdx.json`. `node scripts/licenses.mjs --check` schlägt fehl, wenn sie nicht mehr zu `package-lock.json` und `deploy/docker/Dockerfile` passen.

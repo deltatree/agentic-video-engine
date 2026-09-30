@@ -4,6 +4,7 @@
  * und `missingFrames` mit animierten Bildern (18.9).
  */
 import { afterAll, describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -194,11 +195,13 @@ describe('Encoding parallel zum Rendern (Story 18.6)', () => {
     expect(r.manifest.encoder?.args).toEqual(['threads=3']);
   });
 
-  it('wählt Encoder-Threads nach freien Kernen, OPENVIDEO_ENCODER_THREADS hat Vorrang', () => {
-    expect(encoderThreadsFor(1, {}, 8)).toBe(7);
-    expect(encoderThreadsFor(8, {}, 8)).toBe(2);
-    expect(encoderThreadsFor(0, {}, 64)).toBe(16);
-    expect(encoderThreadsFor(4, { OPENVIDEO_ENCODER_THREADS: '4' }, 64)).toBe(4);
+  it('nutzt standardmäßig feste Encoder-Threads (bitgleiche Datei), auto nach freien Kernen', () => {
+    expect(encoderThreadsFor(1, {}, 8)).toBe(4);
+    expect(encoderThreadsFor(0, {}, 64)).toBe(4);
+    expect(encoderThreadsFor(1, { OPENVIDEO_ENCODER_THREADS: 'auto' }, 8)).toBe(7);
+    expect(encoderThreadsFor(8, { OPENVIDEO_ENCODER_THREADS: 'auto' }, 8)).toBe(2);
+    expect(encoderThreadsFor(0, { OPENVIDEO_ENCODER_THREADS: 'auto' }, 64)).toBe(16);
+    expect(encoderThreadsFor(4, { OPENVIDEO_ENCODER_THREADS: '6' }, 64)).toBe(6);
   });
 });
 
@@ -250,7 +253,7 @@ afterAll(async () => {
 });
 
 describe('missingFrames mit animierten Bildern (Story 18.9)', () => {
-  it.skipIf(ffmpeg === undefined)('meldet gerenderte Frames mit GIF nicht als fehlend', async () => {
+  it.skipIf(skipUnless(ffmpeg !== undefined, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('meldet gerenderte Frames mit GIF nicht als fehlend', async () => {
     const dir = tmp('ov-missing-gif-');
     execFileSync(ffmpeg ?? 'ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=16x16:r=10:d=1', '-vf', "drawbox=x=0:y=0:w=16:h=16:color=blue:t=fill:enable='gte(t,0.5)'", '-loop', '0', join(dir, 'anim.gif')]);
     const project = { schemaVersion: SCHEMA_VERSION, assets: [{ id: 'anim', type: 'image', src: 'anim.gif' }], compositions: [{ id: 'main', width: 16, height: 16, fps: 10, duration: '1s', background: '#000000', nodes: [{ id: 'gif', type: 'image', asset: 'anim', width: 16, height: 16 }] }] };

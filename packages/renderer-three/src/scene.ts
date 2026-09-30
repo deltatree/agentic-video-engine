@@ -201,7 +201,7 @@ function addDebugHelpers(scene: Scene, active: Camera, collected: Collected, inp
  * const built = await buildScene(input, assets, (preset) => pmremFor(preset));
  * ```
  */
-export async function buildScene(input: ThreeLayerInput, assets: ThreeAssets, presetEnvironment: PresetEnvironment): Promise<BuiltScene> {
+export async function buildScene(input: ThreeLayerInput, assets: ThreeAssets, presetEnvironment: PresetEnvironment, textureLimit?: { readonly maxSize: number; readonly downscale: boolean }): Promise<BuiltScene> {
   const node = input.node;
   const aspect = input.height > 0 ? input.width / input.height : 1;
   const disposables: { dispose(): void }[] = [];
@@ -214,6 +214,7 @@ export async function buildScene(input: ThreeLayerInput, assets: ThreeAssets, pr
     pixelHeight: Math.max(1, Math.round(input.height * input.scale)),
     aspect,
     disposables,
+    ...(textureLimit !== undefined ? { textureLimit: { ...textureLimit, frame: input.frame } } : {}),
   };
   const scene = new Scene();
   const collected: Collected = { cameras: [], lights: [] };

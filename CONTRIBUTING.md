@@ -48,10 +48,16 @@ Architektur-Entscheidungen stehen in `docs/adr/`.
 
 ## Tests
 
-- Tests liegen in `packages/<paket>/test/*.test.ts` (Vitest).
+- Tests liegen in `packages/<paket>/test/*.test.ts` oder `*.test.tsx` (Vitest), auch neben dem Code unter `src/`.
 - Golden Images liegen in `packages/<paket>/test/golden/`.
   Erzeuge sie neu mit `UPDATE_GOLDENS=1`. Sieh dir jedes neue Bild an, bevor du es eincheckst.
-- Ein Test, der ein fehlendes Programm braucht, wird mit Begründung übersprungen (`it.skipIf`).
+- Ein Test, der ein fehlendes Programm braucht, wird mit Begründung übersprungen:
+  `it.skipIf(skipUnless(verfuegbar, 'Grund und Abhilfe'))` aus `@agentic-video/testing`.
+  CI setzt `OPENVIDEO_REQUIRE_ALL=1`; dort ist jeder solche Skip ein Fehler (Ausnahme: GPU, `allowInCi`).
+- Keine festen Pausen: warte auf Promises oder `expect.poll`, nutze injizierbare Uhren. Harte Zeitgrenzen
+  nur mit `it.skipIf(!perfStrict())` (laufen nightly mit `OV_PERF_STRICT=1`).
+- `npm run test:coverage` misst die Coverage; die Mindestwerte je Paket stehen in `vitest.config.ts`
+  und werden nur angehoben.
 - Ein Test läuft einzeln so: `npx vitest run packages/core/`.
   Achte auf den Schrägstrich am Ende. Sonst trifft `packages/render` auch `renderer-*`.
 
@@ -67,4 +73,4 @@ Melde Sicherheitslücken nicht als öffentliches Issue. Lies [SECURITY.md](SECUR
 ## Lizenz
 
 Mit deinem Beitrag stimmst du zu, dass er unter Apache-2.0 steht.
-Neue Laufzeit-Abhängigkeiten brauchen eine OSI-Lizenz. `npm run licenses` prüft das.
+Neue Laufzeit-Abhängigkeiten brauchen eine OSI-Lizenz. `npm run licenses` prüft das und erzeugt `licenses.json`, `THIRD_PARTY_NOTICES.md` und `sbom.cdx.json` neu; checke sie mit ein. Änderst du Abhängigkeiten oder `deploy/docker/Dockerfile`, schlägt `node scripts/licenses.mjs --check` (Teil von `npm run check` und CI) sonst fehl.

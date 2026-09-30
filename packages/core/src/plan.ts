@@ -11,6 +11,8 @@
  *   hinweg anwenden kann, werden isoliert (`mode: 'isolate'`): Das Backend rendert die Node
  *   ohne diese Eigenschaften, der Compositor wendet sie auf den fertigen Layer an.
  * - Geschwister werden stabil nach `zIndex` sortiert (siehe {@link sortByZIndex}).
+ * - Mit `renderer2d: 'pixi'` rendert Skia jede Node, deren eigene Eigenschaften PixiJS nicht
+ *   darstellen kann (Rückfall pro Node, ADR 0018); `Registry.resolveBackend` entscheidet.
  */
 import { OpenVideoError } from '@agentic-video/schema';
 import { parseColor } from '@agentic-video/timeline';
@@ -85,6 +87,11 @@ function withoutBlend(props: Readonly<Record<string, unknown>>): Readonly<Record
   return rest;
 }
 
+/** Die eigenen Eigenschaften einer ausgewerteten Node in IR-Form (ohne Kinder und Maske) für Backend-Prüfungen. */
+function asIrNode(node: EvaluatedNode): Readonly<Record<string, unknown>> {
+  return { ...node.props, id: node.id, type: node.type };
+}
+
 interface Planner {
   readonly registry: Registry;
   readonly renderer2d: string;
@@ -111,13 +118,21 @@ function backendOf(p: Planner, node: EvaluatedNode): string | undefined {
       const m = backendOf(p, node.mask.node);
       if (m !== undefined) set.add(m);
     }
+    // Kann das 2D-Backend die Eigenschaften der Gruppe selbst nicht zeichnen, zeichnet Skia die
+    // ganze Gruppe; Kinder des 2D-Backends kann Skia ebenfalls (ADR 0018).
+    const own = p.renderer2d === 'skia' ? undefined : p.registry.resolveBackend(asIrNode(node), p.renderer2d);
+    if (own?.fallback !== undefined && own.backend !== undefined) {
+      set.delete(p.renderer2d);
+      set.add(own.backend);
+    }
     const only = set.size === 1 ? [...set][0] : undefined;
     if (set.size === 0) result = p.registry.backendFor('group', p.renderer2d);
     // Eine Gruppe, deren einziges Backend keine Gruppen zeichnet (z. B. `three`), setzt der Compositor zusammen.
     else if (only !== undefined && only !== MIXED && groupCapable(p, only)) result = only;
     else result = MIXED;
   } else {
-    result = p.registry.backendFor(node.type, p.renderer2d);
+    // Mit `renderer2d: 'pixi'` fallen Nodes, die PixiJS nicht darstellen kann, auf Skia zurück (ADR 0018).
+    result = p.renderer2d === 'skia' ? p.registry.backendFor(node.type, p.renderer2d) : p.registry.resolveBackend(asIrNode(node), p.renderer2d).backend;
   }
   p.memo.set(node, result);
   return result;

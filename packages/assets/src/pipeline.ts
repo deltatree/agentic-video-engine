@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs';
 import { copyFile, link, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
-import { ASSET_TYPES, OpenVideoError, contentHash, isRecord, sha256Hex, type AssetRecord, type AssetResolver, type Diagnostic, type RgbaImage } from '@agentic-video/core';
+import { ASSET_TYPES, OpenVideoError, contentHash, isRecord, sha256Hex, type AssetLoaderDefinition, type AssetRecord, type AssetResolver, type Diagnostic, type RgbaImage } from '@agentic-video/core';
 import type { Cache } from '@agentic-video/cache';
 import { VideoFrameReader, locateFfmpeg, probeMedia, runProcess } from '@agentic-video/ffmpeg';
 import { toSfnt } from '@agentic-video/fonts';
@@ -32,6 +32,35 @@ export interface PipelineOptions {
   /** Absolute Pfade außerhalb des Projekts erlauben (nur CLI, vertrauenswürdig). */
   readonly allowOutsidePaths?: boolean;
   readonly stats?: PipelineStats;
+  /**
+   * Asset Loader aus Plugins (Story 21.1): Für Dateien mit einer ihrer Endungen liefert der Loader
+   * Typ und Metadaten; die eingebaute Erkennung, Untersuchung und Normalisierung entfallen.
+   */
+  readonly loaders?: readonly AssetLoaderDefinition[];
+}
+
+/** Loader für einen Dateinamen (Endung, klein geschrieben), falls einer passt. */
+function loaderFor(fileName: string, loaders: readonly AssetLoaderDefinition[] | undefined): AssetLoaderDefinition | undefined {
+  const ext = extname(fileName).slice(1).toLowerCase();
+  if (ext === '' || loaders === undefined) return undefined;
+  return loaders.find((l) => l.extensions.some((e) => e.toLowerCase().replace(/^\./u, '') === ext));
+}
+
+/** Ruft `inspect` eines Loaders und macht Fehler zu Diagnosen mit Loader-Namen. */
+async function inspectWithLoader(loader: AssetLoaderDefinition, bytes: Uint8Array, fileName: string): Promise<Readonly<Record<string, unknown>>> {
+  try {
+    return await loader.inspect(bytes, fileName);
+  } catch (error) {
+    if (error instanceof OpenVideoError) throw error;
+    throw new OpenVideoError({
+      code: 'OV_ASSET_LOADER',
+      errorClass: 'AssetError',
+      problem: `Asset loader "${loader.id}" failed on "${fileName}": ${error instanceof Error ? error.message : String(error)}`,
+      details: { loader: loader.id },
+      cause: error,
+      suggestions: ['Check that the file matches the format the plugin expects.', 'Remove the plugin from settings.plugins to use the built-in detection.'],
+    });
+  }
 }
 
 function outside(path: string): OpenVideoError {
@@ -291,6 +320,13 @@ export async function importAsset(projectDir: string, input: ImportInput, option
   } else {
     throw new OpenVideoError({ code: 'OV_ASSET_INPUT', errorClass: 'AssetError', problem: 'Give "path", "url" or "base64".', suggestions: ['{ "path": "assets/logo.svg" }'] });
   }
+  const loader = loaderFor(fileName, options.loaders);
+  if (loader !== undefined) {
+    const hash = contentHash(bytes);
+    const name = await storeInAssets(projectDir, fileName, bytes, hash);
+    const metadata = await inspectWithLoader(loader, bytes, fileName);
+    return { id: input.id ?? idFrom(fileName, hash), type: loader.type, src: `assets/${name}`, hash, metadata: { ...metadata, loader: loader.id }, diagnostics: [] };
+  }
   const detected = detectFormat(fileName, bytes);
   if (detected === undefined) {
     throw new OpenVideoError({ code: 'OV_ASSET_UNSUPPORTED', errorClass: 'AssetError', problem: `Cannot detect the format of "${fileName}".`, suggestions: ['Supported: PNG, JPEG, WebP, AVIF, SVG, GIF, MP4, WebM, MOV, WAV, FLAC, MP3, AAC, OGG, glTF, GLB, OBJ, fonts, Lottie JSON, SRT, VTT, ASS, CUBE, HDR, EXR.'] });
@@ -372,6 +408,13 @@ export async function resolveProjectAssets(projectDir: string, project: Readonly
       if (typeof a['hash'] === 'string' && a['hash'] !== hash) {
         diagnostics.push({ code: 'OV_ASSET_HASH', severity: 'warning', errorClass: 'AssetError', problem: `Asset "${id}" changed since import (hash differs).`, details: { declared: a['hash'], actual: hash }, suggestions: ['Re-import the asset, or remove "hash" to accept the new content.'] });
       }
+      const loader = loaderFor(src, options.loaders);
+      if (loader !== undefined) {
+        const metadata = await inspectWithLoader(loader, bytes, basename(src));
+        const license = isRecord(a['license']) ? Object.fromEntries(Object.entries(a['license']).map(([k, v]) => [k, String(v)])) : undefined;
+        records.set(id, { id, type: typeof a['type'] === 'string' ? a['type'] : loader.type, src, path, hash, metadata: { ...metadata, loader: loader.id, originalPath: path }, ...(license !== undefined ? { licenseMetadata: license } : {}) });
+        continue;
+      }
       const declaredType = ASSET_TYPES.find((t) => t === a['type']) ?? 'data';
       const detected: DetectedFormat = detectFormat(src, bytes) ?? { type: declaredType, format: extname(src).slice(1), mimeType: 'application/octet-stream' };
       const rawMeta = await cachedMetadata(path, bytes, hash, detected, options);
@@ -434,7 +477,13 @@ export async function resolveProjectAssets(projectDir: string, project: Readonly
       for (const c of closed) {
         if (c.status === 'rejected') {
           const reason: unknown = c.reason;
-          throw reason instanceof Error ? reason : new Error(String(reason));
+          if (reason instanceof Error) throw reason;
+          throw new OpenVideoError({
+            code: 'OV_ASSET_VIDEO_CLOSE',
+            errorClass: 'AssetError',
+            problem: `A video frame reader could not be closed: ${String(reason)}.`,
+            suggestions: ['Check that the FFmpeg process was not killed externally.', 'Run `openvideo doctor` to check FFmpeg.'],
+          });
         }
       }
     },

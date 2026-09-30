@@ -9,7 +9,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { OpenVideoError } from '@agentic-video/core';
-import { compareToBaseline, mergeBaseline, parseBaseline } from './baseline.js';
+import { compareToBaseline, formatRegression, mergeBaseline, parseBaseline, parseTolerances } from './baseline.js';
 import { runSuite } from './run.js';
 import { RESOLUTION_IDS, SCENARIOS, isResolutionId, isScenarioId, type ResolutionId, type ScenarioId } from './scenarios.js';
 
@@ -23,9 +23,15 @@ const USAGE = `openvideo-bench [options]
   --workers <n>        Worker processes for the throughput run (default 1)
   --no-encode          Skip the MP4 encoding stage
   --json               Print JSON instead of a Markdown table
-  --update-baseline    Merge the results into ${BASELINE_PATH}
-  --compare            Compare with the baseline; exit code 1 on a regression (> 20 % fewer fps)
+  --baseline <file>    Baseline file (default ${BASELINE_PATH})
+  --update-baseline    Merge the results into the baseline file
+  --compare            Compare fps, peak RAM, startup, encoder fps and cache ratio with the
+                       baseline; exit code 1 on a regression
   --tolerance <x>      Allowed fps loss for --compare (default 0.2)
+  --tolerances <list>  Per-metric tolerances, e.g. fps=0.2,peakRssMb=0.25,startupMs=0.5,
+                       encodingFps=0.25,cacheHitRatio=0.05 (cache ratio in absolute points)
+  --require-comparison With --compare: exit code 2 when nothing could be compared
+                       (e.g. baseline from another machine)
 `;
 
 function list<T extends string>(raw: string | undefined, all: readonly T[], fallback: readonly T[], guard: (v: string) => v is T, what: string): T[] {
@@ -57,6 +63,9 @@ async function main(): Promise<number> {
       'update-baseline': { type: 'boolean' },
       compare: { type: 'boolean' },
       tolerance: { type: 'string' },
+      tolerances: { type: 'string' },
+      baseline: { type: 'string' },
+      'require-comparison': { type: 'boolean' },
       help: { type: 'boolean' },
     },
   });
@@ -64,6 +73,7 @@ async function main(): Promise<number> {
     process.stdout.write(USAGE);
     return 0;
   }
+  const baselinePath = values.baseline ?? BASELINE_PATH;
   const scenarios: ScenarioId[] = list(values.scenario, SCENARIOS, SCENARIOS, isScenarioId, 'scenario');
   const resolutions: ResolutionId[] = list(values.resolution, RESOLUTION_IDS, ['1080p30'], isResolutionId, 'resolution');
   const suite = await runSuite({
@@ -80,23 +90,27 @@ async function main(): Promise<number> {
   let exitCode = suite.failures.length > 0 ? 2 : 0;
   const output: Record<string, unknown> = { machine: suite.machine, results: suite.results, failures: suite.failures };
   if (values.compare === true) {
-    const baseline = parseBaseline(JSON.parse(await readFile(BASELINE_PATH, 'utf8')));
-    const comparison = compareToBaseline(suite.results, baseline, { tolerance: positive(values.tolerance, 0.2, 'tolerance') });
+    const baseline = parseBaseline(JSON.parse(await readFile(baselinePath, 'utf8')));
+    const comparison = compareToBaseline(suite.results, baseline, {
+      tolerance: positive(values.tolerance, 0.2, 'tolerance'),
+      ...(values.tolerances !== undefined ? { tolerances: parseTolerances(values.tolerances) } : {}),
+    });
     output['comparison'] = comparison;
     if (comparison.regressions.length > 0) exitCode = Math.max(exitCode, 1);
+    if (values['require-comparison'] === true && comparison.compared === 0) exitCode = 2;
     if (values.json !== true) {
       const lines = [
-        `Compared: ${String(comparison.compared)}, regressions: ${String(comparison.regressions.length)}, skipped: ${String(comparison.skipped.length)}`,
-        ...comparison.regressions.map((r) => `REGRESSION ${r.scenario} ${r.resolution}: ${r.fps.toFixed(2)} fps vs. ${r.baselineFps.toFixed(2)} fps (${(r.change * 100).toFixed(0)} %)`),
+        `Compared: ${String(comparison.compared)} (${String(comparison.comparedMetrics)} metrics), regressions: ${String(comparison.regressions.length)}, skipped: ${String(comparison.skipped.length)}`,
+        ...comparison.regressions.map(formatRegression),
         ...comparison.skipped.map((s) => `skipped ${s.scenario} ${s.resolution}: ${s.reason}`),
       ];
       process.stderr.write(`${lines.join('\n')}\n`);
     }
   }
   if (values['update-baseline'] === true && suite.results.length > 0) {
-    const existing = existsSync(BASELINE_PATH) ? parseBaseline(JSON.parse(await readFile(BASELINE_PATH, 'utf8'))) : undefined;
-    await writeFile(BASELINE_PATH, `${JSON.stringify(mergeBaseline(existing, suite.results), null, 2)}\n`);
-    process.stderr.write(`Baseline written to ${BASELINE_PATH}\n`);
+    const existing = existsSync(baselinePath) ? parseBaseline(JSON.parse(await readFile(baselinePath, 'utf8'))) : undefined;
+    await writeFile(baselinePath, `${JSON.stringify(mergeBaseline(existing, suite.results), null, 2)}\n`);
+    process.stderr.write(`Baseline written to ${baselinePath}\n`);
   }
   process.stdout.write(values.json === true ? `${JSON.stringify(output, null, 2)}\n` : suite.markdown);
   return exitCode;

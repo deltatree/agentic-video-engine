@@ -6,6 +6,7 @@ import type { Static, TSchema } from 'typebox';
 import { OpenVideoError, closest, isRecord, validateValue, type Diagnostic } from '@agentic-video/core';
 import { formatSegments } from './patch-schema.js';
 import { assertProjectAccess } from './project-access.js';
+import { isPluginOperation, pluginOperation } from './plugins.js';
 import type { AgentServices } from './services.js';
 
 /** Kontext eines Operationsaufrufs. */
@@ -54,7 +55,8 @@ export type InvocationResult = { readonly ok: true; readonly result: unknown } |
  * ```
  */
 export async function invokeOperation(operations: ReadonlyMap<string, OperationDefinition>, name: string, input: unknown, ctx: OperationContext): Promise<InvocationResult> {
-  const op = operations.get(name);
+  // Agent Tools aus Plugins sind Operationen `plugin.<name>` (Story 21.1); sie hängen vom Projekt ab.
+  const op = operations.get(name) ?? (isPluginOperation(name) ? pluginOperation(name) : undefined);
   if (op === undefined) {
     return {
       ok: false,

@@ -105,7 +105,8 @@ describe('HTTP-Worker (Story 18.8, Befund M4)', () => {
       const res = await fetch(`${coordinator.url}/v1/jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, files: [], chunks: [{ compositionId: 'main', start: 0, end: 600, scale: 1, step: 1, offset: 0 }] }) });
       const body: unknown = await res.json();
       const jobId = typeof body === 'object' && body !== null && 'jobId' in body && typeof body.jobId === 'string' ? body.jobId : '';
-      const worker = runWorkerHttp({ coordinatorUrl: coordinator.url, store, worker: 'w', signal: stop.signal, pollIntervalMs: 20, telemetry: quiet() });
+      const logs: string[] = [];
+      const worker = runWorkerHttp({ coordinatorUrl: coordinator.url, store, worker: 'w', signal: stop.signal, pollIntervalMs: 20, telemetry: createTelemetry({ serviceName: 'test', exporter: 'none', logSink: (l) => logs.push(l) }) });
       // Warten, bis der Chunk vergeben ist, dann abbrechen.
       await expect.poll(async () => {
         const s: unknown = await (await fetch(`${coordinator.url}/v1/jobs/${jobId}`)).json();
@@ -113,8 +114,8 @@ describe('HTTP-Worker (Story 18.8, Befund M4)', () => {
       }, { timeout: 30_000 }).toBe(true);
       const cancelledAt = Date.now();
       expect((await fetch(`${coordinator.url}/v1/jobs/${jobId}`, { method: 'DELETE' })).status).toBe(200);
-      // Der Worker ist wieder frei (nächster Lease-Versuch), lange bevor 600 Frames fertig wären.
-      await new Promise((r) => setTimeout(r, 4000));
+      // Der Worker gibt den Chunk auf, lange bevor 600 Frames fertig wären (Sperre statt fester Wartezeit, Story 22.4).
+      await expect.poll(() => logs.some((l) => l.includes('chunk abandoned after losing the lease')), { timeout: 20_000 }).toBe(true);
       stop.abort();
       const summary = await worker;
       expect(summary.completed).toBe(0);

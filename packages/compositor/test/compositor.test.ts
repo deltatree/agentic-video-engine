@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { perfStrict } from '@agentic-video/testing';
 import { BLEND_MODES, isOpenVideoError, type BlendMode, type EffectDefinition, type EvaluatedNode, type RgbaImage } from '@agentic-video/core';
 import Type from 'typebox';
 import {
@@ -459,7 +460,8 @@ describe('Effekte', () => {
 });
 
 describe('Performance', () => {
-  it('1920×1080, drei Layer, normal: unter 600 ms', () => {
+  // Wall-Clock-Grenze nur mit OV_PERF_STRICT=1 (Story 22.4): geteilte CI-Runner schwanken zu stark.
+  it.skipIf(!perfStrict())('1920×1080, drei Layer, normal: unter 600 ms (nur mit OV_PERF_STRICT=1)', () => {
     const w = 1920;
     const h = 1080;
     const layers: CompositorNode[] = [

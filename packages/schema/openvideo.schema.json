@@ -205,8 +205,10 @@
         "plugins": {
           "type": "array",
           "items": {
-            "type": "string"
-          }
+            "type": "string",
+            "minLength": 1
+          },
+          "description": "Plugin modules: \"./plugins/x.mjs\" (inside the project) or an npm package name. Loaded only when the host allows plugins (--trusted or OPENVIDEO_ALLOW_PLUGINS=1); permissions via OPENVIDEO_PLUGIN_PERMISSIONS."
         }
       },
       "additionalProperties": false
@@ -1080,29 +1082,47 @@
             ]
           },
           "format": {
-            "enum": [
-              "mp4",
-              "mov",
-              "webm",
-              "gif",
-              "webp",
-              "png-sequence",
-              "jpeg-sequence",
-              "webp-sequence"
+            "anyOf": [
+              {
+                "enum": [
+                  "mp4",
+                  "mov",
+                  "webm",
+                  "gif",
+                  "webp",
+                  "png-sequence",
+                  "jpeg-sequence",
+                  "webp-sequence"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^plugin:[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+                "description": "Exporter from a plugin (settings.plugins), e.g. \"plugin:hello-frames\"."
+              }
             ]
           },
           "codec": {
-            "enum": [
-              "h264",
-              "h265",
-              "vp9",
-              "av1",
-              "prores",
-              "prores-4444",
-              "ffv1",
-              "png",
-              "gif",
-              "webp"
+            "anyOf": [
+              {
+                "enum": [
+                  "h264",
+                  "h265",
+                  "vp9",
+                  "av1",
+                  "prores",
+                  "prores-4444",
+                  "ffv1",
+                  "png",
+                  "gif",
+                  "webp"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^plugin:[A-Za-z][A-Za-z0-9_.-]{0,63}$",
+                "description": "Codec from a plugin (settings.plugins), e.g. \"plugin:x264-film\"."
+              }
             ]
           },
           "width": {
@@ -11371,6 +11391,10 @@
         },
         "antialias": {
           "type": "boolean"
+        },
+        "textureDownscale": {
+          "type": "boolean",
+          "description": "Downscale image textures larger than the GPU maximum texture size instead of failing with OV_THREE_TEXTURE_TOO_LARGE."
         },
         "postprocessing": {
           "type": "object",

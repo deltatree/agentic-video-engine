@@ -12,6 +12,6 @@
  */
 export { createBrowserHost, CHROMIUM_ARGS, CHROMIUM_GRAPHICS_ARGS, chromiumEnv, probeOsSandbox, type BrowserHost, type BrowserHostOptions } from './host.js';
 export { createBrowserBackends, PIXI_NODE_TYPES, type BrowserBackends } from './backends.js';
-export { checkHtmlNode, HTML_CAPABILITIES } from './html-check.js';
+export { checkHtmlNode, HTML_CAPABILITIES, type HtmlCheckOptions } from './html-check.js';
 export type { BrowserLayerKind, BrowserLayerPayload, OpenVideoPageApi } from './protocol.js';
 export { createLazyBrowserBackends, expectedChromiumVersion, type LazyBrowserBackends } from './lazy.js';

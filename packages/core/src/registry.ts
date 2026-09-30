@@ -57,20 +57,31 @@ export interface EffectDefinition {
   apply(image: RgbaImage, params: Readonly<Record<string, unknown>>): RgbaImage;
 }
 
-/** Lädt und untersucht einen Asset-Typ. */
+/**
+ * Lädt und untersucht einen Asset-Typ. Die Asset-Pipeline nutzt den Loader für Dateien mit einer
+ * seiner Endungen (vor der eingebauten Erkennung); `inspect` liefert die Metadaten.
+ */
 export interface AssetLoaderDefinition {
   readonly id: string;
+  /** Dateiendungen ohne Punkt, klein geschrieben, z. B. `['csv']`. */
   readonly extensions: readonly string[];
+  /** Asset-Typ aus dem Schema (`image`, `data` …), unter dem das Asset geführt wird. */
   readonly type: string;
   inspect(bytes: Uint8Array, fileName: string): Promise<Readonly<Record<string, unknown>>>;
 }
 
-/** Ergänzt einen Video-Codec. */
+/**
+ * Ergänzt einen Video-Codec (`codec: 'plugin:<id>'` im Render-Profil). Der Encoder nutzt die
+ * Argumente von `encoderArgs` an Stelle der eingebauten Video-Argumente (nach der Eingabe,
+ * vor dem Muxer); zusätzliche Eingaben (`-i`) und Netzprotokolle sind nicht erlaubt.
+ */
 export interface CodecDefinition {
   readonly id: string;
+  /** Container-Formate, in denen der Codec erlaubt ist, z. B. `['mp4', 'mov']`. */
   readonly formats: readonly string[];
-  /** FFmpeg-Argumente für den Encoder. */
+  /** FFmpeg-Argumente für den Video-Encoder, z. B. `['-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p']`. */
   encoderArgs(options: { readonly quality: number; readonly alpha: boolean }): readonly string[];
+  /** Lizenz des Encoders (für das Render-Manifest). */
   readonly license: string;
 }
 
@@ -119,31 +130,64 @@ export interface AsrProvider {
   transcribe(wavPath: string, options?: { readonly language?: string }): Promise<Transcript>;
 }
 
-/** Exportiert ein gerendertes Ergebnis in ein weiteres Format. */
+/**
+ * Exportiert ein gerendertes Ergebnis in ein eigenes Ausgabeformat (`format: 'plugin:<id>'`).
+ * Der Host rendert die Frames als PNG-Folge (`frame-000000.png` …, gerades Alpha) nach
+ * `framesDir`, mischt den Ton als WAV (`audioPath`, falls vorhanden) und ruft dann `export`.
+ */
 export interface ExporterDefinition {
   readonly id: string;
   readonly description: string;
-  export(input: { readonly framesDir: string; readonly audioPath?: string; readonly outPath: string; readonly fps: number }): Promise<void>;
+  /** Dateiendung der Ausgabe (ohne Punkt), nur zur Information für Agents und Doku. */
+  readonly extension?: string;
+  /** Erzeugt `outPath`; darf `{ outputs: string[] }` mit weiteren geschriebenen Dateien liefern. */
+  export(input: { readonly framesDir: string; readonly frameCount: number; readonly width: number; readonly height: number; readonly audioPath?: string; readonly outPath: string; readonly fps: number }): Promise<unknown>;
 }
 
-/** Zusätzliches Studio-Panel (ES-Modul, das im Studio geladen wird). */
+/**
+ * Zusätzliches Studio-Panel: ein ES-Modul, das das Studio in einem Panel-Tab lädt (sandboxed iframe).
+ * Das Modul exportiert `default(root: HTMLElement, ctx)`; siehe docs/guide/plugins.md.
+ */
 export interface StudioPanelDefinition {
   readonly id: string;
   readonly title: string;
-  /** Modul-Pfad relativ zum Plugin-Paket. */
+  /** Modul-Pfad relativ zum Einstiegsmodul des Plugins. */
   readonly module: string;
+  /** Name des Plugins, das das Panel registriert hat (setzt {@link Registry.use}). */
+  readonly plugin?: string;
 }
 
-/** Zusätzliches Agent-Werkzeug. */
+/**
+ * Zusätzliches Agent-Werkzeug. API, MCP und `openvideo op` bieten es als Operation
+ * `plugin.<name>` an (Eingabe: `projectId` plus `inputSchema`).
+ */
 export interface AgentToolDefinition {
+  /** Name ohne Präfix, z. B. `hello.greet` → Operation `plugin.hello.greet`. */
   readonly name: string;
   readonly description: string;
   readonly inputSchema: TObject;
   handler(input: unknown): Promise<unknown>;
+  /** Name des Plugins, das das Werkzeug registriert hat (setzt {@link Registry.use}). */
+  readonly plugin?: string;
 }
 
+/** Alle Rechte, die ein Plugin anfordern kann. */
+export const PERMISSIONS = ['fs:read', 'fs:write', 'net', 'process:spawn', 'env'] as const;
+
 /** Rechte, die ein Plugin anfordern kann. */
-export type Permission = 'fs:read' | 'fs:write' | 'net' | 'process:spawn' | 'env';
+export type Permission = (typeof PERMISSIONS)[number];
+
+/**
+ * Prüft, ob ein Wert ein Recht ist.
+ *
+ * @example
+ * ```ts
+ * isPermission('net'); // true
+ * ```
+ */
+export function isPermission(value: unknown): value is Permission {
+  return PERMISSIONS.some((p) => p === value);
+}
 
 /** Dienste, die der Host bereitstellt; Plugins sehen nur die freigegebenen. */
 export interface HostServices {
@@ -196,6 +240,32 @@ export interface Plugin {
   setup(ctx: PluginContext): void | Promise<void>;
 }
 
+/**
+ * Prüft die Form eines geladenen Plugin-Moduls (Name, Version, bekannte Rechte, `setup`).
+ *
+ * @example
+ * ```ts
+ * const mod: unknown = await import(url);
+ * if (isRecord(mod) && isPlugin(mod['default'])) await registry.use(mod['default'], host);
+ * ```
+ */
+export function isPlugin(value: unknown): value is Plugin {
+  if (typeof value !== 'object' || value === null) return false;
+  if (!('name' in value) || typeof value.name !== 'string' || value.name === '') return false;
+  if (!('version' in value) || typeof value.version !== 'string') return false;
+  if (!('permissions' in value) || !Array.isArray(value.permissions) || !value.permissions.every(isPermission)) return false;
+  return 'setup' in value && typeof value.setup === 'function';
+}
+
+/** Eintrag eines geladenen Plugins in {@link Registry.plugins}. */
+export interface LoadedPlugin {
+  readonly name: string;
+  readonly version: string;
+  readonly permissions: readonly Permission[];
+  /** Absoluter Pfad des Einstiegsmoduls (für Studio-Panels relativ dazu), falls bekannt. */
+  readonly origin?: string;
+}
+
 /** Eingebauter Standard-Backend je Node-Typ. */
 export const DEFAULT_BACKENDS: Readonly<Record<string, string>> = {
   group: 'skia',
@@ -221,6 +291,22 @@ export const DEFAULT_BACKENDS: Readonly<Record<string, string>> = {
 
 /** Node-Typen, die ein 2D-Backend (skia, pixi) als Einheit behandeln kann. */
 export const NODE_TYPES_2D: readonly string[] = ['group', 'rect', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'text', 'rich-text', 'image', 'video', 'svg', 'sprite', 'lottie', 'shader', 'particles'];
+
+/** Namen, die in Operationen (`plugin.<name>`), Formaten (`plugin:<id>`) und URLs vorkommen. */
+const PLUGIN_NAME = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/u;
+
+function checkName(kind: string, name: string): void {
+  if (!PLUGIN_NAME.test(name)) {
+    throw new OpenVideoError({
+      code: 'OV_REGISTRY_NAME',
+      errorClass: 'RegistryError',
+      problem: `${kind} name "${name}" is not valid; it is used in operation names, output formats and URLs.`,
+      expected: '^[A-Za-z][A-Za-z0-9_.-]{0,63}$',
+      received: JSON.stringify(name),
+      suggestions: ['Use letters, digits, ".", "_" and "-", starting with a letter (e.g. "hello.greet").'],
+    });
+  }
+}
 
 function duplicate(kind: string, name: string): OpenVideoError {
   return new OpenVideoError({
@@ -254,7 +340,7 @@ export class Registry {
   readonly exporters = new Map<string, ExporterDefinition>();
   readonly studioPanels = new Map<string, StudioPanelDefinition>();
   readonly agentTools = new Map<string, AgentToolDefinition>();
-  readonly plugins: { readonly name: string; readonly version: string; readonly permissions: readonly Permission[] }[] = [];
+  readonly plugins: LoadedPlugin[] = [];
 
   registerNodeType(def: NodeTypeDefinition): void {
     if (def.type in NODE_SCHEMAS || this.nodeTypes.has(def.type)) throw duplicate('Node type', def.type);
@@ -277,6 +363,7 @@ export class Registry {
   }
 
   registerAssetLoader(def: AssetLoaderDefinition): void {
+    checkName('Asset loader', def.id);
     if (this.assetLoaders.has(def.id)) throw duplicate('Asset loader', def.id);
     this.assetLoaders.set(def.id, def);
   }
@@ -287,6 +374,7 @@ export class Registry {
   }
 
   registerCodec(def: CodecDefinition): void {
+    checkName('Codec', def.id);
     if (this.codecs.has(def.id)) throw duplicate('Codec', def.id);
     this.codecs.set(def.id, def);
   }
@@ -302,16 +390,19 @@ export class Registry {
   }
 
   registerExporter(def: ExporterDefinition): void {
+    checkName('Exporter', def.id);
     if (this.exporters.has(def.id)) throw duplicate('Exporter', def.id);
     this.exporters.set(def.id, def);
   }
 
   registerStudioPanel(def: StudioPanelDefinition): void {
+    checkName('Studio panel', def.id);
     if (this.studioPanels.has(def.id)) throw duplicate('Studio panel', def.id);
     this.studioPanels.set(def.id, def);
   }
 
   registerAgentTool(def: AgentToolDefinition): void {
+    checkName('Agent tool', def.name);
     if (this.agentTools.has(def.name)) throw duplicate('Agent tool', def.name);
     this.agentTools.set(def.name, def);
   }
@@ -325,22 +416,66 @@ export class Registry {
     return builtin;
   }
 
+  /**
+   * Wählt das Backend einer IR-Node (oder der Eigenschaften einer ausgewerteten Node) und
+   * entscheidet über den Rückfall auf Skia (ADR 0018): Ist `renderer2d` nicht `skia`, die Node
+   * ohne explizites `renderer` und meldet das gewählte 2D-Backend für ihre eigenen Eigenschaften
+   * (ohne Kinder und Maske) eine Warnung oder einen Fehler, rendert Skia die Node. `fallback`
+   * enthält dann die Info-Diagnose `OV_PIXI_FALLBACK` (bzw. `OV_<BACKEND>_FALLBACK`).
+   *
+   * @example
+   * ```ts
+   * const { backend, fallback } = registry.resolveBackend({ id: 't', type: 'text', text: 'Hi', shadow: { color: '#000', blur: 4 } }, 'pixi');
+   * // backend === 'skia', fallback?.code === 'OV_PIXI_FALLBACK'
+   * ```
+   */
+  resolveBackend(node: Readonly<Record<string, unknown>>, renderer2d: string = 'skia'): { readonly backend: string | undefined; readonly fallback?: Diagnostic } {
+    const type = typeof node['type'] === 'string' ? node['type'] : '';
+    const explicit = typeof node['renderer'] === 'string' ? node['renderer'] : undefined;
+    if (explicit !== undefined) return { backend: explicit };
+    const chosen = this.backendFor(type, renderer2d);
+    if (chosen === undefined || renderer2d === 'skia' || chosen !== renderer2d || DEFAULT_BACKENDS[type] !== 'skia') return { backend: chosen };
+    const backend2d = this.backends.get(chosen);
+    if (backend2d === undefined || !this.backends.has('skia')) return { backend: chosen };
+    const { children: _children, mask: _mask, ...own } = node;
+    const blocking = backend2d.check(own).diagnostics.filter((d) => d.severity !== 'info');
+    if (blocking.length === 0) return { backend: chosen };
+    const features = [...new Set(blocking.map((d) => { const f = d.details?.['feature']; return typeof f === 'string' ? f : d.code; }))];
+    const id = typeof node['id'] === 'string' ? node['id'] : '(unknown)';
+    return {
+      backend: 'skia',
+      fallback: {
+        code: `OV_${chosen.toUpperCase().replace(/[^A-Z0-9]/g, '_')}_FALLBACK`,
+        severity: 'info',
+        errorClass: 'RendererError',
+        problem: `The ${chosen} renderer cannot draw ${type} node "${id}" as specified (${features.join(', ')}); Skia renders this node instead.`,
+        nodeId: id,
+        details: { from: chosen, to: 'skia', features: features.join(', ') },
+        suggestions: [`Nothing to do: the node is rendered by Skia. Set renderer: '${chosen}' on the node to force ${chosen} and accept its limits.`],
+      },
+    };
+  }
+
   /** Zusätzliche Node-Schemas für die Validierung. */
   extraNodeSchemas(): Record<string, TObject> {
     return Object.fromEntries([...this.nodeTypes.values()].map((d) => [d.type, d.schema]));
   }
 
   /**
-   * Lädt ein Plugin. Das Plugin erhält nur die Dienste, die es in `permissions` deklariert.
+   * Lädt ein Plugin. Das Plugin erhält nur die Dienste, die es in `permissions` deklariert und
+   * die der Host bereitstellt (`host`); fehlt ein angefordertes Recht, bricht `use` mit
+   * `OV_PLUGIN_PERMISSION` ab, bevor `setup` läuft. `origin` ist der Pfad des Einstiegsmoduls.
    */
-  async use(plugin: Plugin, host: Partial<HostServices> = {}): Promise<void> {
+  async use(plugin: Plugin, host: Partial<HostServices> = {}, options: { readonly origin?: string } = {}): Promise<void> {
+    if (this.plugins.some((p) => p.name === plugin.name)) throw duplicate('Plugin', plugin.name);
     const allowed = new Set(plugin.permissions);
     const missing = (p: Permission) =>
       new OpenVideoError({
         code: 'OV_PLUGIN_PERMISSION',
         errorClass: 'PluginError',
-        problem: `Plugin "${plugin.name}" requests "${p}", but the host does not provide it.`,
-        suggestions: ['Run the plugin in a host that grants this permission, or remove it from the plugin.'],
+        problem: `Plugin "${plugin.name}" requests "${p}", but the host does not grant it.`,
+        details: { plugin: plugin.name, permission: p },
+        suggestions: [`Grant it explicitly: OPENVIDEO_PLUGIN_PERMISSIONS=${p} (comma-separated list), or the host option plugins.permissions.`, 'Remove the permission from the plugin if it does not need it.'],
       });
     const need = <T>(perm: Permission, fn: T | undefined): T => {
       if (fn === undefined) throw missing(perm);
@@ -384,14 +519,14 @@ export class Registry {
         this.registerExporter(d);
       },
       registerStudioPanel: (d) => {
-        this.registerStudioPanel(d);
+        this.registerStudioPanel({ ...d, plugin: plugin.name });
       },
       registerAgentTool: (d) => {
-        this.registerAgentTool(d);
+        this.registerAgentTool({ name: d.name, description: d.description, inputSchema: d.inputSchema, handler: (input) => d.handler(input), plugin: plugin.name });
       },
     };
     await plugin.setup(ctx);
-    this.plugins.push({ name: plugin.name, version: plugin.version, permissions: [...plugin.permissions] });
+    this.plugins.push({ name: plugin.name, version: plugin.version, permissions: [...plugin.permissions], ...(options.origin !== undefined ? { origin: options.origin } : {}) });
   }
 
   /** Prüft alle Nodes eines Projects gegen die Backends (FR-44). */
@@ -399,9 +534,10 @@ export class Registry {
     const out: Diagnostic[] = [];
     for (const node of nodes) {
       const type = typeof node['type'] === 'string' ? node['type'] : '';
-      const explicit = typeof node['renderer'] === 'string' ? node['renderer'] : undefined;
-      const backendId = explicit ?? this.backendFor(type, renderer2d);
+      const resolved = this.resolveBackend(node, renderer2d);
+      const backendId = resolved.backend;
       if (backendId === undefined) continue;
+      if (resolved.fallback !== undefined) out.push(resolved.fallback);
       const backend = this.backends.get(backendId);
       if (backend === undefined) {
         out.push({
@@ -414,7 +550,11 @@ export class Registry {
         });
         continue;
       }
-      out.push(...backend.check(node).diagnostics);
+      // Nach dem Rückfall-Entscheid prüft das 2D-Backend nur die eigenen Eigenschaften;
+      // Kinder und Maske werden als eigene Nodes geprüft und fallen einzeln zurück.
+      const isDefault2d = renderer2d !== 'skia' && backendId === renderer2d && node['renderer'] === undefined;
+      const { children: _children, mask: _mask, ...own } = node;
+      out.push(...backend.check(isDefault2d ? own : node).diagnostics);
     }
     return out;
   }

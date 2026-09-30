@@ -18,3 +18,4 @@ export * from './inspect.js';
 export * from './version.js';
 export * from './audio-engine.js';
 export * from './node-env.js';
+export * from './plugins.js';

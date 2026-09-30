@@ -107,6 +107,8 @@ export async function projectContext(options: { readonly project?: string | unde
 
 /** Hat das Eingabeschema der Operation ein Feld `key`? */
 function hasField(name: string, key: string): boolean {
+  // Agent Tools aus Plugins (`plugin.<name>`, Story 21.1) brauchen immer das Projekt.
+  if (key === 'projectId' && name.startsWith('plugin.')) return true;
   const op = OPERATIONS.get(name);
   const props = op !== undefined && isRecord(op.input) ? op.input['properties'] : undefined;
   return isRecord(props) && key in props;

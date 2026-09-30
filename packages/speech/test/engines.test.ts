@@ -1,6 +1,7 @@
 // Integrationstests mit echten lokalen Engines. Pfade: Umgebungsvariablen oder die
 // Installation ohne root unter ~/.local/opt (siehe Installationshinweise im Paket).
 import { describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,7 +33,7 @@ async function voice(provider: 'piper' | 'espeak-ng', text: string) {
 }
 
 describe('Echte Engines', () => {
-  it.skipIf(!piperOk)('Piper erzeugt 48-kHz-WAV (wird übersprungen, wenn Piper oder die Stimme en_US-lessac-low fehlt)', async () => {
+  it.skipIf(skipUnless(piperOk, 'Piper oder die Stimme en_US-lessac-low fehlt: OPENVIDEO_PIPER und OPENVIDEO_PIPER_MODEL setzen'))('Piper erzeugt 48-kHz-WAV (wird übersprungen, wenn Piper oder die Stimme en_US-lessac-low fehlt)', async () => {
     expect(await piper.version()).toMatch(/piper-tts .*model sha256:[0-9a-f]{16}/u);
     const v = await voice('piper', 'Hello world, this is Piper.');
     const info = wavInfo(new Uint8Array(readFileSync(v.path)));
@@ -41,7 +42,7 @@ describe('Echte Engines', () => {
     expect(v.words.map((w) => w.text)).toEqual(['Hello', 'world,', 'this', 'is', 'Piper.']);
   });
 
-  it.skipIf(!espeakOk)('espeak-ng erzeugt 48-kHz-WAV (wird übersprungen, wenn espeak-ng fehlt)', async () => {
+  it.skipIf(skipUnless(espeakOk, 'espeak-ng fehlt: apt-get install espeak-ng'))('espeak-ng erzeugt 48-kHz-WAV (wird übersprungen, wenn espeak-ng fehlt)', async () => {
     expect(await espeak.version()).toMatch(/^eSpeak NG text-to-speech: \d/u);
     const v = await voice('espeak-ng', 'Hello from espeak.');
     const info = wavInfo(new Uint8Array(readFileSync(v.path)));
@@ -49,7 +50,7 @@ describe('Echte Engines', () => {
     expect(info.duration).toBeGreaterThan(0.5);
   });
 
-  it.skipIf(!whisperOk || (!piperOk && !espeakOk))('whisper.cpp transkribiert mit Wortzeiten (wird übersprungen, wenn whisper.cpp, das Modell ggml-tiny.en.bin oder eine TTS-Engine fehlt)', async () => {
+  it.skipIf(skipUnless(whisperOk && (piperOk || espeakOk), 'whisper.cpp, das Modell ggml-tiny.en.bin oder eine TTS-Engine fehlt: OPENVIDEO_WHISPER und OPENVIDEO_WHISPER_MODEL setzen'))('whisper.cpp transkribiert mit Wortzeiten (wird übersprungen, wenn whisper.cpp, das Modell ggml-tiny.en.bin oder eine TTS-Engine fehlt)', async () => {
     expect(await whisper.version()).toMatch(/whisper\.cpp version: .*model sha256:[0-9a-f]{16}/u);
     const v = await voice(piperOk ? 'piper' : 'espeak-ng', 'Hello world.');
     const registry = new Registry();

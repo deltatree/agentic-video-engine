@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { skipUnless } from '@agentic-video/testing';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -131,7 +132,7 @@ describe('Hilfsfunktionen', () => {
     expect(SPEECH_INPUT_FORMATS).not.toContain('concat');
   });
 
-  it.skipIf(!ffmpegOk)('normalizeWav lehnt eine concat-Liste ab (braucht FFmpeg)', async () => {
+  it.skipIf(skipUnless(ffmpegOk, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('normalizeWav lehnt eine concat-Liste ab (braucht FFmpeg)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ov-speech-wl-'));
     execFileSync(locateFfmpeg().ffmpeg, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.5', join(dir, 'real.wav')]);
     writeFileSync(join(dir, 'list.wav'), "ffconcat version 1.0\nfile 'real.wav'\n");
@@ -165,7 +166,7 @@ describe('JSON-Ausgaben', () => {
   });
 });
 
-describe.skipIf(!ffmpegOk)('synthesizeVoices mit Cache (wird übersprungen, wenn FFmpeg fehlt)', () => {
+describe.skipIf(skipUnless(ffmpegOk, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('synthesizeVoices mit Cache (wird übersprungen, wenn FFmpeg fehlt)', () => {
   it('ruft den Provider beim zweiten Aufruf nicht auf (FR-59)', async () => {
     const counter = counterFile();
     const registry = new Registry();
@@ -230,7 +231,7 @@ describe.skipIf(!ffmpegOk)('synthesizeVoices mit Cache (wird übersprungen, wenn
   });
 });
 
-describe.skipIf(!ffmpegOk)('transcribe mit Cache (wird übersprungen, wenn FFmpeg fehlt)', () => {
+describe.skipIf(skipUnless(ffmpegOk, 'FFmpeg fehlt: OPENVIDEO_FFMPEG setzen'))('transcribe mit Cache (wird übersprungen, wenn FFmpeg fehlt)', () => {
   it('liefert Cues mit Wortzeiten und nutzt den Cache', async () => {
     const counter = counterFile();
     const registry = new Registry();

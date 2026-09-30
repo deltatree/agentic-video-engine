@@ -22,6 +22,8 @@ type Backend = WebGLBackend | WebGPUBackend;
  *   Frame n nie von Frame n−1 ab.
  * - Backend: Node-Property `backend`, sonst `preferredBackend` des Konstruktors. `auto` nutzt
  *   WebGPU, außer die Szene braucht WebGL2 (GLSL-Shader) oder WebGPU fehlt.
+ * - Bildtexturen werden gegen das GPU-Maximum geprüft (`OV_THREE_TEXTURE_TOO_LARGE`); mit
+ *   `textureDownscale` (Node) bzw. `downscaleTextures` (Option) werden sie verkleinert.
  * - Ergebnis: ein neues 2D-Canvas `width·scale × height·scale`, transparent ohne `background`.
  *   Die Pixel im Canvas sind wie bei jedem 2D-Canvas vormultipliziert gespeichert.
  *
@@ -38,8 +40,20 @@ export class ThreeLayerRenderer {
   private webgpuOk: Promise<boolean> | undefined;
   private active: 'webgpu' | 'webgl2' | undefined;
 
-  constructor(options?: { preferredBackend?: ThreeBackendPreference }) {
+  private readonly downscaleTextures: boolean;
+  private readonly maxTextureSize: number | undefined;
+
+  /**
+   * @param options.preferredBackend Standard-Backend (`auto`).
+   * @param options.downscaleTextures Zu große Bildtexturen verkleinern statt `OV_THREE_TEXTURE_TOO_LARGE`
+   *   zu werfen (Standard `false`; die Node-Property `textureDownscale` hat Vorrang).
+   * @param options.maxTextureSize Obergrenze der Texturkante zusätzlich zum GPU-Maximum, z. B. um
+   *   Speicher zu begrenzen.
+   */
+  constructor(options?: { preferredBackend?: ThreeBackendPreference; downscaleTextures?: boolean; maxTextureSize?: number }) {
     this.preferred = options?.preferredBackend ?? 'auto';
+    this.downscaleTextures = options?.downscaleTextures ?? false;
+    this.maxTextureSize = options?.maxTextureSize;
   }
 
   /** Backend des letzten Renderaufrufs, vorher `undefined`. */
@@ -61,7 +75,10 @@ export class ThreeLayerRenderer {
     const kind = await this.chooseBackend(input);
     const antialias = wantsAntialias(input.node);
     const backend = await this.backend(kind, antialias);
-    const built = await buildScene(input, this.assets, (preset) => backend.presetEnvironment(preset));
+    const prop = input.node.props['textureDownscale'];
+    const gpuMax = backend.maxTextureSize;
+    const textureLimit = { maxSize: this.maxTextureSize === undefined ? gpuMax : Math.min(gpuMax, this.maxTextureSize), downscale: typeof prop === 'boolean' ? prop : this.downscaleTextures };
+    const built = await buildScene(input, this.assets, (preset) => backend.presetEnvironment(preset), textureLimit);
     const { width, height } = outputSize(input);
     const canvas = document.createElement('canvas');
     canvas.width = width;
