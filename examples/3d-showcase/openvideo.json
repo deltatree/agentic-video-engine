@@ -1,0 +1,5 @@
+{
+  "name": "3d-showcase",
+  "entry": "project.json",
+  "outDir": "out"
+}

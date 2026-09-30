@@ -325,6 +325,30 @@ function checkName(kind: string, name: string): void {
   }
 }
 
+/**
+ * Frühe Prüfung des Panel-Moduls (Politur P1): Der Server liefert nur `.js`/`.mjs` im Ordner des
+ * Plugins aus (Review Q5); ohne diese Prüfung zeigte das Studio erst beim Öffnen ein leeres Panel (404).
+ */
+function checkPanelModule(def: StudioPanelDefinition): void {
+  const module = def.module;
+  const lower = module.toLowerCase();
+  const problem = (why: string, suggestions: readonly string[]): OpenVideoError =>
+    new OpenVideoError({
+      code: 'OV_REGISTRY_PANEL_MODULE',
+      errorClass: 'RegistryError',
+      problem: `Studio panel "${def.id}" has an invalid module "${module}": ${why}`,
+      expected: 'a relative path to a .js or .mjs file inside the plugin folder, e.g. "./panel.mjs"',
+      received: JSON.stringify(module),
+      suggestions,
+    });
+  if (!lower.endsWith('.js') && !lower.endsWith('.mjs')) {
+    throw problem('the Studio only loads JavaScript modules ending in .js or .mjs.', ['Bundle or rename the panel to an ES module such as "./panel.mjs".', 'TypeScript, JSON or HTML files are not served; compile TypeScript to .js first.']);
+  }
+  if (module.startsWith('/') || module.startsWith('\\') || /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(module) || module.split(/[\\/]/u).includes('..')) {
+    throw problem('the path must be relative and stay inside the plugin folder.', ['Use a path relative to the plugin entry module, e.g. "./panel.mjs" or "./ui/panel.js".']);
+  }
+}
+
 function duplicate(kind: string, name: string): OpenVideoError {
   return new OpenVideoError({
     code: 'OV_REGISTRY_DUPLICATE',
@@ -414,6 +438,7 @@ export class Registry {
 
   registerStudioPanel(def: StudioPanelDefinition): void {
     checkName('Studio panel', def.id);
+    checkPanelModule(def);
     if (this.studioPanels.has(def.id)) throw duplicate('Studio panel', def.id);
     this.studioPanels.set(def.id, def);
   }

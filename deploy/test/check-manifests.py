@@ -10,6 +10,7 @@ Ziel nach kind und Namens-Regex, images/secretGenerator werden übergangen) und 
 - jeder PodDisruptionBudget-Selektor trifft die Pod-Labels eines Workloads;
 - jede ScaledObject-Zielressource existiert;
 - Single-Writer (coordinator, api) bleiben bei einer Replik mit Recreate;
+- worker-gpu setzt OPENVIDEO_BROWSER_GPU=1 (ADR 0019), kein anderer Workload und nicht die ConfigMap;
 - im Overlay production-ha: Studio 2 Replikate mit RollingUpdate, PDBs, DCGM-Trigger für worker-gpu.
 
 Aufruf: python3 deploy/test/check-manifests.py   (Exit-Code 1 bei Fehlern)
@@ -168,6 +169,30 @@ def pod_labels(res):
     return res.get("spec", {}).get("template", {}).get("metadata", {}).get("labels", {})
 
 
+def container_env(res):
+    """Umgebungsvariablen mit festem Wert aller Container eines Workloads."""
+    out = {}
+    for c in res.get("spec", {}).get("template", {}).get("spec", {}).get("containers", []):
+        for e in c.get("env", []) or []:
+            if "value" in e:
+                out[e["name"]] = e["value"]
+    return out
+
+
+def check_browser_gpu(name, resources, workloads):
+    """GPU-Modus des Browser-Renderers nur auf worker-gpu (ADR 0019): eigene Cache-Schlüssel, nicht bitgleich."""
+    for w in workloads:
+        value = container_env(w).get("OPENVIDEO_BROWSER_GPU")
+        if w["metadata"]["name"] == "worker-gpu":
+            if value != "1":
+                fail(f"{name}: worker-gpu must set OPENVIDEO_BROWSER_GPU=1 (ADR 0019)")
+        elif value not in (None, "0"):
+            fail(f"{name}: {w['metadata']['name']} must not set OPENVIDEO_BROWSER_GPU (only worker-gpu renders WebGL/WebGPU on the GPU)")
+    for cm in (r for r in resources if r["kind"] == "ConfigMap"):
+        if "OPENVIDEO_BROWSER_GPU" in (cm.get("data") or {}):
+            fail(f"{name}: ConfigMap {cm['metadata']['name']} must not set OPENVIDEO_BROWSER_GPU; set it on worker-gpu only")
+
+
 def check(name, resources):
     seen = set()
     for r in resources:
@@ -186,6 +211,7 @@ def check(name, resources):
     for so in (r for r in resources if r["kind"] == "ScaledObject"):
         if so["spec"]["scaleTargetRef"]["name"] not in by_name:
             fail(f"{name}: ScaledObject {so['metadata']['name']} targets a missing workload")
+    check_browser_gpu(name, resources, workloads)
     for single in ("coordinator", "api"):
         w = by_name.get(single)
         if w is None:

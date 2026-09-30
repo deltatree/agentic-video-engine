@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from 'playwright-core';
 import { OpenVideoError, minimalChildEnv, premultiplyInPlace, type AssetResolver, type Diagnostic, type FontResolver, type RgbaImage } from '@agentic-video/core';
 import { decodePng } from '@agentic-video/png';
-import { browserGpuMode, chromiumArgsFor, chromiumGpuEnv, graphicsArgsFor, pageGraphics, type BrowserGpuMode, type PageGraphics } from './gpu.js';
+import { browserGpuMode, chromiumArgsFor, chromiumGpuEnv, graphicsArgsFor, readPageGraphics, type BrowserGpuMode, type PageGraphics } from './gpu.js';
 import type { BrowserLayerKind, BrowserLayerPayload } from './protocol.js';
 import { startHostServer, type HostServer } from './server.js';
 
@@ -249,9 +249,24 @@ function readBundle(name: string): string {
   throw hostError('OV_BROWSER_RUNTIME_MISSING', `The page runtime bundle "${name}" was not found.`, ['Run `npm run build:extra -w @agentic-video/renderer-browser` to bundle the page runtime.']);
 }
 
+/**
+ * Pfad zu Chromium ohne Existenzprüfung: Option, dann `OPENVIDEO_CHROMIUM`, dann das Chromium von
+ * playwright-core. `custom` ist `true`, wenn der Pfad nicht das Chromium von playwright-core ist.
+ *
+ * @example
+ * ```ts
+ * chromiumExecutable(undefined, { OPENVIDEO_CHROMIUM: '/usr/bin/chromium' }); // { path: '/usr/bin/chromium', custom: true }
+ * ```
+ */
+export function chromiumExecutable(option?: string, env: Readonly<Record<string, string | undefined>> = process.env): { readonly path: string; readonly custom: boolean } {
+  const fromEnv = env['OPENVIDEO_CHROMIUM'];
+  const bundled = chromium.executablePath();
+  const path = option ?? (fromEnv !== undefined && fromEnv !== '' ? fromEnv : bundled);
+  return { path, custom: path !== bundled };
+}
+
 function resolveExecutable(option: string | undefined): string {
-  const fromEnv = process.env['OPENVIDEO_CHROMIUM'];
-  const path = option ?? (fromEnv !== undefined && fromEnv !== '' ? fromEnv : chromium.executablePath());
+  const { path } = chromiumExecutable(option);
   if (!existsSync(path)) {
     throw hostError('OV_BROWSER_CHROMIUM_MISSING', `Chromium was not found at "${path}".`, [
       'Install Chromium with `npx playwright install chromium`.',
@@ -635,7 +650,7 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
         const slot = await pageFor(options.width, options.height);
         try {
           const entry = await slot.entry;
-          const job = entry.queue.then(() => withTimeout(entry.page.evaluate(pageGraphics), timeoutMs, 'The graphics probe'));
+          const job = entry.queue.then(() => withTimeout(readPageGraphics(entry.page), timeoutMs, 'The graphics probe'));
           entry.queue = job.catch((error: unknown) => error);
           const info = await job;
           chromiumVersion = slot.session.browser.version();

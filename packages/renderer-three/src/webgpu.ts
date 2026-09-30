@@ -11,6 +11,7 @@ import { NoColorSpace, PCFShadowMap, PMREMGenerator, RenderPipeline, RenderTarge
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { lut3D } from 'three/examples/jsm/tsl/display/Lut3DNode.js';
 import { depthOfFieldNode } from './dof.js';
+import { probeWebGPU } from './webgpu-probe.js';
 import { disposeScene, presetScene, type EnvironmentPreset } from './environment.js';
 import type { BuiltScene, PostSpec } from './scene.js';
 
@@ -46,7 +47,9 @@ function unavailable(cause?: unknown): OpenVideoError {
 }
 
 /**
- * Prüft, ob der Browser einen WebGPU-Adapter liefert.
+ * Prüft, ob WebGPU nutzbar ist: Adapter plus Mini-Render auf dem Pfad von Three.js
+ * ({@link probeWebGPU}). Ein Adapter mit unvollständiger API (z. B. ohne `swizzle` als Text)
+ * zählt nicht; `backend: 'auto'` nutzt dann WebGL2.
  *
  * @example
  * ```ts
@@ -54,17 +57,7 @@ function unavailable(cause?: unknown): OpenVideoError {
  * ```
  */
 export async function webgpuAvailable(): Promise<boolean> {
-  const gpu: unknown = Reflect.get(navigator, 'gpu');
-  if (typeof gpu !== 'object' || gpu === null) return false;
-  if (!('requestAdapter' in gpu) || typeof gpu.requestAdapter !== 'function') return false;
-  try {
-    const adapter: unknown = await Reflect.apply(gpu.requestAdapter, gpu, []);
-    return adapter !== null && adapter !== undefined;
-  } catch (error) {
-    // Ein Fehler beim Anfordern bedeutet: kein WebGPU. Der Aufrufer fällt auf WebGL2 zurück.
-    if (error instanceof Error) return false;
-    throw error;
-  }
+  return (await probeWebGPU()).available;
 }
 
 /** Zeilen einer Rückleseoperation ohne die 256-Byte-Ausrichtung von WebGPU. */

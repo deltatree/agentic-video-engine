@@ -31,7 +31,7 @@ renderer.dispose();
 | Thema | Regel |
 |---|---|
 | Zeit | Nur aus der Eingabe. Die Szene wird pro Aufruf neu gebaut. |
-| Backend | Node-Property `backend`, sonst `preferredBackend`. `auto` = WebGPU, außer GLSL-Shader oder kein WebGPU. |
+| Backend | Node-Property `backend`, sonst `preferredBackend`. `auto` = WebGPU, außer GLSL-Shader oder kein nutzbares WebGPU (`probeWebGPU`: Mini-Render auf dem Pfad von Three.js, ein Adapter allein reicht nicht). |
 | Orthografische Kamera | Sichtbare Höhe 10 m ÷ `zoom`. |
 | Lichter | `directional`, `spot`, `hemisphere` stehen ohne `position` bei `[0, 1, 0]`. `spot.angle` ist der halbe Öffnungswinkel (Standard 60°). |
 | Geometrie | Standardmaße von Three.js (Kante 1, Radius 1), 32 Segmente. |

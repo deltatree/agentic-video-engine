@@ -37,6 +37,7 @@ import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
 import { createLocalServices, dockerRunner, dockerSettingsFromEnv, htmlScriptsAllowed, processRunner, renderIsolationFromEnv, workersFromEnv, type LocalServices, type RenderIsolation } from './services.js';
 import { createSourceService } from './sources.js';
+import { LEGACY_CACHE_TIERS, cacheTierByName, clearCache } from './cache-clear.js';
 import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
 import { watchProject, type WatchEvent } from './watch.js';
 
@@ -76,7 +77,7 @@ Commands:
   import <file> [path]  Import SVG, Lottie, glTF, HTML, anime/motion-canvas JSON (--format --id-prefix)
   doctor                Check the environment and suggest fixes
   benchmark             Run reproducible benchmarks (--scenario --resolution --frames --compare)
-  cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9)
+  cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9; clear also removes retired tiers)
   fonts [list|check] [path]   List or check fonts
   assets <list|import|inspect> [path]   Manage assets
   serve                 Start the Agent API (HTTP) with the Studio (--project <dir> opens a project)
@@ -90,6 +91,8 @@ Server options (serve, dev, studio):
   --port <n>             Port (default 7788)
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
+  --trust-proxy          Trust X-Forwarded-Proto from any peer, e.g. behind a TLS proxy on another host
+                         (or OPENVIDEO_TRUST_PROXY=1; default: only from loopback)
   --workers <n>          Render videos with n local worker processes (default by cores and memory; 1 = in process)
   --isolation <mode>     Where video chunks render: process (default) or docker (OPENVIDEO_RENDER_ISOLATION;
                          image OPENVIDEO_WORKER_IMAGE / --image, GPU quota OPENVIDEO_WORKER_GPUS / --gpus)
@@ -164,6 +167,8 @@ interface ServeOptions {
   readonly showToken?: boolean;
   /** Studio im Browser öffnen (Story 20.1). */
   readonly open?: boolean;
+  /** `X-Forwarded-Proto` jeder Gegenstelle vertrauen (`--trust-proxy`, `OPENVIDEO_TRUST_PROXY=1`). */
+  readonly trustProxy?: boolean;
   /** Projektordner beobachten und TSX neu kompilieren (`openvideo dev`). */
   readonly watch?: { readonly dir: string; readonly entry: string; readonly sources: SourceServiceOf };
 }
@@ -187,6 +192,7 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
     port: options.port,
     host: options.host,
     allowedHosts: options.allowedHosts,
+    trustProxy: options.trustProxy === true,
     ...(options.token !== undefined ? { token: options.token } : {}),
     fallback: async (req, res) => {
       if (studio === undefined || req.method !== 'GET') return false;
@@ -239,6 +245,22 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
 function cacheBudget(env: Readonly<Record<string, string | undefined>>): { cacheMaxBytes?: number } {
   const max = cacheMaxBytesFromEnv(env);
   return max !== undefined ? { cacheMaxBytes: max } : {};
+}
+
+/**
+ * Proxy-Vertrauen für `serve`, `dev` und `studio`: `--trust-proxy` oder `OPENVIDEO_TRUST_PROXY`
+ * (`1`/`true`/`yes`). Dann zählt `X-Forwarded-Proto` jeder Gegenstelle (z. B. TLS-Proxy auf einem
+ * anderen Rechner) für die Studio-Origin; sonst nur von Loopback.
+ *
+ * @example
+ * ```ts
+ * trustProxyOf(undefined, { OPENVIDEO_TRUST_PROXY: '1' }); // true
+ * ```
+ */
+export function trustProxyOf(flag: boolean | undefined, env: Readonly<Record<string, string | undefined>>): boolean {
+  if (flag === true) return true;
+  const raw = env['OPENVIDEO_TRUST_PROXY']?.trim().toLowerCase();
+  return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
 /** Erlaubte Host-Namen aus `--allowed-host` und `OPENVIDEO_ALLOWED_HOSTS` (kommagetrennt). */
@@ -308,6 +330,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         host: { type: 'string' },
         token: { type: 'string' },
         'allowed-host': { type: 'string', multiple: true },
+        'trust-proxy': { type: 'boolean' },
         workspace: { type: 'string' },
         write: { type: 'boolean' },
         id: { type: 'string' },
@@ -353,6 +376,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   }
   const target = resolve(io.cwd, rest[0] ?? '.');
   const sources = createSourceService({ trusted, env: io.env });
+  // Dienste mit Telemetrie: Die Ebene `compiled` der Quellen meldet an dieselbe Telemetrie (ADR 0021).
+  const localServices = async (options: Parameters<typeof createLocalServices>[0]): Promise<LocalServices> => {
+    const services = await createLocalServices(options);
+    sources.useTelemetry(services.telemetry);
+    return services;
+  };
   const isolation = trusted ? 'trusted' : 'container';
   const offline = values.offline === true ? { offline: true } : {};
   const withEnv = async <T>(fn: (loaded: Awaited<ReturnType<typeof loadProject>>, env: Awaited<ReturnType<typeof createNodeEnvironment>>) => Promise<T>): Promise<T> => {
@@ -587,7 +616,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const pathArg = command === 'op' ? undefined : command === 'import' ? rest[1] : rest[0];
         const projectArg = values.project ?? (command === 'op' ? (values.workspace === undefined && isProjectDir(io.cwd) ? '.' : undefined) : (pathArg ?? '.'));
         const context = await projectContext({ project: projectArg, workspace: values.workspace, cwd: io.cwd, env: io.env });
-        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline, ...renderIsolationOption() });
+        const base = await localServices({ workspaceDir: context.workspaceDir, isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline, ...renderIsolationOption() });
         const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
         try {
           const projectId = await context.link(services);
@@ -646,16 +675,20 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const sub = rest[0] ?? 'stats';
         const projectDir = resolve(io.cwd, rest[1] ?? '.');
         const cache = createCache(storeFromEnv(io.env, projectDir));
-        const tier = values.tier !== undefined ? CACHE_TIERS.find((t): t is CacheTierName => t === values.tier) : undefined;
-        if (values.tier !== undefined && tier === undefined) throw new UsageError(`Unknown tier "${values.tier}". Use: ${CACHE_TIERS.join(', ')}.`);
+        // Alte Ebenen (font, geometry, shader, composition) nur für `clear` (ADR 0021).
+        const named = values.tier !== undefined ? cacheTierByName(values.tier) : undefined;
+        const tier = CACHE_TIERS.find((t): t is CacheTierName => t === named);
+        if (values.tier !== undefined && (named === undefined || (tier === undefined && sub !== 'clear'))) {
+          throw new UsageError(`Unknown tier "${values.tier}". Use: ${CACHE_TIERS.join(', ')}${sub === 'clear' ? ` (clear also accepts the retired tiers ${LEGACY_CACHE_TIERS.join(', ')})` : ''}.`);
+        }
         if (sub === 'stats') {
           const usage = await cache.usage();
           out(usage, CACHE_TIERS.map((t) => `${t.padEnd(12)} ${String(usage[t].entries).padStart(7)} entries ${(usage[t].bytes / 1e6).toFixed(1).padStart(10)} MB`).join('\n'));
           return 0;
         }
         if (sub === 'clear') {
-          const removed = await cache.clear(tier);
-          out({ removed }, `Removed ${String(removed)} entries.`);
+          const r = await clearCache(cache, named);
+          out(r, `Removed ${String(r.removed)} entries${r.legacyRemoved > 0 ? ` (${String(r.legacyRemoved)} from retired tiers ${LEGACY_CACHE_TIERS.join(', ')})` : ''}.`);
           return 0;
         }
         if (sub === 'prune') {
@@ -689,7 +722,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       case 'assets': {
         const sub = rest[0] ?? 'list';
         const projectPath = resolve(io.cwd, sub === 'import' || sub === 'inspect' ? (rest[2] ?? '.') : (rest[1] ?? '.'));
-        const services = await createLocalServices({ workspaceDir: join(projectPath, '.openvideo', 'workspace'), isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline });
+        const services = await localServices({ workspaceDir: join(projectPath, '.openvideo', 'workspace'), isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline });
         try {
           const loaded = await loadProject(projectPath, { sources });
           if (sub === 'import') {
@@ -727,17 +760,17 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'serve': {
         const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
-        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() });
+        const base = await localServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() });
         const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
         const projectId = await context.link(services);
-        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env), ...(projectId !== undefined ? { projectId } : {}), open: values.open === true && values['no-open'] !== true });
+        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env), trustProxy: trustProxyOf(values['trust-proxy'], io.env), ...(projectId !== undefined ? { projectId } : {}), open: values.open === true && values['no-open'] !== true });
       }
       case 'dev':
       case 'studio': {
         const loaded = await loadProject(target, { sources });
         const { workspaceDir, projectId } = await singleProjectWorkspace(loaded.dir);
         // Der eingebundene Projektordner bleibt nur für diesen Host erreichbar (Review M3).
-        const services: LocalServices = { ...(await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() })), hostProjectDirs: [loaded.dir] };
+        const services: LocalServices = { ...(await localServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption() })), hostProjectDirs: [loaded.dir] };
         // dev/studio schützen die API immer mit einem Token; ohne Vorgabe ein zufälliges (B1).
         const given = values.token ?? io.env['OPENVIDEO_API_TOKEN'];
         const token = given !== undefined && given !== '' ? given : randomBytes(32).toString('base64url');
@@ -747,6 +780,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           host: values.host ?? '127.0.0.1',
           token,
           allowedHosts: allowedHostsOf(values['allowed-host'], io.env),
+          trustProxy: trustProxyOf(values['trust-proxy'], io.env),
           projectId,
           showToken: true,
           open: values['no-open'] !== true,
@@ -755,7 +789,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
       case 'mcp': {
         const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
-        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption(), telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const base = await localServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, ...renderIsolationOption(), telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
         const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
         const projectId = await context.link(services);
         const { serveStdio } = await import('@agentic-video/mcp');

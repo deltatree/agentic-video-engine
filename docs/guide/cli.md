@@ -23,7 +23,7 @@ Commands:
   import <file> [path]  Import SVG, Lottie, glTF, HTML, anime/motion-canvas JSON (--format --id-prefix)
   doctor                Check the environment and suggest fixes
   benchmark             Run reproducible benchmarks (--scenario --resolution --frames --compare)
-  cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9)
+  cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9; clear also removes retired tiers)
   fonts [list|check] [path]   List or check fonts
   assets <list|import|inspect> [path]   Manage assets
   serve                 Start the Agent API (HTTP) with the Studio (--project <dir> opens a project)
@@ -37,6 +37,8 @@ Server options (serve, dev, studio):
   --port <n>             Port (default 7788)
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
+  --trust-proxy          Trust X-Forwarded-Proto from any peer, e.g. behind a TLS proxy on another host
+                         (or OPENVIDEO_TRUST_PROXY=1; default: only from loopback)
   --workers <n>          Render videos with n local worker processes (default by cores and memory; 1 = in process)
   --isolation <mode>     Where video chunks render: process (default) or docker (OPENVIDEO_RENDER_ISOLATION;
                          image OPENVIDEO_WORKER_IMAGE / --image, GPU quota OPENVIDEO_WORKER_GPUS / --gpus)

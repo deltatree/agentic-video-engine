@@ -17,6 +17,7 @@ export { detectFormat, type AssetFormat } from './assets.js';
 export { instanceTransforms, type InstanceTransform } from './instances.js';
 export { particles3d, type Particle3D } from './particles.js';
 export { ORTHOGRAPHIC_VIEW_HEIGHT } from './objects.js';
+export { probeWebGPU, type WebGPUProbe } from './webgpu-probe.js';
 export { ThreeLayerRenderer, type ThreeBackendPreference } from './renderer.js';
 export type { ThreeLayerInput } from './scene.js';
 export { fitTextureSize, textureTooLargeError, type TextureUse } from './texture-limit.js';

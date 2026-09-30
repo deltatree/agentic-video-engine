@@ -56,6 +56,11 @@ function handlePosition(h: Handle, box: Box): { x: number; y: number } {
   return { x, y };
 }
 
+/** Ganzzahlige Box mit mindestens 1 px Kante (Ergebnis eines Griffs). */
+function roundBox(raw: Box): Box {
+  return { x: Math.round(raw.x), y: Math.round(raw.y), width: Math.max(1, Math.round(raw.width)), height: Math.max(1, Math.round(raw.height)) };
+}
+
 /** Die Bühne. */
 export function Preview(): ReactNode {
   const [studio, state] = useStudio();
@@ -65,7 +70,15 @@ export function Preview(): ReactNode {
   const [guides, setGuides] = useState<readonly Guide[]>([]);
   const [grid, setGrid] = useState(false);
   const [safe, setSafe] = useState(true);
-  const [drag, setDrag] = useState<Drag | undefined>(undefined);
+  const [drag, setDragState] = useState<Drag | undefined>(undefined);
+  // Neuester Stand des Ziehens, synchron zu den Zeigerereignissen. Unter Last kommen `pointermove` und
+  // `pointerup` schneller als React neu rendert; der Zustand aus dem letzten Render wäre dann veraltet
+  // (z. B. Drehwinkel noch beim Start: die Drehung wurde nicht gespeichert). Handler lesen darum die Ref.
+  const dragRef = useRef<Drag | undefined>(undefined);
+  const setDrag = (next: Drag | undefined): void => {
+    dragRef.current = next;
+    setDragState(next);
+  };
   const [guideAxis, setGuideAxis] = useState<'x' | 'y'>('x');
   const [guidePos, setGuidePos] = useState('');
   const nextGuide = useRef(1);
@@ -237,6 +250,7 @@ export function Preview(): ReactNode {
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>): void => {
+    const drag = dragRef.current;
     if (drag === undefined) return;
     if (drag.kind === 'pan') {
       setPan({ x: drag.pan.x + e.clientX - drag.start.x, y: drag.pan.y + e.clientY - drag.start.y });
@@ -253,8 +267,7 @@ export function Preview(): ReactNode {
     }
     if (drag.kind === 'resize') {
       // Shift hält das Seitenverhältnis, Alt skaliert um die Mitte.
-      const raw = resizeBox(drag.box, drag.handle, p.x - drag.start.x, p.y - drag.start.y, e.shiftKey, e.altKey);
-      const next = { x: Math.round(raw.x), y: Math.round(raw.y), width: Math.max(1, Math.round(raw.width)), height: Math.max(1, Math.round(raw.height)) };
+      const next = roundBox(resizeBox(drag.box, drag.handle, p.x - drag.start.x, p.y - drag.start.y, e.shiftKey, e.altKey));
       setDrag({ ...drag, next });
       preview(studio.resizeNodePatches(drag.id, drag.box, next));
       return;
@@ -276,9 +289,17 @@ export function Preview(): ReactNode {
   };
 
   const onPointerUp = (e: PointerEvent<HTMLDivElement>): void => {
-    const d = drag;
+    const current = dragRef.current;
     setDrag(undefined);
-    if (d === undefined) return;
+    if (current === undefined) return;
+    // Endstand aus dem pointerup selbst (Position und Shift beim Loslassen), nicht aus dem letzten Render.
+    const up = toComp(e.clientX, e.clientY);
+    const d: Drag =
+      current.kind === 'rotate'
+        ? { ...current, angle: angleOf(current.center, up), snap: e.shiftKey }
+        : current.kind === 'resize'
+          ? { ...current, next: roundBox(resizeBox(current.box, current.handle, up.x - current.start.x, up.y - current.start.y, e.shiftKey, e.altKey)) }
+          : current;
     if (d.kind === 'guide') {
       const rect = area.current?.getBoundingClientRect();
       const inside = rect !== undefined && e.clientX > rect.left && e.clientY > rect.top;

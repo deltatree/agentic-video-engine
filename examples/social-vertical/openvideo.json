@@ -1,0 +1,5 @@
+{
+  "name": "social-vertical",
+  "entry": "project.json",
+  "outDir": "out"
+}

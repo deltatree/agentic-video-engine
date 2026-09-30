@@ -410,6 +410,31 @@ describe('Epic 20: Studio', () => {
     }
   });
 
+  it('20.5: Drehen speichert den Endstand, auch wenn pointermove und pointerup vor dem nächsten Render kommen', async () => {
+    // Unter Last kamen Zeigerereignisse schneller als Renders; pointerup las den Zustand des letzten
+    // Renders (Winkel beim Start) und speicherte nichts. Hier kommen alle Ereignisse in einem Task.
+    await selectInTree('box');
+    const rotate = page.locator('[data-handle="rotate"]');
+    await rotate.waitFor();
+    const rb = await rotate.boundingBox();
+    if (rb === null) throw new Error('no rotate handle');
+    const center = await stagePoint(90, 80);
+    await page.evaluate(
+      ([from, to]) => {
+        const handle = document.querySelector('[data-handle="rotate"]');
+        if (handle === null) throw new Error('no rotate handle');
+        const fire = (type: string, p: { x: number; y: number }, shiftKey: boolean): void => {
+          handle.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, composed: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, button: 0, buttons: type === 'pointerup' ? 0 : 1, clientX: p.x, clientY: p.y, shiftKey }));
+        };
+        fire('pointerdown', from, false);
+        for (let i = 1; i <= 5; i++) fire('pointermove', { x: from.x + ((to.x - from.x) * i) / 5, y: from.y + ((to.y - from.y) * i) / 5 }, true);
+        fire('pointerup', to, true);
+      },
+      [{ x: rb.x + rb.width / 2, y: rb.y + rb.height / 2 }, { x: center.x + 200, y: center.y }] as const,
+    );
+    await expect.poll(async () => (await node('box'))?.['rotation'], { timeout: 15_000 }).toBe(90);
+  });
+
   it('20.4: Rahmenauswahl wählt mehrere Nodes', async () => {
     const from = await stagePoint(20, 20);
     const to = await stagePoint(400, 150);

@@ -116,7 +116,9 @@ the metadata (for example the header and row count of a CSV file).
 
 `registerStudioPanel({ id, title, module })` adds a tab **Plugins** to the right panel of the Studio.
 `module` is an ES module (`.js` or `.mjs`) relative to the plugin's entry file and must stay inside the
-plugin's folder (also through symbolic links); otherwise the panel answers 404:
+plugin's folder (also through symbolic links). Another file ending, an absolute path, a URL or a path with
+`..` fails already at registration with `OV_REGISTRY_PANEL_MODULE`; a symbolic link that leaves the folder or a
+missing file makes the panel answer 404:
 
 ```js
 export default function mount(root, ctx) {

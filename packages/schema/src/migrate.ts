@@ -1,7 +1,7 @@
 /**
  * Migration älterer IR-Versionen (FR-5).
  */
-import type { Diagnostic } from './diagnostics.js';
+import { OpenVideoError, type Diagnostic } from './diagnostics.js';
 import { SCHEMA_VERSION } from './version.js';
 
 /** Ein Migrationsschritt von genau einer Version zur nächsten. */
@@ -50,7 +50,15 @@ export function compareVersions(a: string, b: string): number {
  */
 export function migrateProject(input: unknown, migrations: readonly Migration[] = BUILTIN_MIGRATIONS, target: string = SCHEMA_VERSION): MigrationResult {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
-    throw new TypeError('migrateProject expects a project object');
+    // Erreichbar über `openvideo migrate <datei>` mit einer JSON-Datei, die kein Objekt ist.
+    throw new OpenVideoError({
+      code: 'OV_SCHEMA_NOT_OBJECT',
+      errorClass: 'ValidationError',
+      problem: `A project must be a JSON object, not ${Array.isArray(input) ? 'an array' : input === null ? 'null' : `a ${typeof input}`}.`,
+      expected: 'object',
+      received: Array.isArray(input) ? 'array' : input === null ? 'null' : typeof input,
+      suggestions: ['Pass the project file (project.json), which starts with "{" and has "schemaVersion" and "compositions".', 'Create a new project with `openvideo create <dir>` and compare the file.'],
+    });
   }
   let project: Record<string, unknown> = { ...Object.fromEntries(Object.entries(input)) };
   const version = project['schemaVersion'];

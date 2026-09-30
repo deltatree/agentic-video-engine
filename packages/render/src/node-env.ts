@@ -2,7 +2,8 @@
  * Verdrahtung der echten Pakete zu einer {@link RenderEnvironment} in Node.
  *
  * Browser (DOM, PixiJS, Three.js) und Blender starten erst, wenn ein Frame sie braucht.
- * So kostet ein reines 2D-Projekt keinen Browserstart.
+ * So kostet ein reines 2D-Projekt keinen Browserstart; ein Projekt mit `scene3d` nur, solange
+ * die Grafik-Probe für diese Chromium-Version noch nicht im Cache liegt.
  */
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -19,7 +20,7 @@ import { createSkiaBackend, createSkiaTextMeasurer, loadCanvasKitNode, renderCon
 import { createEspeakProvider, createPiperProvider, createWhisperCppProvider, registerSpeechProviders, resolveFromAudioTracks, synthesizeVoices, type FromAudioTranscript } from '@agentic-video/speech';
 import { registerSubtitles } from '@agentic-video/subtitles';
 import { createTelemetry, type Telemetry } from '@agentic-video/telemetry';
-import { browserGpuMode, createLazyBrowserBackends, describeHostGpu, probeHostGpu, type HostGpu } from '@agentic-video/renderer-browser';
+import { browserGpuMode, createLazyBrowserBackends, describeHostGpu, probeHostGpu, type GraphicsProbeStore, type HostGpu } from '@agentic-video/renderer-browser';
 import { createBlenderBackend } from '@agentic-video/renderer-blender';
 import { createAudioEngine, type SynthesizedVoice } from './audio-engine.js';
 import type { EncodeOptions, FrameEncoder, GraphicsInfoLike, MediaTools, RenderEnvironment, RuntimeInfo } from './environment.js';
@@ -206,20 +207,33 @@ export function projectUsesScene3d(project: Readonly<Record<string, unknown>>): 
   return walk(project['compositions']);
 }
 
+/** Optionen für {@link defaultProviders}. */
+export interface DefaultProvidersOptions {
+  readonly allowHtmlScripts?: boolean;
+  readonly browserGpu?: boolean;
+  /** Speicher für das Ergebnis der Grafik-Probe (z. B. Cache-Ebene `layer`); ohne ihn prüft jede Umgebung live. */
+  readonly graphicsCache?: GraphicsProbeStore;
+  /** Beschreibung der Host-GPU; im GPU-Modus Teil des Probe-Schlüssels (ohne sie keine gespeicherte Probe). */
+  readonly hostGpu?: string;
+  /** Umgebungsvariablen für `OPENVIDEO_CHROMIUM` (Standard `process.env`). */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+}
+
 /**
  * Standard-Provider: Browser-Backends (`browser`, `three`, `pixi`, Chromium startet erst bei Bedarf)
  * und Blender (startet pro Chunk einen Prozess, nur wenn eine `blender`-Node gerendert wird).
  *
- * Enthält das Projekt `scene3d`-Nodes, startet Chromium schon beim Registrieren mit den
- * Grafik-Schaltern und prüft WebGPU (Story 21.5): Ob `backend: 'auto'` WebGPU oder WebGL2 nutzt,
- * steht dann als `three-webgpu` in den Versionen und damit in jedem Frame- und Layer-Schlüssel.
+ * Enthält das Projekt `scene3d`-Nodes, steht vor dem ersten Schlüssel fest, ob `backend: 'auto'`
+ * WebGPU oder WebGL2 nutzt (Story 21.5): als `three-webgpu` in den Versionen und damit in jedem
+ * Frame- und Layer-Schlüssel. Das Ergebnis der Grafik-Probe liegt je Chromium-Version, Schaltern
+ * und Modus in `graphicsCache` (Politur P1); nur ohne Treffer startet Chromium beim Registrieren.
  *
  * @example
  * ```ts
- * const providers = defaultProviders('/work/demo', project, { browserGpu: false });
+ * const providers = defaultProviders('/work/demo', project, { browserGpu: false, graphicsCache: cache.tier('layer') });
  * ```
  */
-export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>, options: { readonly allowHtmlScripts?: boolean; readonly browserGpu?: boolean } = {}): BackendProvider[] {
+export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>, options: DefaultProvidersOptions = {}): BackendProvider[] {
   let lazy: ReturnType<typeof createLazyBrowserBackends> | undefined;
   let blender: ReturnType<typeof createBlenderBackend> | undefined;
   return [
@@ -234,7 +248,10 @@ export function defaultProviders(projectDir: string, project: Readonly<Record<st
           height: size.height,
           allowHtmlScripts: options.allowHtmlScripts === true,
           ...(options.browserGpu !== undefined ? { gpu: options.browserGpu } : {}),
-          ...(process.env['OPENVIDEO_CHROMIUM'] !== undefined ? { executablePath: process.env['OPENVIDEO_CHROMIUM'] } : {}),
+          // Chromium-Pfad aus OPENVIDEO_CHROMIUM (`env`): Host und Cache-Schlüssel (tatsächliche Version) nutzen ihn.
+          env: options.env ?? process.env,
+          ...(options.graphicsCache !== undefined ? { graphicsCache: options.graphicsCache } : {}),
+          ...(options.hostGpu !== undefined ? { hostGpu: options.hostGpu } : {}),
         });
         lazy = created;
         for (const b of [created.browser, created.three, created.pixi]) if (!registry.backends.has(b.id)) registry.registerBackend(b);
@@ -405,8 +422,23 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
       transcripts.pending.delete(key);
     }
   };
+  // GPU des Hosts vor den Providern: Sie gehört im GPU-Modus zum Schlüssel der Grafik-Probe.
+  const probeGpu = options.probeGpu ?? (() => (hostGpu ??= probeHostGpu()));
+  const gpu = await probeGpu();
+  if (gpu?.memoryUsedBytes !== undefined) telemetry.metrics.setGpuMemory(gpu.memoryUsedBytes);
   const providers: BackendProvider[] = [...(options.providers ?? [])];
-  if (options.skipDefaultProviders !== true) providers.push(...defaultProviders(projectDir, project, { allowHtmlScripts: options.allowHtmlScripts === true, browserGpu: gpuMode === 'native' }));
+  if (options.skipDefaultProviders !== true) {
+    providers.push(
+      ...defaultProviders(projectDir, project, {
+        allowHtmlScripts: options.allowHtmlScripts === true,
+        browserGpu: gpuMode === 'native',
+        env,
+        // Grafik-Probe je Chromium-Version und Schaltern in der Ebene `layer` (gehört zum Browser-Backend, ADR 0021).
+        graphicsCache: cache.tier('layer'),
+        ...(gpu !== undefined ? { hostGpu: describeHostGpu(gpu) } : {}),
+      }),
+    );
+  }
   for (const provider of providers) Object.assign(versions, await provider.register(registry, { assets, fonts, telemetry }));
   for (const b of registry.backends.values()) {
     versions[`backend:${b.id}`] = Object.values(b.versions()).join('+') || '1';
@@ -431,9 +463,6 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
     return voices;
   };
   const audioEngine = createAudioEngine({ assets, cache, synthesizeVoices: synthesize, registry });
-  const probeGpu = options.probeGpu ?? (() => (hostGpu ??= probeHostGpu()));
-  const gpu = await probeGpu();
-  if (gpu?.memoryUsedBytes !== undefined) telemetry.metrics.setGpuMemory(gpu.memoryUsedBytes);
   const runtime = async (): Promise<RuntimeInfo> => {
     const out: Record<string, string> = {};
     let graphics: GraphicsInfoLike | undefined;

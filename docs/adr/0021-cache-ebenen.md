@@ -26,4 +26,6 @@ Bitgleiche Segment-Wiederverwendung ist mit x264 also nicht möglich, ohne die D
 - Ein wiederholter identischer Render kostet nur Audio-Mischung (selbst im Cache) und das Kopieren der Datei. Die Datei ist bitgleich zur Direktkodierung, weil sie genau diese ist.
 - Ändert sich irgendeine Eingabe (auch nur ein Frame), wird die ganze Ausgabe neu kodiert; die Frames selbst kommen weiter aus dem Frame-Cache.
 - Der Schlüssel der Ausgabe hängt wie die Frame-Schlüssel an den gemeldeten Versionen. Was dort fehlt (z. B. die Freigabe von HTML-Skripten), unterscheidet auch die Ausgabe nicht.
-- Alte Einträge unter `font/`, `geometry/`, `shader/` und `composition/` räumt `openvideo cache clear` nicht mehr auf; sie können gelöscht werden.
+- Alte Einträge unter `font/`, `geometry/`, `shader/` und `composition/` räumt `openvideo cache clear` ohne `--tier` mit auf (Politur P1); `--tier shader` usw. löscht gezielt eine alte Ebene. `stats` und `prune` kennen nur die genutzten Ebenen.
+- Die Ebene `compiled` der CLI-Quellen meldet an die Telemetrie der Dienste (`serve`, `dev`, `studio`, `mcp`), wie alle übrigen Ebenen (Politur P1).
+- Das Ergebnis der Grafik-Probe des Browser-Renderers (WebGL2, WebGPU, Texturgrenze) liegt in der Ebene `layer`: Es gehört zum Browser-Backend, ist klein und wird neu geprüft, wenn es fehlt (ADR 0019, Politur P1).

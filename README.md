@@ -65,6 +65,7 @@ Mehr steht in [Erste Schritte](docs/guide/getting-started.md).
 1. Starte die Agent API: `openvideo serve` oder den MCP-Server: `openvideo mcp --project ./hello`. Ohne Server ruft `openvideo op <name> --input '<json>'` jede Operation auf.
 2. Lies [docs/ai/AGENTS.md](docs/ai/AGENTS.md) und [llms.txt](llms.txt) (per MCP auch als Resource `openvideo://agents.md`).
 3. Die Fähigkeiten stehen maschinenlesbar in [docs/ai/capabilities.json](docs/ai/capabilities.json) und kommen live über `capabilities.get` und `schema.get`.
+4. Lerne an [Beispielen](examples/README.md): fünf vollständige Projekte (JSON und TSX, 2D, 3D, 9:16, Charts, Untertitel) und ein gültiges JSON-Beispiel je Node-Typ (`capabilities.get` mit `{ "nodeType": "text" }`). MCP-Clients konfiguriert [examples/mcp.json](examples/mcp.json).
 
 Ein Agent ändert ein Video mit Patches, nicht mit Textersetzung:
 
@@ -85,7 +86,8 @@ Nach jedem Patch rendert OpenVideo nur die Frames neu, die sich wirklich ändern
 | [Plugins](docs/guide/plugins.md) | Agent Tools, Codecs, Exporter, Asset Loader und Studio-Panels aus Plugins; Rechte |
 | [Maintainer](docs/guide/maintainers.md) | Branch-Schutz für `main` als Ruleset (gh api), Pflicht-Checks, Repository-Einstellungen |
 | [API-Referenz](docs/api/README.md) | Alle exportierten Funktionen und Typen je Paket (TypeDoc) |
-| [Render-Semantik](docs/reference/node-semantics.md) | Verbindliche Bedeutung jedes Node-Typs |
+| [Beispiele](examples/README.md) | Fünf Beispielprojekte mit README, Assets und Test |
+| [Render-Semantik](docs/reference/node-semantics.md) | Verbindliche Bedeutung und ein JSON-Beispiel jedes Node-Typs |
 | [Render-Manifest](docs/reference/render-manifest.md) | Felder des Render-Manifests und des Kurzmanifests für Frames |
 | [Architektur-Entscheidungen](docs/adr/README.md) | ADR 0001–0017 |
 | [Betrieb mit Docker und Kubernetes](deploy/README.md) | Images, Skalierung, Updates |

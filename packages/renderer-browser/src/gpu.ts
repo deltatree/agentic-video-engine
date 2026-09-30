@@ -10,8 +10,9 @@
 import { execFile } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { chromium } from 'playwright-core';
+import { chromium, type Page } from 'playwright-core';
 import { minimalChildEnv } from '@agentic-video/core';
+import { probeWebGPU } from '@agentic-video/renderer-three';
 
 /** Grafik-Modus von Chromium: `swiftshader` (CPU, Standard) oder `native` (ANGLE auf der Host-GPU). */
 export type BrowserGpuMode = 'swiftshader' | 'native';
@@ -93,44 +94,50 @@ export interface PageGraphics {
    * die Standardgrenzen des Geräts (`maxTextureDimension2D` 8192) und ist davon unabhängig.
    */
   readonly webgl2MaxTextureSize: number;
-  /** Beschreibung des WebGPU-Adapters, `no adapter` oder `unavailable`. */
+  /**
+   * Beschreibung des WebGPU-Adapters, `no adapter`, `unavailable` oder `<adapter> (unusable: …)`,
+   * wenn der Mini-Render auf dem Pfad von Three.js scheitert.
+   */
   readonly webgpu: string;
-  /** Liefert `navigator.gpu.requestAdapter()` einen Adapter? Genau diese Prüfung nutzt `three` bei `backend: 'auto'`. */
+  /** Gelingt der WebGPU-Mini-Render (`probeWebGPU`)? Genau diese Prüfung nutzt `three` bei `backend: 'auto'`. */
   readonly webgpuAvailable: boolean;
 }
 
+/** WebGL2-Teil von {@link PageGraphics}. */
+export type PageWebGL2 = Pick<PageGraphics, 'webgl2' | 'webgl2MaxTextureSize'>;
+
 /**
- * Läuft in der Seite (per `page.evaluate`): WebGL2-Renderer und WebGPU-Adapter. Die Funktion darf
- * nichts von außen referenzieren, weil Playwright nur ihren Quelltext überträgt.
+ * Läuft in der Seite (per `page.evaluate`): WebGL2-Renderer und `MAX_TEXTURE_SIZE`. Die Funktion
+ * darf nichts von außen referenzieren, weil Playwright nur ihren Quelltext überträgt.
  *
  * @example
  * ```ts
- * const info = await page.evaluate(pageGraphics); // { webgl2: 'ANGLE (…)', webgl2MaxTextureSize: 8192, webgpu: '…', webgpuAvailable: true }
+ * const gl = await page.evaluate(pageWebGL2); // { webgl2: 'ANGLE (…)', webgl2MaxTextureSize: 8192 }
  * ```
  */
-export async function pageGraphics(): Promise<PageGraphics> {
+export function pageWebGL2(): PageWebGL2 {
   const gl = document.createElement('canvas').getContext('webgl2');
   const info = gl?.getExtension('WEBGL_debug_renderer_info');
   const webgl2 = gl !== null && info !== null && info !== undefined ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : gl !== null ? 'WebGL2' : 'unavailable';
   const maxTexture: unknown = gl?.getParameter(gl.MAX_TEXTURE_SIZE);
   const webgl2MaxTextureSize = typeof maxTexture === 'number' ? maxTexture : 0;
-  let webgpu = 'unavailable';
-  let webgpuAvailable = false;
-  const g: unknown = Reflect.get(navigator, 'gpu');
-  if (typeof g === 'object' && g !== null && 'requestAdapter' in g && typeof g.requestAdapter === 'function') {
-    let adapter: unknown = null;
-    try {
-      adapter = await Reflect.apply(g.requestAdapter, g, []);
-    } catch (error) {
-      // Wie `webgpuAvailable()` in renderer-three: ein Fehler heißt „kein WebGPU“.
-      if (!(error instanceof Error)) throw error;
-    }
-    webgpuAvailable = adapter !== null && adapter !== undefined;
-    const details: unknown = typeof adapter === 'object' && adapter !== null ? Reflect.get(adapter, 'info') : undefined;
-    const field = (k: string): string => (typeof details === 'object' && details !== null ? String(Reflect.get(details, k) ?? '') : '');
-    webgpu = webgpuAvailable ? `${field('vendor')} ${field('architecture')}`.trim() || 'adapter' : 'no adapter';
-  }
-  return { webgl2, webgl2MaxTextureSize, webgpu, webgpuAvailable };
+  return { webgl2, webgl2MaxTextureSize };
+}
+
+/**
+ * Grafik-Fähigkeiten einer geladenen Seite: WebGL2 ({@link pageWebGL2}) und WebGPU per Mini-Render
+ * auf dem Pfad von Three.js (`probeWebGPU` aus `@agentic-video/renderer-three`, dieselbe Prüfung
+ * wie `backend: 'auto'` im Renderer). Ein Adapter mit unvollständiger API zählt als nicht verfügbar.
+ *
+ * @example
+ * ```ts
+ * const info = await readPageGraphics(page); // { webgl2: 'ANGLE (…)', webgl2MaxTextureSize: 8192, webgpu: '…', webgpuAvailable: true }
+ * ```
+ */
+export async function readPageGraphics(page: Pick<Page, 'evaluate'>): Promise<PageGraphics> {
+  const gl = await page.evaluate(pageWebGL2);
+  const gpu = await page.evaluate(probeWebGPU);
+  return { ...gl, webgpu: gpu.adapter, webgpuAvailable: gpu.available };
 }
 
 /** Ergebnis von {@link probeBrowserGraphics}. */
@@ -172,7 +179,7 @@ export async function probeBrowserGraphics(options: { readonly baseArgs: readonl
     try {
       const page = await browser.newPage();
       await page.goto(`http://127.0.0.1:${String(port)}/`);
-      const r = await page.evaluate(pageGraphics);
+      const r = await readPageGraphics(page);
       return { chromium: browser.version(), mode, ...r };
     } finally {
       await browser.close();

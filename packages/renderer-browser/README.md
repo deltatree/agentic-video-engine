@@ -33,6 +33,11 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
 2. Umgebungsvariable `OPENVIDEO_CHROMIUM`.
 3. `chromium.executablePath()` aus `playwright-core`.
 
+Im Cache-Schl체ssel (`versions().chromium`) steht ohne eigenen Pfad die zu playwright-core geh철rende Version
+(`expectedChromiumVersion`, Schl체ssel unver채ndert). Mit eigenem Pfad liest `chromiumVersionFor` einmal je Pfad die
+tats채chliche Version aus `<chrome> --version`, ohne Chromium zu starten; nennt das Programm keine, gilt ein
+Fingerabdruck der Programmdatei (`custom-<hash>`).
+
 ## Vertrag f체r HTML-Inhalte
 
 - Jede `html`-Node l채uft in einem eigenen iframe (`srcdoc`). Styles wirken nur in dieser Node.
@@ -85,8 +90,12 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
   nativem ANGLE (`CHROMIUM_NATIVE_GPU_ARGS`: `--use-angle=default --ignore-gpu-blocklist --enable-gpu`). HTML rastert
   weiter auf der CPU. Die Browser-Backends tragen dann `browser-gpu: native` in `versions()` (Cache-Schl체ssel);
   im Standardmodus fehlt der Eintrag.
-- `host.graphics()` bzw. `lazy.prepareGraphics()` pr체ft auf der Render-Seite WebGL2 (`MAX_TEXTURE_SIZE`) und den
-  WebGPU-Adapter. Danach tr채gt das `three`-Backend `three-webgpu` (`available`/`unavailable`) und `three-max-texture`
+- `host.graphics()` bzw. `lazy.prepareGraphics()` pr체ft auf der Render-Seite WebGL2 (`MAX_TEXTURE_SIZE`) und WebGPU
+  per Mini-Render auf dem Pfad von Three.js (`readPageGraphics` mit `probeWebGPU` aus `@agentic-video/renderer-three`:
+  Ger채t, Textur, Ansicht mit dem Deskriptor von Three.js inklusive `swizzle`, Render-Pass, R체cklesen). Ein Adapter mit
+  unvollst채ndiger API z채hlt als `unavailable`; `backend: 'auto'` nutzt dann WebGL2. Mit `graphicsCache` (z. B. Cache-Ebene
+  `layer`) liegt das Ergebnis je Chromium-Version, Schaltern und Modus (im GPU-Modus zus채tzlich `hostGpu`) im Speicher;
+  ein Treffer startet kein Chromium. Danach tr채gt das `three`-Backend `three-webgpu` (`available`/`unavailable`) und `three-max-texture`
   in `versions()`: So steht die WebGPU/WebGL2-Wahl von `backend: 'auto'` (Regel: `threeBackendFor`) und die
   Texturverkleinerung im Cache-Schl체ssel.
 - `lazy.runtimeVersions()` liefert nach dem Start die tats채chliche Chromium-Version (`browser.version()`); vorher gilt

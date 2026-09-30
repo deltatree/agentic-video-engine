@@ -27,6 +27,9 @@ const PANELS: Readonly<Record<string, string>> = {
   missing: './missing.mjs',
 };
 
+/** Diese Angaben lehnt schon `registerStudioPanel` ab (Endung bzw. Pfad außerhalb des Plugins). */
+const REJECTED_AT_REGISTER: ReadonlySet<string> = new Set(['text', 'json', 'html', 'outside']);
+
 beforeAll(async () => {
   const root = mkdtempSync(join(tmpdir(), 'ov-panel-csp-'));
   const pluginDir = join(root, 'plugin');
@@ -46,12 +49,15 @@ beforeAll(async () => {
       version: '1.0.0',
       permissions: [],
       setup(ctx) {
-        for (const [id, module] of Object.entries(PANELS)) ctx.registerStudioPanel({ id, title: id, module });
+        for (const [id, module] of Object.entries(PANELS)) if (!REJECTED_AT_REGISTER.has(id)) ctx.registerStudioPanel({ id, title: id, module });
       },
     },
     {},
     { origin: join(pluginDir, 'index.mjs') },
   );
+  // `registerStudioPanel` lehnt falsche Endungen und Pfade außerhalb früh ab (Politur P1). Der Server
+  // prüft trotzdem selbst (Verteidigung in der Tiefe): diese Panels direkt ins Register legen.
+  for (const id of REJECTED_AT_REGISTER) registry.studioPanels.set(id, { id, title: id, module: PANELS[id] ?? '', plugin: 'panels' });
   services = testServices(mkdtempSync(join(tmpdir(), 'ov-panel-csp-data-')), { registry });
   const created = await invokeOperation(OPERATIONS, 'project.create', { name: 'Panels', project: smallProject() }, { services, via: 'test' });
   if (!created.ok || !isRecord(created.result) || typeof created.result['projectId'] !== 'string') throw new Error('project.create failed');

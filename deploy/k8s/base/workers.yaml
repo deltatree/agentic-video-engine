@@ -125,6 +125,10 @@ spec:
           envFrom:
             - configMapRef: { name: openvideo-config }
           env:
+            # WebGL/WebGPU von three und pixi auf der GPU (nativer ANGLE statt SwiftShader, ADR 0019).
+            # Nicht bitgleich zu CPU-Workern; der Modus steht im Cache-Schlüssel (browser-gpu: native).
+            - name: OPENVIDEO_BROWSER_GPU
+              value: "1"
             - name: OPENVIDEO_WORKER_TOKEN
               valueFrom:
                 secretKeyRef: { name: openvideo-secrets, key: worker-token }

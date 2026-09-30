@@ -96,6 +96,7 @@ Zeitfenster und Übergänge stehen an der Node:
 Alle 2D-Nodes haben `x`, `y`, `rotation`, `scale` (`{x,y}`), `skew`, `origin`, `opacity`, `zIndex` (animierbare Zeichenreihenfolge unter Geschwistern), `blendMode`, `filters`, `shadow`, `mask`, `motionPath`.
 Blend Mode, Maske und Wipe/Iris wirken auch über Backend-Grenzen (z. B. Text mit `overlay` über `scene3d`); animierte GIF/APNG in `image` laufen als Video.
 Vollständige Felder: `packages/schema/openvideo.schema.json`. Render-Semantik: `docs/reference/node-semantics.md`.
+Ein gültiges JSON-Beispiel je Node-Typ und die Typen aller Properties liefert `capabilities.get` mit `{ "nodeType": "<typ>" }` (Felder `example`, `propertyTypes`); alle Beispiele stehen auch in `docs/reference/node-semantics.md` (Abschnitt 3).
 
 ## 6. Gezielt ändern (Patches)
 
@@ -234,3 +235,4 @@ Beispiel Anime.js: `{ "projectId": "demo", "format": "anime", "content": { "entr
 ## 11. Rezepte
 
 Siehe `docs/guide/recipes.md`: Headline einblenden, Kamera fahren, Feature-Liste synchron zum Voiceover, Szenenwechsel, Datenvisualisierung, 3D-Produkt, Code-Tutorial, transparentes Lower Third.
+Fünf vollständige Beispielprojekte mit README und Test liegen in `examples/` (`product-launch`, `explainer-tsx`, `data-story`, `3d-showcase`, `social-vertical`); `examples/mcp.json` ist eine MCP-Client-Konfiguration.

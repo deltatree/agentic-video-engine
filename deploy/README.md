@@ -13,7 +13,7 @@ Vorwissen: Docker, `kubectl` und Kustomize (in `kubectl` eingebaut).
 | `studio` | Web-Oberfläche mit eigener API. | `openvideo-studio` |
 | `coordinator` | Verteilt Chunks an Worker. Eine Queue je Worker-Art. | `openvideo-base` |
 | `worker-cpu` | Rendert Chunks auf der CPU. | `openvideo-worker` |
-| `worker-gpu` | Rendert Chunks auf einer NVIDIA-GPU. | `openvideo-render-gpu` |
+| `worker-gpu` | Rendert Chunks auf einer NVIDIA-GPU (NVENC; WebGL/WebGPU mit `OPENVIDEO_BROWSER_GPU=1`). | `openvideo-render-gpu` |
 | `worker-blender` | Rendert Chunks mit Blender-Nodes. | `openvideo-blender` |
 | `object-storage` | Gemeinsamer S3-Speicher (SeaweedFS) für Projekte und Frames. | `chrislusf/seaweedfs` (Digest) |
 
@@ -261,6 +261,7 @@ Weitere Variablen in den Deployments:
 | `OPENVIDEO_CACHE_DIR` | alle | Frame-Cache, fest `/cache` (emptyDir). |
 | `OPENVIDEO_WORKSPACE` | `api` | Projekte und Jobs, `/workspace` (PVC). |
 | `OPENVIDEO_COORDINATOR_URL` | `api` | Video-Renders gehen als Chunks an diese Queue, Standard `http://coordinator:8080`. Ohne die Variable rendert die API selbst. |
+| `OPENVIDEO_TRUST_PROXY` | `api`, `studio` (optional) | `1` vertraut `X-Forwarded-Proto` jeder Gegenstelle (TLS-Ingress auf einem anderen Knoten), z. B. für die `https`-Origin in der CSP der Plugin-Panels. Ohne: nur von Loopback. Entspricht `--trust-proxy` von `serve`/`dev`/`studio`. |
 | `OPENVIDEO_SUBMIT_TOKEN` | `api`, `coordinator` | Token der Rolle `submit` (Jobs einreichen und abfragen). |
 | `OPENVIDEO_WORKER_TOKEN` | Worker, `coordinator` | Token der Rolle `worker` (`lease`, `heartbeat`, `complete`, `fail`). |
 | `OPENVIDEO_METRICS_TOKEN` | `coordinator` | Token der Rolle `metrics` (KEDA, nur `GET /v1/queue`). |
@@ -270,7 +271,7 @@ Weitere Variablen in den Deployments:
 | `OPENVIDEO_ENCODER_THREADS` | `api` | Threads des Video-Encoders. Standard: fest 4, damit die Videodatei über Maschinen hinweg bitgleich ist. `auto` nutzt die freien Kerne neben den Render-Prozessen (schneller, Datei nicht mehr maschinenübergreifend bitgleich; ADR 0026). |
 | `OPENVIDEO_CACHE_MAX_BYTES` | `api`, Worker | Obergrenze des lokalen Caches; nach jedem Video-Render räumt OpenVideo die ältesten Einträge bis dahin auf. Ohne Wert: kein Aufräumen. |
 | `OPENVIDEO_CHUNK_TIMEOUT_MS` | `api` | Höchstdauer eines Chunks auf einem lokalen Worker-Prozess; danach wird der Worker beendet und der Chunk wiederholt. |
-| `OPENVIDEO_BROWSER_GPU` | `worker-gpu` (optional) | `1` startet Chromium mit nativem ANGLE auf der GPU statt SwiftShader (WebGL/WebGPU von `three` und `pixi`). Nicht bitgleich zu CPU-Renders; der Modus steht im Cache-Schlüssel und im Manifest (ADR 0019). Standard: aus. |
+| `OPENVIDEO_BROWSER_GPU` | `worker-gpu` (gesetzt: `1`) | `1` startet Chromium mit nativem ANGLE auf der GPU statt SwiftShader (WebGL/WebGPU von `three` und `pixi`). Nicht bitgleich zu CPU-Renders; der Modus steht im Cache-Schlüssel und im Manifest (ADR 0019). Die Basis setzt es nur am Deployment `worker-gpu` (nicht in der ConfigMap); `deploy/test/check-manifests.py` prüft das. Sonst: aus. |
 | `OPENVIDEO_OUTPUT_CACHE` | `api` | `0` schaltet die Wiederverwendung ganzer Ausgabedateien ab (Cache-Ebene `encoding`, ADR 0021). Standard: an. |
 
 Erreichen Sie API oder Studio über einen Ingress-Namen, ergänzen Sie ihn in Ihrem Overlay:

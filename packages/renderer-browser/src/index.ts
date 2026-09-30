@@ -10,7 +10,7 @@
  * const image = await browser.renderLayer(request);
  * ```
  */
-export { createBrowserHost, CHROMIUM_ARGS, CHROMIUM_GRAPHICS_ARGS, chromiumEnv, pageError, probeOsSandbox, type BrowserHost, type BrowserHostOptions } from './host.js';
+export { createBrowserHost, chromiumExecutable, CHROMIUM_ARGS, CHROMIUM_GRAPHICS_ARGS, chromiumEnv, pageError, probeOsSandbox, type BrowserHost, type BrowserHostOptions } from './host.js';
 export {
   CHROMIUM_NATIVE_GPU_ARGS,
   browserGpuMode,
@@ -18,7 +18,8 @@ export {
   chromiumGpuEnv,
   describeHostGpu,
   graphicsArgsFor,
-  pageGraphics,
+  pageWebGL2,
+  readPageGraphics,
   probeBrowserGraphics,
   probeHostGpu,
   type BrowserGpuMode,
@@ -26,9 +27,10 @@ export {
   type HostGpu,
   type HostGpuProbeTools,
   type PageGraphics,
+  type PageWebGL2,
 } from './gpu.js';
 export { createBrowserBackends, PIXI_NODE_TYPES, type BrowserBackends } from './backends.js';
 export { checkHtmlNode, HTML_CAPABILITIES, type HtmlCheckOptions } from './html-check.js';
 export type { BrowserLayerKind, BrowserLayerPayload, OpenVideoPageApi } from './protocol.js';
-export { createLazyBrowserBackends, expectedChromiumVersion, type LazyBrowserBackends } from './lazy.js';
+export { chromiumVersionFor, createLazyBrowserBackends, expectedChromiumVersion, type GraphicsProbeStore, type LazyBrowserBackends, type LazyBrowserBackendsOptions } from './lazy.js';
 export { threeBackendFor } from '@agentic-video/renderer-three';

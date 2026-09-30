@@ -4,10 +4,13 @@
  */
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { OpenVideoError } from '@agentic-video/schema';
 
 /**
  * Serialisiert einen Wert als kanonisches JSON: Objektschlüssel sortiert, keine Leerzeichen.
  * `undefined` in Objekten wird ausgelassen, in Arrays wird es zu `null` (wie JSON.stringify).
+ * Nicht-endliche Zahlen (`OV_HASH_NON_FINITE`) und Funktionen, Symbole, BigInt
+ * (`OV_HASH_UNSUPPORTED`) ergeben einen {@link OpenVideoError}.
  *
  * @example
  * ```ts
@@ -17,7 +20,17 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value === 'boolean' || typeof value === 'string') return JSON.stringify(value);
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new TypeError(`Cannot hash non-finite number ${String(value)}`);
+    // Erreichbar über berechnete Werte (Ausdrücke, Plugins, TSX): strukturierter Fehler statt TypeError.
+    if (!Number.isFinite(value)) {
+      throw new OpenVideoError({
+        code: 'OV_HASH_NON_FINITE',
+        errorClass: 'ValidationError',
+        problem: `Cannot hash the non-finite number ${String(value)}; cache keys and content hashes need finite numbers.`,
+        received: String(value),
+        expected: 'a finite number',
+        suggestions: ['Check expressions and computed values for division by zero or overflow (NaN, Infinity).', 'Clamp or replace the value before it reaches the project, e.g. Number.isFinite(v) ? v : 0.'],
+      });
+    }
     return JSON.stringify(Object.is(value, -0) ? 0 : value);
   }
   if (Array.isArray(value)) return `[${value.map((v: unknown) => (v === undefined ? 'null' : canonicalJson(v))).join(',')}]`;
@@ -28,7 +41,15 @@ export function canonicalJson(value: unknown): string {
       .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalJson(v)}`).join(',')}}`;
   }
-  throw new TypeError(`Cannot hash value of type ${typeof value}`);
+  // Funktionen, Symbole und BigInt kommen z. B. aus Plugins oder TSX-Props; sie sind keine Daten.
+  throw new OpenVideoError({
+    code: 'OV_HASH_UNSUPPORTED',
+    errorClass: 'ValidationError',
+    problem: `Cannot hash a value of type ${typeof value}; only JSON data and bytes can be hashed.`,
+    received: typeof value,
+    expected: 'null, boolean, number, string, array, object or Uint8Array',
+    suggestions: ['Pass plain JSON data (no functions, symbols or bigint values) in props, plugin results and cache inputs.', typeof value === 'bigint' ? 'Convert the bigint to a number or string first.' : 'Replace the value with data that describes it, e.g. a name or an id.'],
+  });
 }
 
 /** SHA-256 als Hex-Text. */
