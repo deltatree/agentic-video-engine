@@ -54,6 +54,14 @@ Frame, Asset-Maßen, GPU-Maximum und Vorschlägen (Auftrag §40). Mit `textureDo
 `scene3d`-Node oder `new ThreeLayerRenderer({ downscaleTextures: true })` wird die Textur stattdessen
 seitenverhältnistreu auf die Grenze verkleinert (die Node-Property hat Vorrang).
 
+Beim Video-Render gibt der Browser-Host jedem `three`-Layer das Ergebnis der Grafik-Probe mit, das im
+Cache-Schlüssel steht (`input.graphics`: `webgpu`, `maxTextureSize`; ADR 0019, Nachtrag 2026-09-30).
+`backend: 'auto'` richtet sich dann danach, und für WebGL2 gilt genau die Texturgrenze der Probe
+(`threeTextureLimit`), nicht die live gemessene. Erlaubt die GPU weniger als die Probe meldet, wirft der
+Renderer `OV_THREE_GRAPHICS_MISMATCH`, statt still anders zu rendern (Abhilfe: gespeicherte Probe mit
+`openvideo cache clear --tier layer` löschen oder auf der Maschine der Probe rendern). Ohne Probe (Studio,
+direkte Nutzung) prüft der Renderer wie bisher live.
+
 ## Einschränkungen
 
 - GLSL-`ShaderMaterial` läuft nur unter WebGL2 (`OV_THREE_BACKEND_FEATURE`).

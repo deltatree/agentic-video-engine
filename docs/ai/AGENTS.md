@@ -279,6 +279,7 @@ Important codes:
 | `OV_IMPORT_LOSSY` | An import dropped something (warning) | Rebuild the effect with IR means |
 | `OV_ASR_UNAVAILABLE` | No speech recognition installed | Install whisper.cpp, or write cues yourself |
 | `OV_PLUGIN_NOT_ALLOWED` | The project has `settings.plugins`, the host does not allow plugins | `--trusted` or `OPENVIDEO_ALLOW_PLUGINS=1` |
+| `OV_THREE_GRAPHICS_MISMATCH` | The GPU allows smaller textures than the cached graphics probe in the key | `openvideo cache clear --tier layer`, or render on the machine of the probe |
 
 ## 8. Components and templates
 

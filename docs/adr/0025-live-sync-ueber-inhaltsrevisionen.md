@@ -32,7 +32,8 @@ keine Dateien und ignorierte `--open`.
    die Meldung gilt danach als geprüft. Vorher führte ein veralteter Anfangsstand dazu, dass Undo verloren ging
    und das Studio endlos neu lud.
    **Wiederverbinden:** mit wachsender Wartezeit (1 s … 15 s); sie fällt erst zurück, wenn eine Verbindung
-   ein Ereignis geliefert hat. `dispose` beendet Strom und Wiederverbindung endgültig.
+   nach dem Anfangsstand ein weiteres Ereignis geliefert hat oder mindestens `maxDelayMs` offen war (Nachtrag
+   unten). `dispose` beendet Strom und Wiederverbindung endgültig.
    **Ende der Beobachtung:** Wird der Projektordner gelöscht oder ersetzt (neuer Inode) oder meldet der
    Watcher einen Fehler, schließt der Server die betroffenen Ströme; der Client verbindet neu und beobachtet
    den neuen Ordner, statt stumm „live“ zu bleiben.
@@ -51,3 +52,17 @@ keine Dateien und ignorierte `--open`.
   Patches und bleiben meist gültig.
 - Ohne Dateisystem-Ereignisse (manche Netzlaufwerke) bleiben Live-Updates aus; das Studio zeigt „Offline“
   bzw. keine Aktualisierung und funktioniert sonst unverändert.
+
+## Nachtrag 2026-09-30 (abschließendes Review, M4/m5)
+
+- **Backoff beim Nachlesen (M4):** Scheitert das Nachlesen von `project.json` nach einer gemeldeten Revision
+  (Netzfehler, Server weg), bleibt die Meldung vorgemerkt, und das Studio prüft erneut mit wachsender
+  Wartezeit: erst nach 1 s, dann verdoppelt bis höchstens 30 s (`StudioOptions.recheckDelay` mit `minMs`,
+  `maxMs`). Solange ein solcher Versuch wartet, prüft nur er; weitere Ereignisse lösen kein zusätzliches
+  Nachlesen aus. Ein erfolgreiches Nachlesen setzt die Wartezeit zurück, `dispose` bricht den Versuch ab.
+  Vorher wiederholte ein dauerhaft scheiterndes Nachlesen sich ohne Pause (im Mikrotask-Takt).
+- **Rücksetzen der Reconnect-Wartezeit (m5):** Der Server schickt bei jeder Verbindung zuerst den aktuellen
+  Stand; dieses Anfangsereignis zählt nicht mehr als Beleg, dass die Verbindung trägt. Die Wartezeit fällt
+  erst auf 1 s zurück, wenn die Verbindung danach ein weiteres Ereignis geliefert hat oder mindestens
+  `maxDelayMs` (Standard 15 s) offen war. Ein Server, der Ströme nach dem Anfangsstand sofort schließt,
+  erzeugt so keine Sekundentakt-Schleife mehr.

@@ -18,7 +18,8 @@
 | `graphics.threeBackends` | Gewählte Three.js-Backends der gerenderten `scene3d`-Nodes (`webgpu`/`webgl2`; `auto` nur ohne Probe). |
 | `voiceHashes` | Stimmen der Tonspur: ID → Cache-Schlüssel (Provider, Version, Text, Einstellungen). |
 | `encoder` | Encoder und Argumente. Ohne `hardwareAcceleration` im Profil immer CPU (`libx264` …). |
-| `cache.output` | Cache-Ebene `encoding`: `hit` (Bytes eines früheren identischen Renders), `miss` oder `off` (ADR 0021). |
+| `cache.output` | Cache-Ebene `encoding`: `hit` (Bytes eines früheren identischen Renders), `miss` oder `off` (ADR 0021). Der Schlüssel (`output-2`) umfasst die Frame-Schlüssel aller Ausgabe-Frames, den Hash der Tonspur, die Encoder-Einstellungen inklusive Threads, bei `hardware` ≠ `none` die verfügbaren Hardware-Encoder und den Fingerabdruck des Runners (`describeChunkRunner`). `off` bei `reuseOutput: false` oder `OPENVIDEO_OUTPUT_CACHE=0`, für Bildfolgen, entfernte Worker (`OPENVIDEO_COORDINATOR_URL`), Runner ohne Beschreibung und bei `hardware` ≠ `none` ohne Auskunft über Hardware-Encoder. |
+| `stages` | Sekunden je gelaufener Stufe (z. B. `audioPipeline`, `outputKey`, `outputCache`, `renderFrames`, `ffmpeg`). `outputKey` wertet die Frame-Schlüssel aller Ausgabe-Frames für den Schlüssel des Ausgabe-Caches aus (Szenen-Auswertung ohne Rendern); die Stufe fehlt, wenn der Ausgabe-Cache aus ist. |
 
 ## Kurzmanifest (`kind: "frames"`)
 
