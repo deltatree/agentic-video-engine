@@ -71,7 +71,7 @@ export async function loadProject(path: string, options: { readonly sources?: So
     return { dir: located.dir, entry, project: compiled.project };
   }
   const raw: unknown = JSON.parse(await readFile(file, 'utf8'));
-  if (!isRecord(raw)) throw new OpenVideoError({ code: 'OV_PROJECT_INVALID', errorClass: 'ProjectError', problem: `${file} is not a JSON object.`, suggestions: [] });
+  if (!isRecord(raw)) throw new OpenVideoError({ code: 'OV_PROJECT_INVALID', errorClass: 'ProjectError', problem: `${file} is not a JSON object.`, suggestions: ['A project.json must contain one object: { "schemaVersion": "1.0.0", "compositions": [ … ] }.', 'Create a fresh project with `openvideo create <name>` and compare.'] });
   return { dir: located.dir, entry, project: raw };
 }
 

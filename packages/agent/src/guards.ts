@@ -19,10 +19,72 @@ function collectStrings(value: unknown, out: string[]): void {
   else if (isRecord(value)) for (const v of Object.values(value)) collectStrings(v, out);
 }
 
+/** Benannte HTML-Entities, mit denen sich die Muster sonst tarnen ließen (N6). */
+const NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  amp: '&',
+  colon: ':',
+  sol: '/',
+  bsol: '\\',
+  equals: '=',
+  lpar: '(',
+  rpar: ')',
+  semi: ';',
+  comma: ',',
+  period: '.',
+  excl: '!',
+  num: '#',
+  tab: '\t',
+  newline: '\n',
+  nbsp: ' ',
+};
+
+/**
+ * Dekodiert HTML-Entities (`&lt;`, `&#60;`, `&#x3c;`, auch ohne Semikolon) wie ein Browser.
+ * Mehrfach kodierte Werte (`&amp;lt;`) werden bis zu dreimal aufgelöst, damit auch sie auffallen.
+ *
+ * @example
+ * ```ts
+ * decodeHtmlEntities('&lt;script&gt;'); // '<script>'
+ * ```
+ */
+export function decodeHtmlEntities(text: string): string {
+  let current = text;
+  for (let round = 0; round < 3; round++) {
+    const next = current.replace(/&(#x[0-9a-f]+|#[0-9]+|[a-z]+);?/giu, (match, body: string) => {
+      if (body.startsWith('#')) {
+        const hex = body[1] === 'x' || body[1] === 'X';
+        const code = Number.parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+        return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+      }
+      return NAMED_ENTITIES[body.toLowerCase()] ?? match;
+    });
+    if (next === current) break;
+    current = next;
+  }
+  return current;
+}
+
+/**
+ * Prüft einen String roh und dekodiert. Browser entfernen Tab, Zeilenumbruch und NUL in
+ * URLs (`java&#9;script:`); darum wird auch die Fassung ohne diese Zeichen geprüft.
+ */
+function looksLikeScript(text: string): boolean {
+  if (SCRIPT_PATTERN.test(text)) return true;
+  const decoded = decodeHtmlEntities(text);
+  // Steuerzeichen gezielt entfernen, wie es der URL-Parser des Browsers tut.
+  // eslint-disable-next-line no-control-regex
+  const stripped = decoded.replace(/[\t\n\r\u0000]/gu, '');
+  return SCRIPT_PATTERN.test(decoded) || SCRIPT_PATTERN.test(stripped);
+}
+
 function hasScript(value: unknown): boolean {
   const strings: string[] = [];
   collectStrings(value, strings);
-  return strings.some((s) => SCRIPT_PATTERN.test(s));
+  return strings.some(looksLikeScript);
 }
 
 /**

@@ -38,5 +38,6 @@ Ein zweiter Lauf rendert nur geänderte Frames neu. Der Rest kommt aus dem Cache
 ## Für Agents
 
 - Agent API: `openvideo serve --port 7788` (HTTP, `GET /v1/operations`).
-- MCP: `openvideo mcp` (stdio). Beispiel für Claude Code: `claude mcp add openvideo -- openvideo mcp --workspace ~/ov`.
+- MCP: `openvideo mcp` (stdio). Beispiel für Claude Code: `claude mcp add openvideo -- openvideo mcp --workspace ~/ov`, für ein bestehendes Projekt `openvideo mcp --project ./hello`.
+- Jede Operation auch ohne Server: `openvideo op <name> --input '<json>'` (Liste: `openvideo op --list`).
 - Lies danach [docs/ai/AGENTS.md](../ai/AGENTS.md).

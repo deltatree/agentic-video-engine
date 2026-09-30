@@ -13,3 +13,4 @@ export * from './cli.js';
 export * from './project.js';
 export * from './doctor.js';
 export * from './sources.js';
+export * from './ops.js';

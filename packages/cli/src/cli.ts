@@ -12,7 +12,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { isLoopbackHost, startAgentServer, type AgentServices } from '@agentic-video/agent';
+import { OPERATIONS, isLoopbackHost, startAgentServer, type AgentServices, type InvocationResult } from '@agentic-video/agent';
 import { createCache, storeFromEnv, CACHE_TIERS, type CacheTierName } from '@agentic-video/cache';
 import {
   CLI_NAME,
@@ -35,6 +35,7 @@ import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
 import { createLocalServices, htmlScriptsAllowed, processRunner, type LocalServices } from './services.js';
 import { createSourceService } from './sources.js';
+import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
 
 /** Ein- und Ausgabe der CLI (für Tests austauschbar). */
 export interface CliIo {
@@ -61,13 +62,17 @@ Commands:
   render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>)
   render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
+  op <name>             Run any Agent API operation, same as HTTP/MCP (--input <json|@file>; op --list)
+  patch [path]          Apply semantic patches (--input <json|@file> with a patch list; --dry-run)
+  contact-sheet [path]  Render several frames into one image (--frames 0,2s,4s | --count 8 --out sheet.png)
+  import <file> [path]  Import SVG, Lottie, glTF, HTML, anime/motion-canvas JSON (--format --id-prefix)
   doctor                Check the environment and suggest fixes
   benchmark             Run reproducible benchmarks (--scenario --resolution --frames --compare)
   cache <stats|clear|prune>   Manage the cache (--tier frame --max-bytes 1e9)
   fonts [list|check] [path]   List or check fonts
   assets <list|import|inspect> [path]   Manage assets
-  serve                 Start the Agent API (HTTP) with the Studio
-  mcp                   Start the MCP server on stdio
+  serve                 Start the Agent API (HTTP) with the Studio (--project <dir> opens a project)
+  mcp                   Start the MCP server on stdio (--project <dir> opens a project)
   migrate <file>        Upgrade an older project file (--write)
   worker                Start a render worker (--stdio or --coordinator <url>)
   coordinator           Start the render coordinator for remote workers (--port --journal)
@@ -78,6 +83,11 @@ Server options (serve, dev, studio):
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
   --workers <n>          Render videos with n local worker processes
+
+Project and workspace (serve, mcp, op):
+  --project <dir>        Open this project folder (project.open may open folders inside it)
+  --workspace <dir>      Workspace folder (or OPENVIDEO_WORKSPACE; default .openvideo-workspace)
+  OPENVIDEO_PROJECT_ROOTS  Comma-separated folders that project.open may open
 
 Global options:
   --json      Machine-readable output
@@ -246,6 +256,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         scenario: { type: 'string' },
         resolution: { type: 'string' },
         frames: { type: 'string' },
+        input: { type: 'string', short: 'i' },
+        project: { type: 'string', short: 'p' },
+        list: { type: 'boolean' },
+        'dry-run': { type: 'boolean' },
+        'id-prefix': { type: 'string' },
+        count: { type: 'string' },
       },
     });
   } catch (error) {
@@ -444,6 +460,63 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
           return 0;
         });
       }
+      case 'op':
+      case 'patch':
+      case 'contact-sheet':
+      case 'import': {
+        if (command === 'op' && values.list === true) {
+          const ops = [...OPERATIONS.values()];
+          out(ops.map((o) => ({ name: o.name, summary: o.summary, job: o.job === true, example: o.example.input })), ops.map((o) => `${o.name.padEnd(24)} ${o.summary}`).join('\n'));
+          return 0;
+        }
+        // Projektkontext: --project, sonst bei Kurzbefehlen der Pfad, bei `op` der aktuelle Ordner, falls er ein Projekt ist.
+        const importFile = command === 'import' ? rest[0] : undefined;
+        const pathArg = command === 'op' ? undefined : command === 'import' ? rest[1] : rest[0];
+        const projectArg = values.project ?? (command === 'op' ? (values.workspace === undefined && isProjectDir(io.cwd) ? '.' : undefined) : (pathArg ?? '.'));
+        const context = await projectContext({ project: projectArg, workspace: values.workspace, cwd: io.cwd, env: io.env });
+        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, allowOutsidePaths: trusted, env: io.env, ...offline });
+        const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
+        try {
+          const projectId = await context.link(services);
+          let name: string;
+          let input: unknown;
+          if (command === 'op') {
+            if (rest[0] === undefined) throw new UsageError('Usage: openvideo op <operation> [--input <json|@file>] [--project <dir>]  (openvideo op --list)');
+            name = rest[0];
+            input = withDefaults(name, await parseInputArg(values.input, io.cwd), projectId);
+          } else if (command === 'patch') {
+            if (values.input === undefined) throw new UsageError('Usage: openvideo patch [path] --input <json|@file>  (a patch list, or { "patches": [...] })');
+            const raw = await parseInputArg(values.input, io.cwd);
+            name = 'composition.patch';
+            input = withDefaults(name, { ...(Array.isArray(raw) ? { patches: raw } : isRecord(raw) ? raw : {}), ...(values['dry-run'] === true ? { dryRun: true } : {}) }, projectId);
+          } else if (command === 'contact-sheet') {
+            const count = num(values.count, 'count');
+            name = 'preview.contactSheet';
+            input = withDefaults(name, { ...(values.frames !== undefined ? { frames: values.frames.split(',').map((f) => (/^[0-9]+$/u.test(f.trim()) ? Number(f.trim()) : f.trim())) } : {}), ...(count !== undefined ? { count } : {}), ...(values.composition !== undefined ? { compositionId: values.composition } : {}) }, projectId);
+          } else {
+            if (importFile === undefined) throw new UsageError('Usage: openvideo import <file> [path] [--format svg|lottie|gltf|html|anime|motion-canvas] [--id-prefix logo] [--dry-run]');
+            name = 'project.import';
+            const parts = await importInput(resolve(io.cwd, importFile), context.projectDir ?? io.cwd, { format: values.format, idPrefix: values['id-prefix'] });
+            input = withDefaults(name, { ...parts, ...(values['dry-run'] === true ? { dryRun: true } : {}), ...(values.composition !== undefined ? { compositionId: values.composition } : {}) }, projectId);
+          }
+          const r: InvocationResult = await runOperation(services, name, input);
+          if (!r.ok) throw new OpenVideoError(r.error);
+          const result = r.result;
+          // Kontaktbogen: auf Wunsch an einen eigenen Ort kopieren.
+          if (command === 'contact-sheet' && values.out !== undefined && isRecord(result) && isRecord(result['image']) && typeof result['image']['file'] === 'string') {
+            const target = resolve(io.cwd, values.out);
+            await mkdir(dirname(target), { recursive: true });
+            await writeFile(target, await readFile(result['image']['file']));
+            result['image'] = { ...result['image'], file: target };
+          }
+          const diagnostics = isRecord(result) && Array.isArray(result['diagnostics']) ? result['diagnostics'].filter((d): d is Diagnostic => isRecord(d) && typeof d['code'] === 'string' && typeof d['problem'] === 'string') : [];
+          if (!json && command !== 'op') printDiagnostics(io, diagnostics.filter((d) => d.severity !== 'info'));
+          io.stdout(`${JSON.stringify(result, null, 2)}\n`);
+          return resultFailed(result) ? 1 : 0;
+        } finally {
+          await services.dispose();
+        }
+      }
       case 'doctor': {
         const checks = await runDoctor({ projectDir: io.cwd });
         const failed = checks.filter((c) => c.status === 'fail').length;
@@ -534,9 +607,11 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return r.diagnostics.some((d) => d.severity === 'error') ? 1 : 0;
       }
       case 'serve': {
-        const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
-        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env) });
+        const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
+        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
+        const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
+        const projectId = await context.link(services);
+        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env), ...(projectId !== undefined ? { projectId } : {}) });
       }
       case 'dev':
       case 'studio': {
@@ -549,10 +624,12 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token, allowedHosts: allowedHostsOf(values['allowed-host'], io.env), projectId, showToken: true });
       }
       case 'mcp': {
-        const workspaceDir = resolve(io.cwd, values.workspace ?? io.env['OPENVIDEO_WORKSPACE'] ?? '.openvideo-workspace');
-        const services = await createLocalServices({ workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });
+        const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption, telemetry: (await import('@agentic-video/telemetry')).createTelemetry({ serviceName: 'openvideo-mcp', exporter: 'none', logSink: (l) => { io.stderr(`${l}\n`); } }) });
+        const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
+        const projectId = await context.link(services);
         const { serveStdio } = await import('@agentic-video/mcp');
-        await serveStdio(services);
+        await serveStdio(services, projectId !== undefined ? { projectId } : {});
         await new Promise<void>((r) => process.stdin.once('close', r));
         await services.dispose();
         return 0;

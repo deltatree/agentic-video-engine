@@ -26,10 +26,14 @@
     "README.md"
   ],
   "dependencies": {
+    "@agentic-video/anime": "0.1.0",
     "@agentic-video/cache": "0.1.0",
     "@agentic-video/core": "0.1.0",
+    "@agentic-video/importers": "0.1.0",
+    "@agentic-video/motion-canvas-adapter": "0.1.0",
     "@agentic-video/png": "0.1.0",
     "@agentic-video/render": "0.1.0",
+    "@agentic-video/speech": "0.1.0",
     "@agentic-video/telemetry": "0.1.0",
     "typebox": "^1.3.34"
   }

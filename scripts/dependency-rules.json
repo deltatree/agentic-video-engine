@@ -141,7 +141,9 @@
     "importers",
     "png",
     "speech",
-    "subtitles"
+    "subtitles",
+    "anime",
+    "motion-canvas-adapter"
   ],
   "mcp": [
     "core",

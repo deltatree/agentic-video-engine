@@ -1,16 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { Registry, SCHEMA_VERSION, applyPatches, isRecord } from '@agentic-video/core';
+import { PATCH_OPS, Registry, SCHEMA_VERSION, applyPatches, isRecord } from '@agentic-video/core';
 import { registerComponents } from '@agentic-video/components';
 import { registerSubtitles } from '@agentic-video/subtitles';
 import { checkProject } from '@agentic-video/render';
 
-/** Alle ```json-Blöcke einer Markdown-Datei. */
-function jsonBlocks(file: string): { index: number; value: unknown }[] {
-  const text = readFileSync(fileURLToPath(new URL(`../../../${file}`, import.meta.url)), 'utf8');
+/** Alle ```json-Blöcke einer Markdown-Datei (optional nur ab einer Überschrift bis zur nächsten gleicher Ebene). */
+function jsonBlocks(file: string, section?: string): { index: number; value: unknown }[] {
+  let text = readFileSync(fileURLToPath(new URL(`../../../${file}`, import.meta.url)), 'utf8');
+  if (section !== undefined) {
+    const start = text.indexOf(`\n${section}\n`);
+    if (start < 0) throw new Error(`${file}: Abschnitt "${section}" fehlt`);
+    const level = section.split(' ')[0] ?? '##';
+    const rest = text.slice(start + section.length + 2);
+    const end = rest.search(new RegExp(`\n${level} `, 'u'));
+    text = end < 0 ? rest : rest.slice(0, end);
+  }
   return [...text.matchAll(/```json\n([\s\S]*?)```/gu)].map((m, index) => ({ index, value: JSON.parse(m[1] ?? 'null') as unknown }));
 }
+
+/** Patch-Arten, für die ein Block ein Beispiel zeigt (letzter Patch eines Blocks). */
+function patchOpsShown(blocks: readonly { value: unknown }[]): Set<string> {
+  const ops = new Set<string>();
+  for (const b of blocks) {
+    const patches = isRecord(b.value) && Array.isArray(b.value['patches']) ? b.value['patches'] : [];
+    const last: unknown = patches[patches.length - 1];
+    if (isRecord(last) && typeof last['op'] === 'string') ops.add(last['op']);
+  }
+  return ops;
+}
+
+const SOURCES: readonly [string, string | undefined][] = [
+  ['docs/guide/recipes.md', undefined],
+  ['docs/ai/AGENTS.md', undefined],
+  ['docs/guide/api.md', '## Patch-Arten'],
+];
 
 function baseProject(extraNodes: unknown[]): Record<string, unknown> {
   return {
@@ -38,8 +63,8 @@ registerComponents(registry);
 registerSubtitles(registry);
 
 describe('Dokumentation zeigt nur gültige IR (A48, A51)', () => {
-  for (const file of ['docs/guide/recipes.md', 'docs/ai/AGENTS.md']) {
-    for (const block of jsonBlocks(file)) {
+  for (const [file, section] of SOURCES) {
+    for (const block of jsonBlocks(file, section)) {
       it(`${file} Block ${String(block.index + 1)}`, () => {
         const v = block.value;
         if (!isRecord(v)) throw new Error('Block ist kein Objekt');
@@ -62,5 +87,13 @@ describe('Dokumentation zeigt nur gültige IR (A48, A51)', () => {
         expect(errors).toEqual([]);
       });
     }
+  }
+});
+
+describe('Beispiele je Patch-Art (Story 19.1)', () => {
+  for (const [file, section] of [['docs/ai/AGENTS.md', undefined], ['docs/guide/api.md', '## Patch-Arten']] as const) {
+    it(`${file} zeigt jede Patch-Art`, () => {
+      expect([...patchOpsShown(jsonBlocks(file, section))].sort()).toEqual([...PATCH_OPS].sort());
+    });
   }
 });

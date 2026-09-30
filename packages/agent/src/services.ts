@@ -72,6 +72,11 @@ export interface AgentServices {
   readonly sources?: SourceService;
   /** Paralleles Chunk-Rendering (Scheduler); ohne Angabe rendert der Prozess selbst. */
   readonly chunkRunner?: (env: RenderEnvironment, project: Readonly<Record<string, unknown>>) => ChunkRunner;
+  /**
+   * Wurzelordner, unter denen `project.open` bestehende Projektordner öffnen darf
+   * (`openvideo serve|mcp --project <dir>`, `OPENVIDEO_PROJECT_ROOTS`). Ohne Angabe ist `project.open` aus.
+   */
+  readonly projectRoots?: readonly string[];
   /** Benchmarks (Paket `benchmarks`). */
   readonly benchmark?: (input: Readonly<Record<string, unknown>>) => Promise<unknown>;
 }

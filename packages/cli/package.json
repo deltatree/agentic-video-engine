@@ -1,7 +1,7 @@
 {
   "name": "@agentic-video/cli",
   "version": "0.1.0",
-  "description": "Kommandozeile openvideo: create, dev, studio, validate, render, render-frame, inspect, doctor, benchmark, cache, fonts, assets, serve, mcp, worker.",
+  "description": "Kommandozeile openvideo: create, dev, studio, validate, render, render-frame, inspect, op, patch, contact-sheet, import, doctor, benchmark, cache, fonts, assets, serve, mcp, worker.",
   "license": "Apache-2.0",
   "type": "module",
   "repository": {
