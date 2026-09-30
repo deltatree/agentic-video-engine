@@ -6,7 +6,7 @@ on top of the 3D layer.
 
 | Feature | Where in `project.json` |
 |---|---|
-| 3D scene | `stage` (`scene3d`: `environment` preset, `shadows`, `toneMapping`, `postprocessing.bloom`, `backend: "webgl2"`) |
+| 3D scene | `stage` (`scene3d`: `environment` preset, `shadows`, `toneMapping`, `postprocessing.bloom`, `backend: "auto"`) |
 | glTF model with its own animation clip | `gem-model` (`model3d`, `asset: "gem"`, `animation.clip: "bob"`, rotation keyframes) |
 | Camera move | `cam` (`camera3d`, `position` keyframes, `target`) |
 | Lights | `fill` (ambient), `key` (directional with shadow), `rim` (point, colored) |
@@ -14,8 +14,12 @@ on top of the 3D layer.
 | Particles | `sparkles` (`particles3d`, seeded, additive) |
 | 2D over 3D | `title`, `tagline` (`text` with per-character animation) |
 
-Coordinates in 3D are meters with y up; rotations are degrees. `backend: "webgl2"` pins the WebGL2
-path; remove it to let OpenVideo prefer WebGPU where the browser supports it.
+Coordinates in 3D are meters with y up; rotations are degrees. `backend: "auto"` is the recommended
+setting (and the default when the field is missing): OpenVideo renders with WebGPU when a small test
+render in Chromium succeeds and falls back to WebGL2 otherwise. The probe runs once per Chromium
+version and graphics mode and is cached; the chosen backend is part of the frame cache key and appears
+in the render manifest as `graphics.threeBackends`. Pin `backend: "webgl2"` or `"webgpu"` only when you
+need exactly that path, for example to compare results across machines.
 
 ## Run it
 

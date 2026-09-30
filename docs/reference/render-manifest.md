@@ -1,32 +1,34 @@
-# Render-Manifest und Kurzmanifest
+# Render manifest and short manifest
 
-`renderVideo` schreibt neben jede Ausgabe `<datei>.render-manifest.json` (Schema `RenderManifestSchema` in
-`@agentic-video/render`, Prüfung mit `validateManifest`). Frame-Operationen liefern ein Kurzmanifest
+[Deutsche Fassung](render-manifest.de.md)
+
+`renderVideo` writes `<file>.render-manifest.json` next to every output (schema `RenderManifestSchema` in
+`@agentic-video/render`, checked with `validateManifest`). Frame operations return a short manifest
 (`FrameManifestSchema`, `validateFrameManifest`).
 
-## Felder, die die Umgebung beschreiben (Story 21.5)
+## Fields that describe the environment (story 21.5)
 
-| Feld | Inhalt |
+| Field | Content |
 |---|---|
-| `renderBackend` | Tatsächlich genutzte Backends aus den Frame-Plänen (z. B. `["skia"]`), nicht alle registrierten. |
-| `chromiumVersion` | Version aus `browser.version()` des Prozesses, der Browser-Layer gerendert hat (auch aus Workern); sonst `{ version: null, reason }`. |
-| `gpu` | GPU des Hosts aus `probeHostGpu` (`nvidia-smi`: Name und Speicher; sonst `/dev/dri`), sonst Begründung. |
-| `graphics.browserGpu` | `swiftshader` (Standard) oder `native` (`OPENVIDEO_BROWSER_GPU=1`, ADR 0019). |
-| `graphics.webgl2`, `graphics.webgpu` | WebGL2-Renderer und WebGPU-Adapter der Render-Seite, wenn Chromium mit Grafik lief; sonst Begründung. |
-| `graphics.threeBackends` | Gewählte Three.js-Backends der gerenderten `scene3d`-Nodes (`webgpu`/`webgl2`; `auto` nur ohne Probe). |
-| `voiceHashes` | Stimmen der Tonspur: ID → Cache-Schlüssel (Provider, Version, Text, Einstellungen). |
-| `encoder` | Encoder und Argumente. Ohne `hardwareAcceleration` im Profil immer CPU (`libx264` …). |
-| `cache.output` | Cache-Ebene `encoding`: `hit` (Bytes eines früheren identischen Renders), `miss` oder `off` (ADR 0021). |
+| `renderBackend` | Backends actually used by the frame plans (for example `["skia"]`), not all registered ones. |
+| `chromiumVersion` | Version from `browser.version()` of the process that rendered browser layers (also from workers); otherwise `{ version: null, reason }`. |
+| `gpu` | GPU of the host from `probeHostGpu` (`nvidia-smi`: name and memory; otherwise `/dev/dri`), otherwise a reason. |
+| `graphics.browserGpu` | `swiftshader` (default) or `native` (`OPENVIDEO_BROWSER_GPU=1`, ADR 0019). |
+| `graphics.webgl2`, `graphics.webgpu` | WebGL2 renderer and WebGPU adapter of the render page when Chromium ran with graphics; otherwise a reason. |
+| `graphics.threeBackends` | Chosen Three.js backends of the rendered `scene3d` nodes (`webgpu`/`webgl2`; `auto` only without a probe). |
+| `voiceHashes` | Voices of the soundtrack: id → cache key (provider, version, text, settings). |
+| `encoder` | Encoder and arguments. Without `hardwareAcceleration` in the profile always CPU (`libx264` …). |
+| `cache.output` | Cache tier `encoding`: `hit` (bytes of an earlier identical render), `miss` or `off` (ADR 0021). |
 
-## Kurzmanifest (`kind: "frames"`)
+## Short manifest (`kind: "frames"`)
 
-`frame.render`, `frame.renderMany` und `preview.contactSheet` liefern es als `manifest`; in der CLI schreiben
-`openvideo render-frame --manifest` und `openvideo contact-sheet --manifest` es als `<bild>.manifest.json`.
+`frame.render`, `frame.renderMany` and `preview.contactSheet` return it as `manifest`; in the CLI
+`openvideo render-frame --manifest` and `openvideo contact-sheet --manifest` write it as `<image>.manifest.json`.
 
-| Feld | Inhalt |
+| Field | Content |
 |---|---|
-| `compositionId`, `compositionHash`, `projectHash` | Eingaben. |
-| `scale`, `resolution`, `seed` | Ausgabe. |
-| `frames[]` | `frame`, Frame-Schlüssel `key`, Pixel-Hash `hash` (wie `frameHashes` im Render-Manifest), `cached`. |
-| `renderBackend`, `graphics`, `chromiumVersion`, `gpu`, `os`, `containerImage` | wie oben. |
-| `dependencyVersions`, `trusted`, `timestamp` | Versionen aller Komponenten, Vertrauensmodus, Zeitpunkt. |
+| `compositionId`, `compositionHash`, `projectHash` | Inputs. |
+| `scale`, `resolution`, `seed` | Output. |
+| `frames[]` | `frame`, frame cache key `key`, pixel hash `hash` (like `frameHashes` in the render manifest), `cached`. |
+| `renderBackend`, `graphics`, `chromiumVersion`, `gpu`, `os`, `containerImage` | As above. |
+| `dependencyVersions`, `trusted`, `timestamp` | Versions of all components, trust mode, time. |

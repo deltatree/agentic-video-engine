@@ -29,7 +29,7 @@
           "environment": { "preset": "studio", "intensity": 0.35 },
           "shadows": true,
           "toneMapping": "aces",
-          "backend": "webgl2",
+          "backend": "auto",
           "postprocessing": { "bloom": { "strength": 0.5, "radius": 0.4, "threshold": 0.8 } },
           "children": [
             {

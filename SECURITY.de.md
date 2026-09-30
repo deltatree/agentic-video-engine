@@ -1,5 +1,7 @@
 # Sicherheit
 
+[English version](SECURITY.md) (maßgeblich)
+
 ## Eine Lücke melden
 
 Melde Sicherheitslücken bitte nicht als öffentliches Issue.
@@ -27,6 +29,7 @@ OpenVideo führt Code aus, den Agenten schreiben. Dieser Code gilt als nicht ver
 |---|---|
 | TSX-Projekte | Im Docker-Container ohne Netz, ohne Capabilities, mit Speicher- und Prozessgrenze (Standard `container`) |
 | HTML-Layer mit Skripten | Nur mit ausdrücklicher Freigabe (`--trusted` oder `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) **und** mit Chromium-OS-Sandbox; sonst gesperrt (`OV_BROWSER_NO_OS_SANDBOX`). Das Container-Image allein erlaubt nichts. |
+| Plugins (`settings.plugins`) | Im Render-Prozess, nur mit `--trusted` oder `OPENVIDEO_ALLOW_PLUGINS=1`; Host-Dienste nur mit erteilten Rechten (`OPENVIDEO_PLUGIN_PERMISSIONS`). Rechte sind keine Sandbox. |
 | JSON-Projekte | Auf dem Host; JSON enthält keinen ausführbaren Code |
 | Asset-URLs | Nur öffentliche Adressen; private, Loopback- und Metadaten-Adressen sind gesperrt |
 
@@ -39,7 +42,7 @@ Details stehen in `docs/adr/0008-nicht-vertrauenswuerdiger-code-nur-im-container
 
 ## Betrieb im Cluster
 
-Die Regeln für Kubernetes stehen in `deploy/README.md` (Abschnitt „Sicherheit“) und in
+Die Regeln für Kubernetes stehen in `deploy/README.de.md` (Abschnitt „Sicherheit“) und in
 `docs/adr/0023-remote-worker-schreiben-nur-unter-jobs-praefix.md`. Kurz:
 
 - Der Koordinator trennt die Rollen `submit` (API), `worker` und `metrics` (KEDA) mit eigenen Tokens.

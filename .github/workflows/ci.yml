@@ -166,7 +166,11 @@ jobs:
         run: npm run build
       - name: JSON Schema ist aktuell (API-Schema-Verstoß)
         run: git diff --exit-code packages/schema/openvideo.schema.json
-      - name: Lint (strenges TypeScript)
+      # Story 19.8: generierte Doku (capabilities.json, api.md, cli.md, Node-Beispiele, agents-doc.ts) ist aktuell,
+      # und die Zahlen in README/AGENTS/llms.txt passen zu capabilities.json.
+      - name: Doku-Drift (generierte Dateien und Zahlen)
+        run: npm run check:docs
+      - name: Lint (strenges TypeScript, auch Studio und Beispiele)
         run: npm run lint
       - name: Lizenzen
         run: node scripts/licenses.mjs --check

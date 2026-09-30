@@ -1,5 +1,7 @@
 # Render-Semantik der Node-Typen
 
+[English version](node-semantics.md)
+
 Dieses Dokument ist der verbindliche Vertrag für alle Renderer (Skia, PixiJS, Browser, Three.js, Blender).
 Gemeinsame Rechenregeln liegen als reine Funktionen in `@agentic-video/core` (`semantics.ts`, `props.ts`, `matrix.ts`, `path.ts`).
 Ein Renderer, der davon abweicht, meldet das als Capability-Einschränkung.
@@ -49,6 +51,19 @@ Fehlen bei `image`, `video`, `svg`, `sprite` die Maße, gilt die Eigengröße de
 | `clip` (nur `group`) | Beschneidet Kinder auf die Box der Gruppe. | `false` |
 | `reveal` (aus Übergängen) | Beschneidet die Node auf `revealShape(reveal, box)` in lokalen Box-Koordinaten. Bei Gruppen ohne Maße ist `box` die Hülle der Kinder. Gilt für alle Node-Typen, auch `layer`, `scene3d`, `html`, `blender` (1.6). | – |
 
+### 1.5 Füllung und Kontur
+
+- `fill` und `stroke` sind Farbe oder Verlauf.
+- Fehlen `fill` und `stroke`, füllt die Form mit `#FFFFFF` (`effectiveFill`).
+- Verläufe nutzen standardmäßig relative Koordinaten (`units: 'relative'`): 0..1 der Box; `units: 'pixels'` nutzt lokale Pixel.
+  - `linear`: `start` Standard `{0, 0}`, `end` Standard `{1, 0}`.
+  - `radial`: `center` Standard `{0.5, 0.5}`, `radius` Standard 0.5, relativ zur größeren Box-Seite.
+  - `conic`: `center` Standard `{0.5, 0.5}`, `angle` in Grad, 0 = rechts, im Uhrzeigersinn.
+- `strokeWidth` Standard 1, wenn `stroke` gesetzt ist. Die Kontur liegt mittig auf der Kante.
+- `strokeCap` Standard `butt`, `strokeJoin` Standard `miter`.
+- `strokeDash`: Strich- und Lückenlängen in Pixeln.
+- `trimStart`, `trimEnd` (0..1) und `trimOffset` (0..1, zyklisch) beschneiden die Kontur entlang der Pfadlänge.
+
 ### 1.6 Compositing über Backend-Grenzen (Frame Plan)
 
 Der Planner (`planFrame`) teilt die Szene in Layer; jedes Backend rendert seine Layer, der Compositor setzt sie zusammen.
@@ -70,19 +85,6 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 - Backends liefern sRGB-kodierte Pixel (1.1). Der Compositor mischt im **Arbeitsfarbraum**: `composition.colorSpace`, sonst `settings.workingColorSpace`, sonst `srgb`. Effekte rechnen immer in linearem Licht.
 - `layer.colorSpace` erklärt, wie die Pixel der Kinder kodiert sind: `linear` (lineares Licht) oder `rec709` (BT.709-OETF). Der Compositor liest sie mit dieser Kodierung statt sRGB und überführt sie in den Arbeitsfarbraum. `srgb` ist der Standard und ändert nichts.
 - `settings.outputColorSpace` kodiert die Ausgabe-Pixel: `srgb` (Standard), `rec709` oder `linear` (lineares Licht in 8 Bit; für Weiterverarbeitung, sichtbar gröbere Abstufung in dunklen Tönen). Der Wert geht in den Frame-Schlüssel ein. Das Video-Tag (`color_trc`) setzt `renderProfile.colorSpace` (Standard `srgb`); weichen beide ab, warnt der Validator mit `OV_COLORSPACE_MISMATCH`.
-
-### 1.5 Füllung und Kontur
-
-- `fill` und `stroke` sind Farbe oder Verlauf.
-- Fehlen `fill` und `stroke`, füllt die Form mit `#FFFFFF` (`effectiveFill`).
-- Verläufe nutzen standardmäßig relative Koordinaten (`units: 'relative'`): 0..1 der Box.
-  - `linear`: `start` Standard `{0, 0}`, `end` Standard `{1, 0}`.
-  - `radial`: `center` Standard `{0.5, 0.5}`, `radius` Standard 0.5, relativ zur größeren Box-Seite.
-  - `conic`: `center` Standard `{0.5, 0.5}`, `angle` in Grad, 0 = rechts, im Uhrzeigersinn.
-- `strokeWidth` Standard 1, wenn `stroke` gesetzt ist. Die Kontur liegt mittig auf der Kante.
-- `strokeCap` Standard `butt`, `strokeJoin` Standard `miter`.
-- `strokeDash`: Strich- und Lückenlängen in Pixeln.
-- `trimStart`, `trimEnd` (0..1) und `trimOffset` (0..1, zyklisch) beschneiden die Kontur entlang der Pfadlänge.
 
 ## 2. Node-Typen
 
@@ -138,11 +140,11 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 
 ### Browser
 
-- **html**: Chromium rendert `html` + `css` in eine Box `width × height`; die Box wird mit der Node-Matrix platziert. Die Seite erhält pro Frame die Zeit über `window.openvideo` (siehe Browser-Renderer-Doku). CSS-Animationen werden pausiert und auf die lokale Zeit gesetzt. Skripte laufen nur ausdrücklich erlaubt (`--trusted`, ADR 0008); ohne Skripte bleiben `<canvas>` (2D, WebGL, WebGPU) und Custom Elements ohne deklaratives Shadow DOM leer – `openvideo check` warnt mit `OV_HTML_CANVAS_NO_SCRIPTS` bzw. `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
+- **html**: Chromium rendert `html` + `css` in eine Box `width × height`; die Box wird mit der Node-Matrix platziert. Die Seite erhält pro Frame die Zeit über `window.openvideo` (siehe Browser-Renderer-Doku). CSS-Animationen werden pausiert und auf die lokale Zeit gesetzt. Skripte laufen nur ausdrücklich erlaubt (`--trusted`, ADR 0008); ohne Skripte bleiben `<canvas>` (2D, WebGL, WebGPU) und Custom Elements ohne deklaratives Shadow DOM leer – `openvideo validate` warnt mit `OV_HTML_CANVAS_NO_SCRIPTS` bzw. `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
 
 ### 3D
 
-- **scene3d**: rendert Kinder mit Three.js in eine Box `width × height`, platziert mit der Node-Matrix. Bildtexturen über dem GPU-Maximum sind ein Fehler `OV_THREE_TEXTURE_TOO_LARGE`, mit `textureDownscale: true` werden sie verkleinert. `background` Standard transparent. `camera` Standard: erste `camera3d`; ohne Kamera eine Perspektivkamera bei `[0, 0, 5]` mit Blick auf den Ursprung.
+- **scene3d**: rendert Kinder mit Three.js in eine Box `width × height`, platziert mit der Node-Matrix. `backend`: `auto` (Standard; WebGPU, wenn ein Test-Render in Chromium gelingt, sonst WebGL2, für GLSL-`ShaderMaterial` immer WebGL2), `webgpu` oder `webgl2`. Bildtexturen über dem GPU-Maximum sind ein Fehler `OV_THREE_TEXTURE_TOO_LARGE`, mit `textureDownscale: true` werden sie verkleinert. `background` Standard transparent. `camera` Standard: erste `camera3d`; ohne Kamera eine Perspektivkamera bei `[0, 0, 5]` mit Blick auf den Ursprung.
 - **camera3d**: `fov` 50, `near` 0.1, `far` 1000, `projection` `perspective`. `target` bestimmt die Blickrichtung, sonst gilt `rotation`.
 - **light3d**: `intensity` 1, `color` `#FFFFFF`.
 - **mesh3d**, **model3d**, **instances3d**, **particles3d**, **group3d**: Position in Metern, Rotation XYZ in Grad.

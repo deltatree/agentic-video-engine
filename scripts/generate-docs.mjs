@@ -15,8 +15,10 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const check = process.argv.includes('--check');
+// `--root <dir>`: anderer Zielordner (Tests prüfen damit, dass `--check` veraltete Dateien erkennt).
+const rootArg = process.argv.indexOf('--root');
+const root = rootArg >= 0 && process.argv[rootArg + 1] !== undefined ? process.argv[rootArg + 1] : join(dirname(fileURLToPath(import.meta.url)), '..');
 // Maschinenabhängige Eingaben neutralisieren: Ohne eigenen Chromium-Pfad und ohne GPU-Modus nennen die
 // Backends die Chromium-Version von playwright-core (ADR 0019); so ist die Ausgabe auf jeder Maschine gleich.
 delete process.env.OPENVIDEO_CHROMIUM;
@@ -115,7 +117,7 @@ api.push('## Errors', '', 'Errors come as `{ "error": Diagnostic }` with HTTP 40
 emit('docs/guide/api.md', api.join('\n'));
 
 let help = '';
-await runCli(['--help'], { stdout: (t) => (help += t), stderr: () => undefined, cwd: root, env: {} });
+await runCli(['--help'], { stdout: (t) => (help += t), stderr: () => undefined, cwd: tmpdir(), env: {} });
 emit(
   'docs/guide/cli.md',
   [

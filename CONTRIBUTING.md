@@ -1,76 +1,92 @@
-# Mitwirken an OpenVideo
+# Contributing to OpenVideo
 
-Danke für dein Interesse. Diese Seite erklärt, wie du eine Änderung einbringst.
-Sie gilt für Menschen und für Coding Agents.
+[Deutsche Fassung](CONTRIBUTING.de.md)
 
-## Voraussetzungen
+Thank you for your interest. This page explains how to contribute a change.
+It applies to humans and to coding agents (short version for agents: [AGENTS.md](AGENTS.md)).
 
-- Node.js 22.13 oder neuer
-- FFmpeg 7 im `PATH` oder in `OPENVIDEO_FFMPEG`
-- Chromium für Playwright: `npx playwright install chromium chromium-headless-shell`
-- Optional: Blender 4.2 LTS (`OPENVIDEO_BLENDER`), Docker (Sandbox und Worker)
+## Requirements
 
-`openvideo doctor` zeigt, was fehlt.
+- Node.js 22.13 or newer
+- FFmpeg 6 or newer (CI uses 7.1) in `PATH` or in `OPENVIDEO_FFMPEG`
+- Chromium for Playwright: `npx playwright install chromium chromium-headless-shell`
+- Optional: Blender 4.2 LTS (`OPENVIDEO_BLENDER`), Docker (sandbox and workers), Piper or espeak-ng, whisper.cpp
 
-## Erste Schritte
+`openvideo doctor` shows what is missing.
 
-1. Klone das Repository.
-2. Installiere die Abhängigkeiten: `npm ci`.
-3. Baue alle Pakete: `npm run build`.
-4. Führe alle Prüfungen aus: `npm run check`.
+## First steps
 
-`npm run check` prüft Abhängigkeitsregeln, Build, Lint, Lizenzen und Tests.
+1. Clone the repository.
+2. Install the dependencies: `npm ci`.
+3. Build all packages: `npm run build`.
+4. Run all checks: `npm run check`.
 
-## Eine Änderung einbringen
+`npm run check` checks dependency rules, build, lint (including the examples), generated docs and their numbers, licenses and tests.
 
-1. Lege ein Issue an oder kommentiere ein vorhandenes.
-2. Erstelle einen Branch von `main`.
-3. Schreibe zuerst einen Test, der das gewünschte Verhalten zeigt.
-4. Ändere den Code, bis der Test grün ist.
-5. Führe `npm run check` aus.
-6. Öffne einen Pull Request. Beschreibe darin, was sich ändert und warum.
+## Contributing a change
 
-Halte Pull Requests klein. Eine Änderung soll eine Sache tun.
+1. Open an issue or comment on an existing one.
+2. Create a branch from `main`.
+3. First write a test that shows the desired behavior.
+4. Change the code until the test is green.
+5. Run `npm run check`.
+6. Open a pull request. Describe what changes and why.
 
-## Regeln für den Code
+Keep pull requests small. One change should do one thing.
 
-| Regel | Beispiel |
+## Code rules
+
+| Rule | Example |
 |---|---|
-| Strenges TypeScript: kein `any`, kein `as` außer `as const`, kein `!` | Nutze `isRecord` und `conforms` aus `@agentic-video/core`. |
-| Fehler sind `OpenVideoError` mit Code und Vorschlägen | `code: 'OV_ASSET_MISSING'`, `suggestions: ['Run asset.import …']` |
-| Jede exportierte Funktion hat TSDoc mit `@example` | siehe `packages/core/src/patches.ts` |
-| Kein `Date.now()` und kein `Math.random()` in Render-Pfaden | Zufall nur über `random(seed, …)` |
-| Pakete importieren nur erlaubte Pakete | Regeln in `scripts/dependency-rules.json` |
-| Node-Module mit Präfix | `import { readFile } from 'node:fs/promises'` |
+| Strict TypeScript: no `any`, no `as` except `as const`, no `!` | Use `isRecord` and `conforms` from `@agentic-video/core`. |
+| Errors are `OpenVideoError` with a code and suggestions | `code: 'OV_ASSET_MISSING'`, `suggestions: ['Run asset.import …']` |
+| Every exported function has TSDoc with `@example` | see `packages/core/src/patches.ts` |
+| No `Date.now()` and no `Math.random()` in render paths | Randomness only via `random(seed, …)` |
+| Packages import only allowed packages | Rules in `scripts/dependency-rules.json` |
+| Node modules with prefix | `import { readFile } from 'node:fs/promises'` |
 
-Die verbindliche Render-Semantik steht in `docs/reference/node-semantics.md`.
-Architektur-Entscheidungen stehen in `docs/adr/`.
+The binding render semantics are in `docs/reference/node-semantics.md`.
+Architecture decisions are in `docs/adr/`.
 
 ## Tests
 
-- Tests liegen in `packages/<paket>/test/*.test.ts` oder `*.test.tsx` (Vitest), auch neben dem Code unter `src/`.
-- Golden Images liegen in `packages/<paket>/test/golden/`.
-  Erzeuge sie neu mit `UPDATE_GOLDENS=1`. Sieh dir jedes neue Bild an, bevor du es eincheckst.
-- Ein Test, der ein fehlendes Programm braucht, wird mit Begründung übersprungen:
-  `it.skipIf(skipUnless(verfuegbar, 'Grund und Abhilfe'))` aus `@agentic-video/testing`.
-  CI setzt `OPENVIDEO_REQUIRE_ALL=1`; dort ist jeder solche Skip ein Fehler (Ausnahme: GPU, `allowInCi`).
-- Keine festen Pausen: warte auf Promises oder `expect.poll`, nutze injizierbare Uhren. Harte Zeitgrenzen
-  nur mit `it.skipIf(!perfStrict())` (laufen nightly mit `OV_PERF_STRICT=1`).
-- `npm run test:coverage` misst die Coverage; die Mindestwerte je Paket stehen in `vitest.config.ts`
-  und werden nur angehoben.
-- Ein Test läuft einzeln so: `npx vitest run packages/core/`.
-  Achte auf den Schrägstrich am Ende. Sonst trifft `packages/render` auch `renderer-*`.
+- Tests live in `packages/<package>/test/*.test.ts` or `*.test.tsx` (Vitest), also next to the code under `src/`.
+- Golden images live in `packages/<package>/test/golden/`.
+  Regenerate them with `UPDATE_GOLDENS=1`. Look at every new image before you commit it.
+- A test that needs a missing program is skipped with a reason:
+  `it.skipIf(skipUnless(available, 'reason and fix'))` from `@agentic-video/testing`.
+  CI sets `OPENVIDEO_REQUIRE_ALL=1`; there every such skip is an error (exception: GPU, `allowInCi`).
+- No fixed sleeps: wait for promises or `expect.poll`, use injectable clocks. Hard time limits
+  only with `it.skipIf(!perfStrict())` (they run nightly with `OV_PERF_STRICT=1`).
+- `npm run test:coverage` measures coverage; the minimum per package is in `vitest.config.ts`
+  and is only ever raised.
+- Run a single package like this: `npx vitest run packages/core/`.
+  Mind the trailing slash. Otherwise `packages/render` also matches `renderer-*`.
 
-## Sprache
+## Documentation
 
-- Kommentare, TSDoc und Doku sind auf Deutsch.
-- Bezeichner, Code und Fehlermeldungen für Nutzer sind auf Englisch.
+- English first: `README.md`, `AGENTS.md`, `llms.txt`, `docs/ai/`, `docs/guide/`, `docs/reference/`, example READMEs,
+  this file, `SECURITY.md` and `deploy/README.md`. Where a German version exists it sits next to the file as `*.de.md`;
+  both link to each other and keep identical JSON, JSONC and TSX blocks (`packages/render/test/docs.test.ts`).
+  Change both versions in the same pull request.
+- `docs/ai/capabilities.json`, `docs/guide/api.md`, `docs/guide/cli.md`, the examples in
+  `docs/reference/node-semantics*.md` and `packages/mcp/src/agents-doc.ts` are generated:
+  `npm run build && node scripts/generate-docs.mjs`. `node scripts/generate-docs.mjs --check` fails when they are stale.
+- `node scripts/check-doc-numbers.mjs` fails when README, AGENTS or llms.txt name other counts of operations,
+  node types, components, templates or blend modes than `docs/ai/capabilities.json`.
+- The TypeDoc API reference is published by `.github/workflows/docs.yml`; `npm run docs` writes it locally to `docs/api/`.
 
-## Sicherheitslücken
+## Language
 
-Melde Sicherheitslücken nicht als öffentliches Issue. Lies [SECURITY.md](SECURITY.md).
+- Comments, TSDoc and ADRs are in German.
+- Identifiers, code and user-facing error messages are in English.
+- User documentation is English first (see above).
 
-## Lizenz
+## Security vulnerabilities
 
-Mit deinem Beitrag stimmst du zu, dass er unter Apache-2.0 steht.
-Neue Laufzeit-Abhängigkeiten brauchen eine OSI-Lizenz. `npm run licenses` prüft das und erzeugt `licenses.json`, `THIRD_PARTY_NOTICES.md` und `sbom.cdx.json` neu; checke sie mit ein. Änderst du Abhängigkeiten oder `deploy/docker/Dockerfile`, schlägt `node scripts/licenses.mjs --check` (Teil von `npm run check` und CI) sonst fehl.
+Do not report security vulnerabilities as a public issue. Read [SECURITY.md](SECURITY.md).
+
+## License
+
+By contributing you agree that your contribution is licensed under Apache-2.0.
+New runtime dependencies need an OSI license. `npm run licenses` checks that and regenerates `licenses.json`, `THIRD_PARTY_NOTICES.md` and `sbom.cdx.json`; commit them. If you change dependencies or `deploy/docker/Dockerfile`, `node scripts/licenses.mjs --check` (part of `npm run check` and CI) fails otherwise.

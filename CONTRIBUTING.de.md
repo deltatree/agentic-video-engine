@@ -1,14 +1,16 @@
 # Mitwirken an OpenVideo
 
+[English version](CONTRIBUTING.md) (maßgeblich)
+
 Danke für dein Interesse. Diese Seite erklärt, wie du eine Änderung einbringst.
-Sie gilt für Menschen und für Coding Agents.
+Sie gilt für Menschen und für Coding Agents (Kurzfassung für Agents: [AGENTS.md](AGENTS.md)).
 
 ## Voraussetzungen
 
 - Node.js 22.13 oder neuer
-- FFmpeg 7 im `PATH` oder in `OPENVIDEO_FFMPEG`
+- FFmpeg 6 oder neuer (CI nutzt 7.1) im `PATH` oder in `OPENVIDEO_FFMPEG`
 - Chromium für Playwright: `npx playwright install chromium chromium-headless-shell`
-- Optional: Blender 4.2 LTS (`OPENVIDEO_BLENDER`), Docker (Sandbox und Worker)
+- Optional: Blender 4.2 LTS (`OPENVIDEO_BLENDER`), Docker (Sandbox und Worker), Piper oder espeak-ng, whisper.cpp
 
 `openvideo doctor` zeigt, was fehlt.
 
@@ -19,7 +21,7 @@ Sie gilt für Menschen und für Coding Agents.
 3. Baue alle Pakete: `npm run build`.
 4. Führe alle Prüfungen aus: `npm run check`.
 
-`npm run check` prüft Abhängigkeitsregeln, Build, Lint, Lizenzen und Tests.
+`npm run check` prüft Abhängigkeitsregeln, Build, Lint (auch der Beispiele), generierte Doku und ihre Zahlen, Lizenzen und Tests.
 
 ## Eine Änderung einbringen
 
@@ -61,14 +63,28 @@ Architektur-Entscheidungen stehen in `docs/adr/`.
 - Ein Test läuft einzeln so: `npx vitest run packages/core/`.
   Achte auf den Schrägstrich am Ende. Sonst trifft `packages/render` auch `renderer-*`.
 
+## Dokumentation
+
+- Englisch zuerst: `README.md`, `AGENTS.md`, `llms.txt`, `docs/ai/`, `docs/guide/`, `docs/reference/`, READMEs der Beispiele,
+  diese Datei, `SECURITY.md` und `deploy/README.md`. Wo es eine deutsche Fassung gibt, liegt sie als `*.de.md` daneben;
+  beide verlinken einander und haben identische JSON-, JSONC- und TSX-Blöcke (`packages/render/test/docs.test.ts`).
+  Ändere beide Fassungen im selben Pull Request.
+- `docs/ai/capabilities.json`, `docs/guide/api.md`, `docs/guide/cli.md`, die Beispiele in
+  `docs/reference/node-semantics*.md` und `packages/mcp/src/agents-doc.ts` sind generiert:
+  `npm run build && node scripts/generate-docs.mjs`. `node scripts/generate-docs.mjs --check` schlägt fehl, wenn sie veraltet sind.
+- `node scripts/check-doc-numbers.mjs` schlägt fehl, wenn README, AGENTS oder llms.txt andere Anzahlen von Operationen,
+  Node-Typen, Komponenten, Templates oder Blend Modes nennen als `docs/ai/capabilities.json`.
+- Die TypeDoc-API-Referenz veröffentlicht `.github/workflows/docs.yml`; `npm run docs` schreibt sie lokal nach `docs/api/`.
+
 ## Sprache
 
-- Kommentare, TSDoc und Doku sind auf Deutsch.
+- Kommentare, TSDoc und ADRs sind auf Deutsch.
 - Bezeichner, Code und Fehlermeldungen für Nutzer sind auf Englisch.
+- Nutzer-Doku ist Englisch zuerst (siehe oben).
 
 ## Sicherheitslücken
 
-Melde Sicherheitslücken nicht als öffentliches Issue. Lies [SECURITY.md](SECURITY.md).
+Melde Sicherheitslücken nicht als öffentliches Issue. Lies [SECURITY.de.md](SECURITY.de.md).
 
 ## Lizenz
 

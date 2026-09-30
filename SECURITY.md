@@ -1,62 +1,65 @@
-# Sicherheit
+# Security
 
-## Eine Lücke melden
+[Deutsche Fassung](SECURITY.de.md)
 
-Melde Sicherheitslücken bitte nicht als öffentliches Issue.
-Nutze stattdessen die private Meldung von GitHub:
-**Security → Report a vulnerability** in diesem Repository.
+## Report a vulnerability
 
-Beschreibe in der Meldung:
+Please do not report security vulnerabilities as a public issue.
+Use GitHub's private reporting instead:
+**Security → Report a vulnerability** in this repository.
 
-1. Die betroffene Version oder den Commit.
-2. Die Schritte, mit denen sich die Lücke zeigen lässt.
-3. Die Wirkung, zum Beispiel Datei-Lesen oder Codeausführung.
+Describe in the report:
 
-Wir bestätigen den Eingang innerhalb von 7 Tagen.
-Eine Korrektur veröffentlichen wir mit einem Hinweis im Changelog.
+1. The affected version or commit.
+2. The steps that show the vulnerability.
+3. The impact, for example reading files or executing code.
 
-## Unterstützte Versionen
+We confirm receipt within 7 days.
+We publish a fix with a note in the changelog.
 
-Sicherheitskorrekturen gibt es für die neueste Minor-Version.
+## Supported versions
 
-## Sicherheitsmodell in Kürze
+Security fixes are provided for the latest minor version.
 
-OpenVideo führt Code aus, den Agenten schreiben. Dieser Code gilt als nicht vertrauenswürdig.
+## Security model in short
 
-| Eingabe | Wo sie läuft |
+OpenVideo runs code that agents write. This code is untrusted.
+
+| Input | Where it runs |
 |---|---|
-| TSX-Projekte | Im Docker-Container ohne Netz, ohne Capabilities, mit Speicher- und Prozessgrenze (Standard `container`) |
-| HTML-Layer mit Skripten | Nur mit ausdrücklicher Freigabe (`--trusted` oder `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) **und** mit Chromium-OS-Sandbox; sonst gesperrt (`OV_BROWSER_NO_OS_SANDBOX`). Das Container-Image allein erlaubt nichts. |
-| JSON-Projekte | Auf dem Host; JSON enthält keinen ausführbaren Code |
-| Asset-URLs | Nur öffentliche Adressen; private, Loopback- und Metadaten-Adressen sind gesperrt |
+| TSX projects | In a Docker container without network, without capabilities, with memory and process limits (default `container`) |
+| HTML layers with scripts | Only with explicit permission (`--trusted` or `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) **and** with the Chromium OS sandbox; otherwise blocked (`OV_BROWSER_NO_OS_SANDBOX`). The container image alone allows nothing. |
+| Plugins (`settings.plugins`) | In the render process, only with `--trusted` or `OPENVIDEO_ALLOW_PLUGINS=1`; host services only with granted permissions (`OPENVIDEO_PLUGIN_PERMISSIONS`). Permissions are not a sandbox. |
+| JSON projects | On the host; JSON contains no executable code |
+| Asset URLs | Only public addresses; private, loopback and metadata addresses are blocked |
 
-Der Modus `trusted-host` ist **keine** Isolation. Nutze ihn nur für eigenen Code.
+The mode `trusted-host` is **not** isolation. Use it only for your own code.
 
-Die HTTP-API bindet ohne Token nur an Loopback-Adressen.
-Setze für jede andere Adresse ein Token mit `OPENVIDEO_API_TOKEN`.
+Without a token the HTTP API binds only to loopback addresses.
+Set a token with `OPENVIDEO_API_TOKEN` for any other address.
 
-Details stehen in `docs/adr/0008-nicht-vertrauenswuerdiger-code-nur-im-container.md`.
+Details are in `docs/adr/0008-nicht-vertrauenswuerdiger-code-nur-im-container.md` (German).
 
-## Betrieb im Cluster
+## Running in a cluster
 
-Die Regeln für Kubernetes stehen in `deploy/README.md` (Abschnitt „Sicherheit“) und in
-`docs/adr/0023-remote-worker-schreiben-nur-unter-jobs-praefix.md`. Kurz:
+The rules for Kubernetes are in `deploy/README.md` (section "Security") and in
+`docs/adr/0023-remote-worker-schreiben-nur-unter-jobs-praefix.md`. In short:
 
-- Der Koordinator trennt die Rollen `submit` (API), `worker` und `metrics` (KEDA) mit eigenen Tokens.
-  Tokens haben mindestens 24 Zeichen; Platzhalter (`REPLACE…`) lehnt er ab. Ohne Token bindet er nur an Loopback.
-- Worker haben keine S3-Admin-Rechte. Sie lesen `inputs/` und schreiben nur `jobs/<jobId>/frames/`.
-  Die API übernimmt nur Frames mit dem Präfix des eigenen Jobs und prüft den SHA-256 jedes Frames.
-- `complete`/`fail` gelten nur mit gültiger Lease. Anfragen sind auf 64 MiB begrenzt, fertige Jobs verfallen.
-- FFmpeg liest Eingaben nur über `file`/`pipe` und nur aus einer Liste erlaubter Container (keine Playlists,
-  kein `concat`). Chromium, Blender, Piper und whisper.cpp erben keine Tokens oder S3-Schlüssel.
-- Das Studio setzt `Content-Security-Policy` mit `frame-ancestors 'none'` und `Referrer-Policy: no-referrer`
-  und nimmt das Token nur aus `#token=` (nie aus `?token=`).
-- Die Verbindungen im Cluster sind Klartext-HTTP. Für Verschlüsselung empfehlen wir ein Service Mesh mit
-  mTLS oder WireGuard im CNI; NetworkPolicies brauchen ein CNI, das sie durchsetzt.
+- The coordinator separates the roles `submit` (API), `worker` and `metrics` (KEDA) with their own tokens.
+  Tokens have at least 24 characters; it rejects placeholders (`REPLACE…`). Without a token it binds only to loopback.
+- Workers have no S3 admin rights. They read `inputs/` and write only `jobs/<jobId>/frames/`.
+  The API accepts only frames with the prefix of its own job and checks the SHA-256 of every frame.
+- `complete`/`fail` are valid only with a valid lease. Requests are limited to 64 MiB, finished jobs expire.
+- FFmpeg reads inputs only via `file`/`pipe` and only from a list of allowed containers (no playlists,
+  no `concat`). Chromium, Blender, Piper and whisper.cpp inherit no tokens or S3 keys.
+- The Studio sets `Content-Security-Policy` with `frame-ancestors 'none'` and `Referrer-Policy: no-referrer`
+  and takes the token only from `#token=` (never from `?token=`).
+- Connections inside the cluster are plain HTTP. For encryption we recommend a service mesh with
+  mTLS or WireGuard in the CNI; NetworkPolicies need a CNI that enforces them.
 
-## Lieferkette
+## Supply chain
 
-- GitHub Actions sind per Commit-SHA gepinnt; Dependabot hält Actions, npm und Basis-Images aktuell
+- GitHub Actions are pinned by commit SHA; Dependabot keeps actions, npm and base images up to date
   (`.github/dependabot.yml`).
-- Jeder Workflow-Job hat nur die Rechte, die er braucht (`permissions` je Job).
-- Downloads in CI und Images (FFmpeg, Blender, Chromium) werden gegen feste SHA-256-Prüfsummen geprüft.
+- Every workflow job has only the permissions it needs (`permissions` per job).
+- Downloads in CI and images (FFmpeg, Blender, Chromium) are checked against fixed SHA-256 checksums.

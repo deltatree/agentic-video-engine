@@ -28,7 +28,7 @@ Inside this repository run `npm run build` once and use `node ../../packages/cli
 ## One example per node type
 
 Every node type also has a small, valid JSON example: `capabilities.get` with `{ "nodeType": "<type>" }`
-returns it as `example` (with `propertyTypes`), and [`docs/reference/node-semantics.md`](../docs/reference/node-semantics.md#3-beispiele-je-node-typ)
+returns it as `example` (with `propertyTypes`), and [`docs/reference/node-semantics.md`](../docs/reference/node-semantics.md#3-examples-per-node-type)
 lists all of them.
 
 ## MCP clients

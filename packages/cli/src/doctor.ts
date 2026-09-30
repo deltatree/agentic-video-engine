@@ -34,10 +34,33 @@ async function check(name: string, fn: () => Promise<Omit<DoctorCheck, 'name'>>)
  * Grafik-Schalter gelten nur hier, wo WebGL/WebGPU geprüft wird; sonst dieselben Schalter, derselbe
  * Grafik-Modus (`OPENVIDEO_BROWSER_GPU`) und dieselbe minimale Umgebung wie der Render-Host.
  */
-async function browserProbe(): Promise<{ version: string; webgl2: string; webgpu: string; mode: string }> {
+async function browserProbe(): Promise<{ version: string; webgl2: string; webgpu: string; webgpuAvailable: boolean; mode: string }> {
   const { CHROMIUM_ARGS, probeBrowserGraphics } = await import('@agentic-video/renderer-browser');
   const r = await probeBrowserGraphics({ baseArgs: CHROMIUM_ARGS });
-  return { version: r.chromium, webgl2: r.webgl2, webgpu: r.webgpuAvailable ? r.webgpu : 'unavailable', mode: r.mode };
+  // `webgpu` ist bei fehlendem WebGPU der Grund aus der Probe (z. B. `no adapter`), nicht nur „unavailable“.
+  return { version: r.chromium, webgl2: r.webgl2, webgpu: r.webgpu, webgpuAvailable: r.webgpuAvailable, mode: r.mode };
+}
+
+/**
+ * Doctor-Zeile für WebGPU aus der Grafik-Probe. Ist WebGPU nicht nutzbar, nennt `detail` den Grund
+ * der Probe (`probeWebGPU`: fehlendes `navigator.gpu`, kein Adapter, oder ein Adapter, dessen
+ * Mini-Render scheitert), damit klar ist, warum `backend: "auto"` WebGL2 wählt.
+ *
+ * @example
+ * ```ts
+ * webgpuCheck({ webgpu: 'no adapter', webgpuAvailable: false });
+ * // { status: 'warn', detail: 'unavailable: no adapter', fix: 'scene3d with backend "auto" renders with WebGL2; …' }
+ * ```
+ */
+export function webgpuCheck(probe: { readonly webgpu: string; readonly webgpuAvailable: boolean } | undefined): Omit<DoctorCheck, 'name'> {
+  if (probe === undefined) return { status: 'warn', detail: 'browser unavailable' };
+  if (probe.webgpuAvailable) return { status: 'ok', detail: probe.webgpu };
+  const reason = probe.webgpu === 'unavailable' || probe.webgpu === '' ? 'navigator.gpu is missing (this Chromium has no WebGPU)' : probe.webgpu;
+  return {
+    status: 'warn',
+    detail: `unavailable: ${reason}`,
+    fix: 'scene3d with backend "auto" renders with WebGL2; set backend "webgl2" to silence this, or update Chromium and the graphics drivers for WebGPU.',
+  };
 }
 
 /**
@@ -58,7 +81,7 @@ export async function runDoctor(options: { readonly projectDir: string }): Promi
       return Promise.resolve({ status: ok ? ('ok' as const) : ('fail' as const), detail: `Node ${process.versions.node}`, ...(ok ? {} : { fix: 'Install Node.js 22.13 or newer (https://nodejs.org).' }) });
     }),
   );
-  let probe: { version: string; webgl2: string; webgpu: string; mode: string } | undefined;
+  let probe: { version: string; webgl2: string; webgpu: string; webgpuAvailable: boolean; mode: string } | undefined;
   out.push(
     await check('browser', async () => {
       probe = await browserProbe();
@@ -79,7 +102,7 @@ export async function runDoctor(options: { readonly projectDir: string }): Promi
     );
   }
   out.push({ name: 'webgl', status: probe === undefined ? 'fail' : probe.webgl2 === 'unavailable' ? 'fail' : 'ok', detail: probe?.webgl2 ?? 'browser unavailable', ...(probe?.webgl2 === 'unavailable' ? { fix: 'Update graphics drivers, or keep the SwiftShader flags (CPU rendering).' } : {}) });
-  out.push({ name: 'webgpu', status: probe === undefined || probe.webgpu === 'unavailable' ? 'warn' : 'ok', detail: probe?.webgpu ?? 'browser unavailable', ...(probe?.webgpu === 'unavailable' ? { fix: 'WebGPU falls back to WebGL2; set scene3d.backend to "webgl2" to silence this.' } : {}) });
+  out.push({ name: 'webgpu', ...webgpuCheck(probe) });
   out.push(
     await check('gpu', async () => {
       // Dieselbe Probe wie Render-Manifest und Metrik gpu_memory (Story 21.5).

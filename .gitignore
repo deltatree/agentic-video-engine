@@ -22,10 +22,10 @@ out/
 .gemini/
 .kiro/
 .rules
-.mcp.json
+/.mcp.json
 .bestaiconfig.lock
-GEMINI.md
-QWEN.md
+/GEMINI.md
+/QWEN.md
 memory-bank/
 _bmad/
 .github/agents/
@@ -33,8 +33,13 @@ _bmad/
 .github/hooks/
 .github/instructions/
 
+# Persönliche Agent-Dateien im Root (Story 19.8). Eingecheckt bleiben /AGENTS.md (Regeln für Agents
+# in diesem Repository), docs/ai/AGENTS.md (Leitfaden für Agents, die OpenVideo nutzen) und examples/mcp.json.
+/CLAUDE.md
+AGENTS.local.md
+
 # BMAD-Laufzeitdateien
 _bmad-output/**/.memlog.md.lock
-AGENTS.md
-AGENTS.local.md
-CLAUDE.md
+
+# TypeDoc-Ausgabe von `npm run docs` (veröffentlicht über .github/workflows/docs.yml, nicht eingecheckt)
+docs/api/

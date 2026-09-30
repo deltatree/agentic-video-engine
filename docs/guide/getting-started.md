@@ -53,7 +53,7 @@ In the Studio, `?` shows all keyboard shortcuts (among them J/K/L, I/O, M for ma
 2. Render the video: `openvideo render --format mp4 --codec h264`.
 3. Next to the video lies `<file>.render-manifest.json` with all versions and frame hashes.
 
-`render` uses several worker processes by default (cores − 1, limited to 1.5 GB of memory per worker, at most 16); `--workers 1` renders in the process.
+`render` uses several worker processes by default (cores − 1, at most one per 1.5 GB of the memory budget – half the RAM, at most the free memory – and at most 16); `--workers 1` renders in the process.
 A second run re-renders only changed frames; the rest comes from the cache in `.openvideo/cache`. An identical render reuses the whole output file.
 
 ## TSX instead of JSON

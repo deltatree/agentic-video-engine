@@ -51,11 +51,11 @@ JSON
 | No deletion, no force push, linear history | The history of `main` is the release record. |
 | Signed commits | Supply chain (story 16.6): every commit on `main` is attributable. |
 | Pull request with one approval, stale approvals dismissed, last push approved | No unreviewed code, also not by agents. |
-| Required checks `check` and `smoke-npx` (strict, branch up to date) | The jobs of `.github/workflows/ci.yml`: build, lint, licenses, all tests with coverage, npm package smoke test. |
+| Required checks `check` and `smoke-npx` (strict, branch up to date) | The jobs of `.github/workflows/ci.yml`: build, lint (including the examples), docs drift (`npm run check:docs`), licenses, all tests with coverage, npm package smoke test. |
 
 Workflows that are **not** required checks: `benchmarks.yml` (nightly; the run fails on a
-regression), `images.yml` (tags `v*`) and `release.yml` (tags `v*`, publishing is started by a
-maintainer, T3).
+regression), `images.yml` (tags `v*`), `release.yml` (tags `v*`, publishing is started by a
+maintainer, T3) and `docs.yml` (pushes to `main`; publishes the TypeDoc API reference to GitHub Pages).
 
 ### Check that the settings are active
 
@@ -78,3 +78,4 @@ pull request; otherwise pull requests wait for a check that never reports.
 | Secrets | `NPM_TOKEN` (release, T3) only; no long-lived cloud credentials |
 | Dependabot | `.github/dependabot.yml` (npm, GitHub Actions, Docker) |
 | Private vulnerability reporting | on; the reporting process is described in `SECURITY.md` |
+| Pages | Source "GitHub Actions" (`docs.yml` deploys to the environment `github-pages`); the API reference lives at `https://deltatree.github.io/agentic-video-engine/` |

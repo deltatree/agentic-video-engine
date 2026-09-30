@@ -1,5 +1,7 @@
 # Render-Manifest und Kurzmanifest
 
+[English version](render-manifest.md)
+
 `renderVideo` schreibt neben jede Ausgabe `<datei>.render-manifest.json` (Schema `RenderManifestSchema` in
 `@agentic-video/render`, Prüfung mit `validateManifest`). Frame-Operationen liefern ein Kurzmanifest
 (`FrameManifestSchema`, `validateFrameManifest`).

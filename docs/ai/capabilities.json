@@ -4661,7 +4661,7 @@
     },
     {
       "name": "LineChart",
-      "description": "Line chart with one or more series (`series`, or `data` for one series). Lines draw on (trim), points pop in; one series gets a gradient area.",
+      "description": "Line chart with one or more series (`series`, or `data` for one series). Lines draw on (trim), points pop in; one series gets a gradient area that grows with the line.",
       "props": {
         "type": "object",
         "properties": {
@@ -8927,5 +8927,142 @@
     "Inter",
     "JetBrains Mono",
     "Noto Color Emoji"
+  ],
+  "templates": [
+    {
+      "name": "3d-product-showcase",
+      "title": "3D Product Showcase",
+      "description": "A procedurally built product turns on a plinth while the camera moves closer; features appear beside it.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 10
+    },
+    {
+      "name": "architecture-diagram",
+      "title": "Architecture Diagram",
+      "description": "Layered service diagram: boxes appear layer by layer, connectors show the data flow.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 14
+    },
+    {
+      "name": "cinematic-title",
+      "title": "Cinematic Title",
+      "description": "Letterboxed film title with dust, light and a closing tracking animation.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 10
+    },
+    {
+      "name": "code-tutorial",
+      "title": "Code Tutorial",
+      "description": "A code editor types the source, a callout explains a line, a terminal shows the result.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 15
+    },
+    {
+      "name": "comparison-video",
+      "title": "Comparison Video",
+      "description": "Side-by-side before and after columns, then the result as a counter.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "data-visualization",
+      "title": "Data Visualization",
+      "description": "KPI counters, then bar, line and donut charts with growth animation.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 14
+    },
+    {
+      "name": "logo-reveal",
+      "title": "Logo Reveal",
+      "description": "The mark draws itself, slides left and the wordmark and tagline appear.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 6
+    },
+    {
+      "name": "lower-third",
+      "title": "Lower Third",
+      "description": "Name and role overlay on a transparent background, rendered with alpha.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 6
+    },
+    {
+      "name": "podcast-clip",
+      "title": "Podcast Clip",
+      "description": "Square audiogram: waveform bars from audio amplitudes, quote and speakers.",
+      "width": 1080,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "presentation",
+      "title": "Presentation",
+      "description": "Three slides (title, bullets, table) with footer and progress bar.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 15
+    },
+    {
+      "name": "product-launch",
+      "title": "Product Launch",
+      "description": "Announce a product: name reveal, three benefit cards and a call to action with a browser mockup.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "saas-explainer",
+      "title": "SaaS Explainer",
+      "description": "Explain a SaaS product: the problem, the product in a laptop mockup with cursor, then three steps.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 15
+    },
+    {
+      "name": "social-video",
+      "title": "Social Video",
+      "description": "Vertical 9:16 clip with a hook, three tips and a follow call to action.",
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "durationSeconds": 10
+    },
+    {
+      "name": "subtitle-video",
+      "title": "Subtitle Video",
+      "description": "Speaker layout with inline subtitles and word highlighting.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 12
+    },
+    {
+      "name": "youtube-intro",
+      "title": "YouTube Intro",
+      "description": "Channel intro: the play mark springs in, channel name and episode appear, then zoom out.",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "durationSeconds": 6
+    }
   ]
 }

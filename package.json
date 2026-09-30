@@ -2,7 +2,7 @@
   "name": "agentic-video-engine",
   "private": true,
   "version": "0.1.0",
-  "description": "OpenVideo – Open-Source-Plattform für Video-as-Code, gebaut für Coding Agents.",
+  "description": "OpenVideo – open-source platform for video as code, built for coding agents.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -15,12 +15,13 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -b tsconfig.json",
-    "lint": "tsc -p tsconfig.eslint.json && tsc -p apps/studio/tsconfig.json && eslint . --max-warnings 0",
+    "lint": "tsc -p tsconfig.eslint.json && tsc -p apps/studio/tsconfig.json && tsc -p examples/tsconfig.json && eslint . --max-warnings 0",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check:deps": "node scripts/check-deps.mjs",
-    "check": "npm run check:deps && npm run build && npm run lint && node scripts/licenses.mjs --check && npm test",
+    "check:docs": "node scripts/generate-docs.mjs --check && node scripts/check-doc-numbers.mjs",
+    "check": "npm run check:deps && npm run build && npm run lint && npm run check:docs && node scripts/licenses.mjs --check && npm test",
     "licenses": "node scripts/licenses.mjs",
     "docs": "node scripts/generate-docs.mjs && typedoc",
     "smoke:npx": "node scripts/smoke-npx.mjs"

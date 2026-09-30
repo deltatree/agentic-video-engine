@@ -1,161 +1,163 @@
-# Render-Semantik der Node-Typen
+# Render semantics of the node types
 
-Dieses Dokument ist der verbindliche Vertrag für alle Renderer (Skia, PixiJS, Browser, Three.js, Blender).
-Gemeinsame Rechenregeln liegen als reine Funktionen in `@agentic-video/core` (`semantics.ts`, `props.ts`, `matrix.ts`, `path.ts`).
-Ein Renderer, der davon abweicht, meldet das als Capability-Einschränkung.
+[Deutsche Fassung](node-semantics.de.md)
 
-## 1. Allgemeine Regeln
+This document is the binding contract for all renderers (Skia, PixiJS, browser, Three.js, Blender).
+Shared calculation rules live as pure functions in `@agentic-video/core` (`semantics.ts`, `props.ts`, `matrix.ts`, `path.ts`).
+A renderer that deviates reports it as a capability limitation.
 
-### 1.1 Ausgabe eines Renderers
+## 1. General rules
 
-- Ein Renderer liefert ein `RgbaImage` in Ausgabegröße `request.width × request.height`.
-- Format: 8 Bit je Kanal, **vormultipliziertes Alpha**, sRGB-kodiert, Zeilen von oben nach unten.
-- Der Hintergrund ist transparent. Die Composition-Hintergrundfarbe setzt der Compositor.
-- Vorschau-Skalierung: Der Renderer stellt allen Transformationen `scale(request.scale)` voran.
+### 1.1 Output of a renderer
 
-### 1.2 Koordinaten und Transform (ADR 0004)
+- A renderer returns an `RgbaImage` in output size `request.width × request.height`.
+- Format: 8 bits per channel, **premultiplied alpha**, sRGB-encoded, rows from top to bottom.
+- The background is transparent. The compositor applies the composition background color.
+- Preview scaling: the renderer prepends `scale(request.scale)` to all transformations.
 
-- 2D-Einheit ist das Pixel der Composition. Ursprung oben links, y nach unten.
-- `x`, `y` ist die linke obere Ecke der **lokalen Box** der Node.
-- Rotation, Scherung und Skalierung wirken um `origin` (relativ zur Box, Standard `{ x: 0.5, y: 0.5 }`).
-- Die lokale Matrix berechnet `localMatrix(node, measured)` aus `@agentic-video/core`.
-- Ein Bewegungspfad (`motionPath`) addiert seinen Punkt zu `x`/`y` (siehe `getTransform`).
-- Kinder zeichnen im Koordinatensystem ihrer Eltern: `Welt = Eltern-Matrix × lokale Matrix`.
-- Winkel sind immer Grad.
+### 1.2 Coordinates and transform (ADR 0004)
 
-### 1.3 Lokale Box je Typ
+- The 2D unit is the pixel of the composition. Origin top left, y down.
+- `x`, `y` is the top left corner of the node's **local box**.
+- Rotation, skew and scale act around `origin` (relative to the box, default `{ x: 0.5, y: 0.5 }`).
+- `localMatrix(node, measured)` from `@agentic-video/core` computes the local matrix.
+- A motion path (`motionPath`) adds its point to `x`/`y` (see `getTransform`).
+- Children draw in the coordinate system of their parent: `world = parent matrix × local matrix`.
+- Angles are always degrees.
 
-| Typ | Box |
+### 1.3 Local box per type
+
+| Type | Box |
 |---|---|
 | `rect`, `ellipse`, `image`, `video`, `svg`, `sprite`, `lottie`, `shader`, `particles`, `html`, `scene3d`, `blender` | `(0, 0, width, height)` |
 | `group`, `layer`, `sequence` | `(0, 0, width ?? 0, height ?? 0)` |
-| `line` | Hülle von `from` und `to` |
-| `polyline`, `polygon` | Hülle der Punkte |
-| `path` | Hülle aller Koordinaten (`pathBounds`) |
-| `text`, `rich-text` | `(0, 0, gemessene Breite, gemessene Höhe)`; mit `width` ist die Breite fest |
+| `line` | Hull of `from` and `to` |
+| `polyline`, `polygon` | Hull of the points |
+| `path` | Hull of all coordinates (`pathBounds`) |
+| `text`, `rich-text` | `(0, 0, measured width, measured height)`; with `width` the width is fixed |
 
-Fehlen bei `image`, `video`, `svg`, `sprite` die Maße, gilt die Eigengröße des Assets.
+If `image`, `video`, `svg`, `sprite` have no size, the intrinsic size of the asset applies.
 
-### 1.4 Darstellung
+### 1.4 Appearance
 
-| Property | Bedeutung | Standard |
+| Property | Meaning | Default |
 |---|---|---|
-| `opacity` | Multipliziert die Deckkraft der Node und aller Kinder (als Gruppe). | 1 |
-| `zIndex` | Zeichenreihenfolge unter Geschwistern (animierbar). Höhere Werte liegen oben; gleiche Werte behalten die Reihenfolge im Dokument (stabile Sortierung). Die ausgewertete Szene, der Planner und der Szenenbaum nutzen die sortierte Reihenfolge. | 0 |
-| `blendMode` | Mischt die Node mit allem, was unter ihr liegt, auch mit Layern anderer Backends und mit der Hintergrundfarbe der Composition (im Arbeitsfarbraum). Gruppen und `layer` sind isoliert: Ihre Kinder mischen nur mit Inhalt derselben Gruppe. Siehe 1.6. | `normal` |
-| `filters` | Liste, in Reihenfolge angewendet. `blur.radius` ist die Standardabweichung in Pixeln (wie CSS `blur()`). `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `invert`, `hue-rotate` wie CSS. | – |
-| `shadow` | Schlagschatten der ganzen Node. `blur` ist die Standardabweichung. | – |
-| `mask` | Die Masken-Node liegt im **lokalen Koordinatensystem der maskierten Node** (sie bewegt sich mit). `alpha`: Deckkraft der Maske; `luminance`: Helligkeit × Alpha. `invert` kehrt um. Masken- und maskierte Node dürfen verschiedene Backends nutzen (1.6). | `alpha` |
-| `clip` (nur `group`) | Beschneidet Kinder auf die Box der Gruppe. | `false` |
-| `reveal` (aus Übergängen) | Beschneidet die Node auf `revealShape(reveal, box)` in lokalen Box-Koordinaten. Bei Gruppen ohne Maße ist `box` die Hülle der Kinder. Gilt für alle Node-Typen, auch `layer`, `scene3d`, `html`, `blender` (1.6). | – |
+| `opacity` | Multiplies the opacity of the node and all its children (as a group). | 1 |
+| `zIndex` | Drawing order among siblings (animatable). Higher values lie on top; equal values keep the document order (stable sort). The evaluated scene, the planner and the scene tree use the sorted order. | 0 |
+| `blendMode` | Blends the node with everything below it, including layers of other backends and the composition background color (in the working color space). Groups and `layer` are isolated: their children blend only with content of the same group. See 1.6. | `normal` |
+| `filters` | List, applied in order. `blur.radius` is the standard deviation in pixels (like CSS `blur()`). `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `invert`, `hue-rotate` as in CSS. | – |
+| `shadow` | Drop shadow of the whole node. `blur` is the standard deviation. | – |
+| `mask` | The mask node lives in the **local coordinate system of the masked node** (it moves with it). `alpha`: opacity of the mask; `luminance`: brightness × alpha. `invert` inverts. Mask and masked node may use different backends (1.6). | `alpha` |
+| `clip` (only `group`) | Clips children to the box of the group. | `false` |
+| `reveal` (from transitions) | Clips the node to `revealShape(reveal, box)` in local box coordinates. For groups without a size, `box` is the hull of the children. Applies to all node types, including `layer`, `scene3d`, `html`, `blender` (1.6). | – |
 
-### 1.6 Compositing über Backend-Grenzen (Frame Plan)
+### 1.5 Fill and stroke
 
-Der Planner (`planFrame`) teilt die Szene in Layer; jedes Backend rendert seine Layer, der Compositor setzt sie zusammen.
-Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Regeln:
+- `fill` and `stroke` are a color or a gradient.
+- Without `fill` and `stroke` the shape fills with `#FFFFFF` (`effectiveFill`).
+- Gradients use relative coordinates by default (`units: 'relative'`): 0..1 of the box; `units: 'pixels'` uses local pixels.
+  - `linear`: `start` default `{0, 0}`, `end` default `{1, 0}`.
+  - `radial`: `center` default `{0.5, 0.5}`, `radius` default 0.5, relative to the larger box side.
+  - `conic`: `center` default `{0.5, 0.5}`, `angle` in degrees, 0 = right, clockwise.
+- `strokeWidth` defaults to 1 when `stroke` is set. The stroke is centered on the edge.
+- `strokeCap` default `butt`, `strokeJoin` default `miter`.
+- `strokeDash`: dash and gap lengths in pixels.
+- `trimStart`, `trimEnd` (0..1) and `trimOffset` (0..1, cyclic) cut the stroke along the path length.
 
-- **Gruppen** mit Nachfahren aus mehreren Backends, und Gruppen, deren Kinder ein Backend ohne eigene Gruppen-Unterstützung brauchen (`scene3d`, `html`, `blender`), setzt der Compositor zusammen. Er wendet in dieser Reihenfolge an: Kinder → `colorSpace` (nur `layer`) → `effects` → `crop` → `clip` → Maske → `filters` → `shadow` → Reveal → Transform → `opacity` → `blendMode`. `filters` und `shadow` rechnet der Compositor wie das Skia-Backend (Story 17.11): Farbfilter auf nicht vormultiplizierten, sRGB-kodierten Werten, `blur` und Schatten auf vormultiplizierten sRGB-Werten, Längen in lokalen Einheiten (mit der Vorschau-Skalierung bzw. Node-Matrix in Pixel umgerechnet).
-- **Isolierte Nodes:** Eine Node wird isoliert, wenn ihr Backend eine Eigenschaft nicht über die Layer-Grenze anwenden kann:
-  - `scene3d`, `html`, `blender` mit `blendMode ≠ normal`, `mask` oder Reveal;
-  - 2D-Nodes (Skia, PixiJS) mit `blendMode ≠ normal`, wenn unter ihnen Inhalt außerhalb ihres Layers liegt (ein anderer Layer oder die Hintergrundfarbe der Composition);
-  - 2D-Nodes, deren Masken-Node ein anderes Backend braucht.
+### 1.6 Compositing across backend boundaries (frame plan)
 
-  Das Backend rendert die Node dann ohne diese Eigenschaften (mit Transform und Opacity), der Compositor wendet Reveal, Maske (mit der Node-Matrix transformiert) und Blend Mode auf den fertigen Layer an. Reveal-Kanten werden mit 4 × 4 Stichproben geglättet.
-- **`filters` und `shadow` an `scene3d` und `blender`:** Three.js und Blender zeichnen sie nicht selbst. Der Compositor wendet sie auf den fertigen Layer an (Reihenfolge Maske → `filters` → `shadow` → Reveal), isoliert oder nicht; Blur-Radien skalieren mit √|det| der Node-Matrix, Schatten-Offsets mit ihrem linearen Anteil. 2D-Backends und `html` (CSS) zeichnen sie selbst.
-- Blend Modes innerhalb eines 2D-Layers ohne Hintergrundfarbe rechnet das Backend selbst (Skia/PixiJS).
-- **2D-Backend (`settings.renderer2d`):** Standard ist Skia. Mit `renderer2d: 'pixi'` rendert PixiJS jede 2D-Node, deren eigene Eigenschaften es darstellen kann; alle anderen rendert Skia (Rückfall pro Node, Info `OV_PIXI_FALLBACK`, ADR 0018). Kann Pixi die Eigenschaften einer Gruppe nicht zeichnen, rendert Skia die ganze Gruppe. Ein explizites `renderer` an der Node hat Vorrang.
+The planner (`planFrame`) splits the scene into layers; every backend renders its layers, the compositor puts them together.
+So that no property gets lost at a backend boundary, these rules apply:
 
-### 1.7 Farbräume
+- **Groups** with descendants from several backends, and groups whose children need a backend without its own group support (`scene3d`, `html`, `blender`), are composited by the compositor. It applies in this order: children → `colorSpace` (only `layer`) → `effects` → `crop` → `clip` → mask → `filters` → `shadow` → reveal → transform → `opacity` → `blendMode`. The compositor computes `filters` and `shadow` like the Skia backend (story 17.11): color filters on unpremultiplied, sRGB-encoded values, `blur` and shadows on premultiplied sRGB values, lengths in local units (converted to pixels with the preview scale or the node matrix).
+- **Isolated nodes:** a node is isolated when its backend cannot apply a property across the layer boundary:
+  - `scene3d`, `html`, `blender` with `blendMode ≠ normal`, `mask` or a reveal;
+  - 2D nodes (Skia, PixiJS) with `blendMode ≠ normal` when content outside their layer lies below them (another layer or the composition background color);
+  - 2D nodes whose mask node needs another backend.
 
-- Backends liefern sRGB-kodierte Pixel (1.1). Der Compositor mischt im **Arbeitsfarbraum**: `composition.colorSpace`, sonst `settings.workingColorSpace`, sonst `srgb`. Effekte rechnen immer in linearem Licht.
-- `layer.colorSpace` erklärt, wie die Pixel der Kinder kodiert sind: `linear` (lineares Licht) oder `rec709` (BT.709-OETF). Der Compositor liest sie mit dieser Kodierung statt sRGB und überführt sie in den Arbeitsfarbraum. `srgb` ist der Standard und ändert nichts.
-- `settings.outputColorSpace` kodiert die Ausgabe-Pixel: `srgb` (Standard), `rec709` oder `linear` (lineares Licht in 8 Bit; für Weiterverarbeitung, sichtbar gröbere Abstufung in dunklen Tönen). Der Wert geht in den Frame-Schlüssel ein. Das Video-Tag (`color_trc`) setzt `renderProfile.colorSpace` (Standard `srgb`); weichen beide ab, warnt der Validator mit `OV_COLORSPACE_MISMATCH`.
+  The backend then renders the node without these properties (with transform and opacity); the compositor applies reveal, mask (transformed with the node matrix) and blend mode to the finished layer. Reveal edges are smoothed with 4 × 4 samples.
+- **`filters` and `shadow` on `scene3d` and `blender`:** Three.js and Blender do not draw them. The compositor applies them to the finished layer (order mask → `filters` → `shadow` → reveal), isolated or not; blur radii scale with √|det| of the node matrix, shadow offsets with its linear part. 2D backends and `html` (CSS) draw them themselves.
+- Blend modes inside a 2D layer without a background color are computed by the backend itself (Skia/PixiJS).
+- **2D backend (`settings.renderer2d`):** the default is Skia. With `renderer2d: 'pixi'` PixiJS renders every 2D node whose own properties it can draw; Skia renders all others (per-node fallback, info `OV_PIXI_FALLBACK`, ADR 0018). If Pixi cannot draw the properties of a group, Skia renders the whole group. An explicit `renderer` on the node takes precedence.
 
-### 1.5 Füllung und Kontur
+### 1.7 Color spaces
 
-- `fill` und `stroke` sind Farbe oder Verlauf.
-- Fehlen `fill` und `stroke`, füllt die Form mit `#FFFFFF` (`effectiveFill`).
-- Verläufe nutzen standardmäßig relative Koordinaten (`units: 'relative'`): 0..1 der Box.
-  - `linear`: `start` Standard `{0, 0}`, `end` Standard `{1, 0}`.
-  - `radial`: `center` Standard `{0.5, 0.5}`, `radius` Standard 0.5, relativ zur größeren Box-Seite.
-  - `conic`: `center` Standard `{0.5, 0.5}`, `angle` in Grad, 0 = rechts, im Uhrzeigersinn.
-- `strokeWidth` Standard 1, wenn `stroke` gesetzt ist. Die Kontur liegt mittig auf der Kante.
-- `strokeCap` Standard `butt`, `strokeJoin` Standard `miter`.
-- `strokeDash`: Strich- und Lückenlängen in Pixeln.
-- `trimStart`, `trimEnd` (0..1) und `trimOffset` (0..1, zyklisch) beschneiden die Kontur entlang der Pfadlänge.
+- Backends deliver sRGB-encoded pixels (1.1). The compositor blends in the **working color space**: `composition.colorSpace`, otherwise `settings.workingColorSpace`, otherwise `srgb`. Effects always compute in linear light.
+- `layer.colorSpace` declares how the pixels of the children are encoded: `linear` (linear light) or `rec709` (BT.709 OETF). The compositor reads them with this encoding instead of sRGB and converts them into the working color space. `srgb` is the default and changes nothing.
+- `settings.outputColorSpace` encodes the output pixels: `srgb` (default), `rec709` or `linear` (linear light in 8 bits; for further processing, visibly coarser steps in dark tones). The value is part of the frame key. The video tag (`color_trc`) is set by `renderProfile.colorSpace` (default `srgb`); if the two differ, the validator warns with `OV_COLORSPACE_MISMATCH`.
 
-## 2. Node-Typen
+## 2. Node types
 
-### Struktur
+### Structure
 
-- **group**: zeichnet Kinder in Reihenfolge. Transform, Opacity, Filter, Maske wirken auf das Gruppenbild.
-- **layer**: wie `group`, bildet aber immer einen eigenen Compositor-Layer. Zusätzlich `colorSpace` (1.7), `crop`, `effects`, `motionBlur`.
-- **sequence**: spielt ihre Kinder nacheinander ab und wird vor dem Rendern zu einer `group` (T9). Jedes Kind braucht `timing.duration` (eine `composition-ref` ohne Dauer nimmt die Dauer ihrer Composition); fehlt sie, wird das Kind mit `OV_SEQUENCE_DURATION` übersprungen. `timing.from` der Kinder wird ersetzt (`OV_SEQUENCE_FROM_IGNORED`). Zwischen Kind i und i + 1 gilt `transitions[i] ?? between ?? { type: 'cut' }`:
-  - `cut`: Kind i + 1 beginnt am Ende von Kind i.
-  - Übergang mit `type` (wie `transition`: `fade`, `slide-*`, `wipe-*`, `zoom-in`, `zoom-out`, `blur`, `iris`) und `duration` d: Kind i + 1 beginnt d vor dem Ende von Kind i (d wird auf die kürzere der beiden Dauern begrenzt). Kind i + 1 erhält den Übergang als `in` und liegt über Kind i, das bis zum Ende der Überlappung stehen bleibt (Überblendung; bei deckenden Clips exakt ein Crossfade). Bei `slide-*` erhält Kind i denselben Übergang als `out` (Push: beide Clips bewegen sich in dieselbe Richtung).
-  - Eigene `transition`-Einträge der Kinder gelten an Stellen ohne Sequenz-Übergang (z. B. `in` des ersten und `out` des letzten Kinds).
-  - Die Gesamtdauer ist die Summe der Kinddauern minus der Überlappungen.
-- **composition-ref**, **component**, **subtitles**: werden vor dem Rendern expandiert. Renderer sehen sie nie.
-  Eine `composition-ref` bringt den Ton ihrer Composition mit (Spuren, Video-Ton, weitere Refs, rekursiv), versetzt und abgebildet mit der lokalen Zeit der Ref (`from`, `speed`, `reverse`, `remap` wirken wie bei Video-Ton). Lautheit und Limiter der verschachtelten Composition wirken nicht; gemastert wird nur die äußere.
+- **group**: draws children in order. Transform, opacity, filters and mask act on the group image.
+- **layer**: like `group`, but always forms its own compositor layer. Additionally `colorSpace` (1.7), `crop`, `effects`, `motionBlur`.
+- **sequence**: plays its children one after another and becomes a `group` before rendering (T9). Every child needs `timing.duration` (a `composition-ref` without a duration takes the duration of its composition); without it the child is skipped with `OV_SEQUENCE_DURATION`. `timing.from` of the children is replaced (`OV_SEQUENCE_FROM_IGNORED`). Between child i and i + 1 applies `transitions[i] ?? between ?? { type: 'cut' }`:
+  - `cut`: child i + 1 starts at the end of child i.
+  - A transition with `type` (like `transition`: `fade`, `slide-*`, `wipe-*`, `zoom-in`, `zoom-out`, `blur`, `iris`) and `duration` d: child i + 1 starts d before the end of child i (d is limited to the shorter of the two durations). Child i + 1 gets the transition as `in` and lies above child i, which stays until the end of the overlap (cross-fade; for opaque clips exactly a crossfade). With `slide-*` child i gets the same transition as `out` (push: both clips move in the same direction).
+  - Own `transition` entries of the children apply where there is no sequence transition (for example `in` of the first and `out` of the last child).
+  - The total duration is the sum of the child durations minus the overlaps.
+- **composition-ref**, **component**, **subtitles**: are expanded before rendering. Renderers never see them.
+  A `composition-ref` brings the audio of its composition (tracks, video audio, further refs, recursively), shifted and mapped with the local time of the ref (`from`, `speed`, `reverse`, `remap` act as for video audio). Loudness and limiter of the nested composition do not apply; only the outer one is mastered.
 
-### Formen
+### Shapes
 
-- **rect**: Rechteck `width × height`. `cornerRadius` als Zahl oder `[oben links, oben rechts, unten rechts, unten links]`.
-- **ellipse**: Ellipse in der Box.
-- **line**: Strecke `from` → `to`. Ohne `stroke` zeichnet sie mit `fill`-Farbe als Kontur der Breite `strokeWidth ?? 1`.
-- **polyline**: offene Linie; Standard ist nur Kontur mit Farbe `#FFFFFF`, Breite 1, wenn weder `fill` noch `stroke` gesetzt sind.
-- **polygon**: geschlossene Fläche.
-- **path**: SVG-Pfaddaten `d`, `fillRule` Standard `nonzero`.
+- **rect**: rectangle `width × height`. `cornerRadius` as a number or `[top left, top right, bottom right, bottom left]`.
+- **ellipse**: ellipse in the box.
+- **line**: segment `from` → `to`. Without `stroke` it draws with the `fill` color as a stroke of width `strokeWidth ?? 1`.
+- **polyline**: open line; by default only a stroke with color `#FFFFFF`, width 1, when neither `fill` nor `stroke` is set.
+- **polygon**: closed area.
+- **path**: SVG path data `d`, `fillRule` default `nonzero`.
 
 ### Text
 
-- `fontFamily` Standard: `settings.defaultFont`, sonst `Inter`. Emoji fallen auf `Noto Color Emoji` zurück.
+- `fontFamily` default: `settings.defaultFont`, otherwise `Inter`. Emoji fall back to `Noto Color Emoji`.
 - `fontSize` 48, `fontWeight` 400, `fontStyle` normal, `lineHeight` 1.2, `letterSpacing` 0, `textAlign` `left`, `direction` `auto`.
-- Ohne `width` bricht der Text nur an `\n` um; die Box ist so breit wie die längste Zeile.
-- Mit `width` bricht der Text an Wortgrenzen um. `textAlign` richtet innerhalb von `width` aus.
-- `maxLines` begrenzt die Zeilen; mit `ellipsis` wird die letzte Zeile gekürzt. Mehr Text als Platz ist **Überlauf** (Diagnose `OV_TEXT_OVERFLOW`).
-- `fontFeatures` (z. B. `{ liga: 0, tnum: 1 }`) und `fontVariations` (z. B. `{ wght: 650 }`) gehen direkt an den Textsatz.
-- `textPath`: Glyphen folgen dem Pfad ab `offset` Pixeln. `background` wird dann zu einem Band entlang des Pfads (Zeilenhöhe plus `paddingY`, `paddingX` vor und nach dem Text, `radius > 0` rundet die Enden); `textAnimation` wirkt je Einheit um ihre Mitte auf dem Pfad.
-- `fill` als Verlauf füllt die Textbox; `stroke` zeichnet Glyphenkonturen.
-- `textAnimation`: Jede Einheit (Zeichen, Wort, Zeile) geht von `from` in den Normalzustand über. Den Zustand berechnet `textUnitState(node, i, count, localFrame, fps)`; die Aufteilung `splitTextUnits`. Verschiebung und Skalierung wirken um die Mitte der Einheit. Einheit i beginnt bei `starts[i]`, sonst bei `start + Position · stagger`.
-- **subtitles** (Makro): siehe `packages/subtitles/README.md` – ASS-Stile, Umbruch mit echter Textmessung, Karaoke-Fill im laufenden Wort, `textAnimation` je Wort ab seiner Wortzeit, `fromAudio` vor dem Render transkribiert.
-- `background`: Box hinter dem gemessenen Text (`color`, `paddingX`, `paddingY`, `radius`); mit `perLine: true` eine Box je Zeile. Die Box gehört zur Node (Opacity, Transform, Maske wirken mit).
-- `rich-text`: `spans` mit eigenen Stilen; Stil-Properties der Node sind Standard für alle Spans.
+- Without `width` the text breaks only at `\n`; the box is as wide as the longest line.
+- With `width` the text breaks at word boundaries. `textAlign` aligns within `width`.
+- `maxLines` limits the lines; with `ellipsis` the last line is shortened. More text than space is **overflow** (diagnostic `OV_TEXT_OVERFLOW`).
+- `fontFeatures` (for example `{ liga: 0, tnum: 1 }`) and `fontVariations` (for example `{ wght: 650 }`) go straight to text shaping.
+- `textPath`: glyphs follow the path from `offset` pixels. `background` then becomes a band along the path (line height plus `paddingY`, `paddingX` before and after the text, `radius > 0` rounds the ends); `textAnimation` acts per unit around its center on the path.
+- `fill` as a gradient fills the text box; `stroke` draws glyph outlines.
+- `textAnimation`: every unit (character, word, line) goes from `from` to the normal state. `textUnitState(node, i, count, localFrame, fps)` computes the state; `splitTextUnits` the split. Offset and scale act around the center of the unit. Unit i starts at `starts[i]`, otherwise at `start + position · stagger`.
+- **subtitles** (macro): see `packages/subtitles/README.md` – ASS styles, line breaking with real text measurement, karaoke fill in the current word, `textAnimation` per word from its word time, `fromAudio` transcribed before rendering.
+- `background`: box behind the measured text (`color`, `paddingX`, `paddingY`, `radius`); with `perLine: true` one box per line. The box belongs to the node (opacity, transform, mask apply).
+- `rich-text`: `spans` with their own styles; style properties of the node are the default for all spans.
 
-### Medien
+### Media
 
-- **image**: `fit` Standard `fill` bei gesetzten Maßen. `contain`/`cover` zentrieren. `smoothing` Standard `linear`. Animierte Bilder (GIF, APNG, animiertes WebP) normalisiert die Asset-Pipeline zu einem verlustfreien Video; die Node zeigt dann den Frame zur lokalen Zeit, in einer Endlosschleife über die Dauer des Bildes (Video-Frame-Pfad wie bei `video`, `loop: true`, stumm). Animiertes WebP braucht ein FFmpeg, das animiertes WebP dekodiert (FFmpeg 6.1 kann das nicht; der Import meldet dann einen Fehler).
-- **video**: Quellzeit = `startFrom + localTime · playbackRate`; mit `loop` modulo Dauer, sonst geklemmt. Das Bild liefert `AssetResolver.videoFrame(asset, sekunden)`.
-  Ton (ohne `muted`): In einfacher Einbettung (nur `timing.from`/`duration` an der Node und allen Vorfahren, nicht in `sequence` oder Komponenten) ist er ein Clip; `playbackRate` ändert das Tempo bei gleicher Tonhöhe. Sonst (`speed`, `reverse`, `remap`, `loop`, `pingPong`, `hold` an der Node oder einem Vorfahren) folgt der Ton der Quellzeit des Bildes, je Frame abgetastet und linear interpoliert, und läuft wie ein Band (Tonhöhe folgt der Geschwindigkeit, `reverse` spielt rückwärts).
-- **svg**: Asset oder `markup` in die Box skaliert (`fit` Standard `contain`). Gezeichnet werden Formen, `g`, `use`, Verläufe, `pattern`, `clipPath` (`clipPathUnits`, `clip-rule`), `mask` (Luminanz × Alpha, `mask-type: alpha`, Maskenbereich), `image` und `text` mit `tspan` (`x`, `y`, `dx`, `dy`, eigener Stil). `<image>` lädt nur Data-URIs (PNG, JPEG, WebP, GIF, BMP) und Bild-Assets des Projects (`asset:<id>` oder ein Pfad relativ zur SVG-Datei innerhalb des Projects); andere Quellen meldet die Prüfung als `OV_SVG_IMAGE_BLOCKED`. Nicht unterstützte Elemente (z. B. `filter`, `foreignObject`) meldet sie als `OV_SVG_UNSUPPORTED`, auch für SVG-Assets (`checkProject`).
-- **sprite**: Rasterbild mit `columns × rows` Zellen, zeilenweise nummeriert. Index = `frame`, sonst `floor(localTime · frameRate)`; mit `loop` modulo `frameCount`, sonst geklemmt.
-- **lottie**: Zeit = `localTime · speed + frameOffset / lottieFps`; mit `loop` modulo Dauer.
+- **image**: `fit` default `fill` when a size is set. `contain`/`cover` center. `smoothing` default `linear`. Animated images (GIF, APNG, animated WebP) are normalized by the asset pipeline into a lossless video; the node then shows the frame at the local time, looping over the duration of the image (video frame path as for `video`, `loop: true`, muted). Animated WebP needs an FFmpeg that decodes animated WebP (FFmpeg 6.1 cannot; the import then reports an error).
+- **video**: source time = `startFrom + localTime · playbackRate`; with `loop` modulo duration, otherwise clamped. `AssetResolver.videoFrame(asset, seconds)` delivers the image.
+  Audio (without `muted`): in simple embedding (only `timing.from`/`duration` on the node and all ancestors, not inside `sequence` or components) it is a clip; `playbackRate` changes the tempo at the same pitch. Otherwise (`speed`, `reverse`, `remap`, `loop`, `pingPong`, `hold` on the node or an ancestor) the audio follows the source time of the image, sampled per frame and linearly interpolated, and runs like tape (pitch follows speed, `reverse` plays backwards).
+- **svg**: asset or `markup` scaled into the box (`fit` default `contain`). Drawn are shapes, `g`, `use`, gradients, `pattern`, `clipPath` (`clipPathUnits`, `clip-rule`), `mask` (luminance × alpha, `mask-type: alpha`, mask region), `image` and `text` with `tspan` (`x`, `y`, `dx`, `dy`, own style). `<image>` loads only data URIs (PNG, JPEG, WebP, GIF, BMP) and image assets of the project (`asset:<id>` or a path relative to the SVG file inside the project); the check reports other sources as `OV_SVG_IMAGE_BLOCKED`. It reports unsupported elements (for example `filter`, `foreignObject`) as `OV_SVG_UNSUPPORTED`, also for SVG assets (`checkProject`).
+- **sprite**: raster image with `columns × rows` cells, numbered row by row. Index = `frame`, otherwise `floor(localTime · frameRate)`; with `loop` modulo `frameCount`, otherwise clamped.
+- **lottie**: time = `localTime · speed + frameOffset / lottieFps`; with `loop` modulo duration.
 
-### Effekte
+### Effects
 
-- **shader**: füllt die Box. SkSL-Signatur `half4 main(float2 coord)`, `coord` in lokalen Pixeln. Uniforms `time` (Sekunden), `frame`, `resolution` (float2) plus eigene. `sksl` (Skia) und `glsl` (PixiJS, `mainImage(out vec4, in vec2)`) dürfen gleichzeitig stehen; jedes Backend nimmt seine Quelle (ADR 0020).
-- **particles**: Zustand aus `particles2d(node, localTimeSeconds, fps)`. Form `circle` (Standard), `square`, `spark` (Strich in Bewegungsrichtung, Länge = 3 × Größe). Koordinaten relativ zur Box.
+- **shader**: fills the box. SkSL signature `half4 main(float2 coord)`, `coord` in local pixels. Uniforms `time` (seconds), `frame`, `resolution` (float2) plus your own. `sksl` (Skia) and `glsl` (PixiJS, `mainImage(out vec4, in vec2)`) may be present at the same time; every backend takes its own source (ADR 0020).
+- **particles**: state from `particles2d(node, localTimeSeconds, fps)`. Shape `circle` (default), `square`, `spark` (stroke in the direction of motion, length = 3 × size). Coordinates relative to the box.
 
 ### Browser
 
-- **html**: Chromium rendert `html` + `css` in eine Box `width × height`; die Box wird mit der Node-Matrix platziert. Die Seite erhält pro Frame die Zeit über `window.openvideo` (siehe Browser-Renderer-Doku). CSS-Animationen werden pausiert und auf die lokale Zeit gesetzt. Skripte laufen nur ausdrücklich erlaubt (`--trusted`, ADR 0008); ohne Skripte bleiben `<canvas>` (2D, WebGL, WebGPU) und Custom Elements ohne deklaratives Shadow DOM leer – `openvideo check` warnt mit `OV_HTML_CANVAS_NO_SCRIPTS` bzw. `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
+- **html**: Chromium renders `html` + `css` into a box `width × height`; the box is placed with the node matrix. The page receives the time per frame via `window.openvideo` (see the browser renderer docs). CSS animations are paused and set to the local time. Scripts run only when explicitly allowed (`--trusted`, ADR 0008); without scripts `<canvas>` (2D, WebGL, WebGPU) and custom elements without declarative shadow DOM stay empty – `openvideo validate` warns with `OV_HTML_CANVAS_NO_SCRIPTS` or `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
 
 ### 3D
 
-- **scene3d**: rendert Kinder mit Three.js in eine Box `width × height`, platziert mit der Node-Matrix. Bildtexturen über dem GPU-Maximum sind ein Fehler `OV_THREE_TEXTURE_TOO_LARGE`, mit `textureDownscale: true` werden sie verkleinert. `background` Standard transparent. `camera` Standard: erste `camera3d`; ohne Kamera eine Perspektivkamera bei `[0, 0, 5]` mit Blick auf den Ursprung.
-- **camera3d**: `fov` 50, `near` 0.1, `far` 1000, `projection` `perspective`. `target` bestimmt die Blickrichtung, sonst gilt `rotation`.
+- **scene3d**: renders children with Three.js into a box `width × height`, placed with the node matrix. `backend`: `auto` (default; WebGPU when a test render in Chromium succeeds, otherwise WebGL2, always WebGL2 for GLSL `ShaderMaterial`), `webgpu` or `webgl2`. Image textures above the GPU maximum are an error `OV_THREE_TEXTURE_TOO_LARGE`; with `textureDownscale: true` they are downscaled. `background` default transparent. `camera` default: first `camera3d`; without a camera a perspective camera at `[0, 0, 5]` looking at the origin.
+- **camera3d**: `fov` 50, `near` 0.1, `far` 1000, `projection` `perspective`. `target` sets the viewing direction, otherwise `rotation` applies.
 - **light3d**: `intensity` 1, `color` `#FFFFFF`.
-- **mesh3d**, **model3d**, **instances3d**, **particles3d**, **group3d**: Position in Metern, Rotation XYZ in Grad.
-- **blender**: wie `scene3d`, gerendert mit Blender. `particles3d` wird als Instanzen übertragen (je lebendes Partikel eine unbeleuchtete Kugel, gleiche Formel wie Three.js). `motionBlur: true`: Der Frame-Render übergibt die Zustände bei ±0,25 Frames (Verschlusszeit ½ Frame); Blender interpoliert Position, Rotation und Skalierung linear dazwischen.
+- **mesh3d**, **model3d**, **instances3d**, **particles3d**, **group3d**: position in meters, rotation XYZ in degrees.
+- **blender**: like `scene3d`, rendered with Blender. `particles3d` is transferred as instances (one unlit sphere per living particle, same formula as Three.js). `motionBlur: true`: the frame render passes the states at ±0.25 frames (shutter ½ frame); Blender interpolates position, rotation and scale linearly in between.
 
-## 3. Beispiele je Node-Typ
+## 3. Examples per node type
 
-Ein kleines, gültiges JSON-Beispiel je Node-Typ. Dieselben Beispiele liefern `capabilities.get` (Feld `example`), `docs/ai/capabilities.json` und das JSON Schema (`examples` je `Node_<typ>`).
-Durchgehende Beispielprojekte liegen in [`examples/`](../../examples/README.md).
+One small, valid JSON example per node type. `capabilities.get` (field `example`), `docs/ai/capabilities.json` and the JSON Schema (`examples` per `Node_<type>`) return the same examples.
+Complete example projects live in [`examples/`](../../examples/README.md).
 
 <!-- node-examples:start -->
 
-Generiert von `scripts/generate-docs.mjs` aus `NODE_EXAMPLES` (`@agentic-video/schema`). Jedes Beispiel ist gültig; `exampleProject(type)` bettet es in ein Projekt mit Composition `main` (640 × 360, 30 fps, 2 s) ein. 3D-Nodes stehen dort in einer `scene3d` mit Kamera und Licht. Verweise: Assets `logo` (image, `assets/logo.png`), `clip` (video, `assets/clip.mp4`), `walk-sheet` (image, `assets/walk-sheet.png`), `spinner` (lottie, `assets/spinner.json`), `robot` (model, `assets/robot.glb`); Untertitel-Track `captions`; Composition `intro`.
+Generated by `scripts/generate-docs.mjs` from `NODE_EXAMPLES` (`@agentic-video/schema`). Every example is valid; `exampleProject(type)` embeds it in a project with the composition `main` (640 × 360, 30 fps, 2 s). 3D nodes sit there in a `scene3d` with camera and light. References: assets `logo` (image, `assets/logo.png`), `clip` (video, `assets/clip.mp4`), `walk-sheet` (image, `assets/walk-sheet.png`), `spinner` (lottie, `assets/spinner.json`), `robot` (model, `assets/robot.glb`); subtitle track `captions`; composition `intro`.
 
 ### `group`
 
