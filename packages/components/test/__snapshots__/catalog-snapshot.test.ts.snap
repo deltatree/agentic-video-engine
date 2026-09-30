@@ -2142,7 +2142,7 @@ export function render(frame: number): string {
     },
   },
   {
-    "description": "Line chart with one or more series (\`series\`, or \`data\` for one series). Lines draw on (trim), points pop in; one series gets a gradient area.",
+    "description": "Line chart with one or more series (\`series\`, or \`data\` for one series). Lines draw on (trim), points pop in; one series gets a gradient area that grows with the line.",
     "example": {
       "series": [
         {

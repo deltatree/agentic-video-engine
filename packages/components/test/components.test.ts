@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { Registry, SCHEMA_VERSION, evaluateScene, validateProject, validateValue, walkEvaluated, type EvaluatedNode, type ExpandContext, type Theme } from '@agentic-video/core';
+import { Registry, SCHEMA_VERSION, evaluateScene, isRecord, validateProject, validateValue, walkEvaluated, type EvaluatedNode, type ExpandContext, type Theme } from '@agentic-video/core';
 import {
   COMPONENTS,
   COMPONENT_NAMES,
@@ -10,6 +10,7 @@ import {
   arcPath,
   formatNumber,
   niceScale,
+  polylinePrefix,
   registerComponents,
   resolveTheme,
   tokenize,
@@ -188,6 +189,47 @@ describe('Komponentenbibliothek (FR-82)', () => {
     const barHeight = (progress: number) => JSON.stringify(bar(progress)).match(/"id":"bar-0"[^}]*"height":([0-9.]+)/u)?.[1];
     expect(barHeight(0)).toBe('0');
     expect(Number(barHeight(1))).toBeGreaterThan(100);
+  });
+
+  it('LineChart: die Fläche wächst mit der Linie und steht nie vor ihr (Story 19.8)', () => {
+    const def = COMPONENTS.find((c) => c.name === 'LineChart');
+    const data = [{ label: 'a', value: 10 }, { label: 'b', value: 30 }, { label: 'c', value: 20 }, { label: 'd', value: 40 }];
+    const find = (nodes: readonly unknown[], id: string): Record<string, unknown> | undefined => {
+      for (const n of nodes) {
+        if (!isRecord(n)) continue;
+        const rec = n;
+        if (rec['id'] === id) return rec;
+        const hit = Array.isArray(rec['children']) ? find(rec['children'], id) : undefined;
+        if (hit !== undefined) return hit;
+      }
+      return undefined;
+    };
+    const at = (progress: number) => {
+      const nodes = def?.expand({ data, progress }, ctxAt(0)) ?? [];
+      const line = find(nodes, 'line-0');
+      const area = find(nodes, 'area-0');
+      const xs = (v: unknown): number[] => (Array.isArray(v) ? v.map((p: unknown) => (Array.isArray(p) ? Number(p[0]) : Number.NaN)) : []);
+      return { lineXs: xs(line?.['points']), areaXs: xs(area?.['points']), area };
+    };
+    const half = at(0.5);
+    const full = at(1);
+    const lineEnd = Math.max(...full.lineXs);
+    const lineStart = Math.min(...full.lineXs);
+    // Halb gezeichnet: Die Fläche endet vor dem letzten Datenpunkt, aber nach dem ersten.
+    expect(Math.max(...half.areaXs)).toBeLessThan(lineEnd);
+    expect(Math.max(...half.areaXs)).toBeGreaterThan(lineStart);
+    // Fertig: Die Fläche reicht über die ganze Linie; keine Deckkraft-Blende mehr vor der Linie.
+    expect(Math.max(...full.areaXs)).toBeCloseTo(lineEnd, 6);
+    expect(full.area?.['opacity']).toBeUndefined();
+    // Am Anfang ist die Fläche leer (alle Punkte auf einer Senkrechten).
+    expect(new Set(at(0).areaXs).size).toBe(1);
+  });
+
+  it('polylinePrefix folgt der Länge wie trimEnd', () => {
+    expect(polylinePrefix([[0, 0], [10, 0], [10, 10]], 0.75)).toEqual([[0, 0], [10, 0], [10, 5]]);
+    expect(polylinePrefix([[0, 0], [10, 0]], 0)).toEqual([[0, 0]]);
+    expect(polylinePrefix([[0, 0], [10, 0]], 1)).toEqual([[0, 0], [10, 0]]);
+    expect(polylinePrefix([], 0.5)).toEqual([]);
   });
 });
 

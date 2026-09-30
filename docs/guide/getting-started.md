@@ -1,67 +1,88 @@
-# Erste Schritte
+# Getting started
 
-## Voraussetzungen
+[Deutsche Fassung](getting-started.de.md)
 
-| Werkzeug | Zweck | Pflicht |
+## Requirements
+
+| Tool | Purpose | Required |
 |---|---|---|
-| Node.js 22.13 oder neuer | Laufzeit | ja |
-| FFmpeg 6 oder neuer | Video-Encoding, Medien | ja, für Videos |
-| Chromium (über Playwright) | HTML/CSS, PixiJS, Three.js | nur für diese Node-Typen |
-| Docker | Sandbox für TSX und HTML-Skripte | nur für Agent-Code |
-| Blender 4.2 LTS | `blender`-Nodes | nein |
+| Node.js 22.13 or newer | Runtime | yes |
+| FFmpeg 6 or newer (CI and images use 7.1) | Video encoding, media | yes, for videos |
+| Chromium (via Playwright) | HTML/CSS, PixiJS, Three.js | only for these node types |
+| Docker | Sandbox for TSX and HTML scripts, Docker workers | only for agent code |
+| Blender 4.2 LTS | `blender` nodes | no |
+| Piper or espeak-ng, whisper.cpp | Voiceover, transcription | no |
 
 ## Installation
 
-> **Noch nicht auf npm:** Die Pakete `@agentic-video/*` sind bis zur ersten Veröffentlichung
-> (Release-Workflow bei einem Tag `v*`) nicht in der npm-Registry. `npx @agentic-video/cli` und
-> `npm install -g @agentic-video/cli` finden sie bis dahin nicht. Installiere die CLI so lange aus dem Repository:
+> **Not on npm yet:** the `@agentic-video/*` packages are not in the npm registry until the first
+> release (release workflow on a `v*` tag). `npx @agentic-video/cli` and
+> `npm install -g @agentic-video/cli` cannot find them until then. Until then, install the CLI from the repository:
 
 ```bash
 git clone https://github.com/deltatree/agentic-video-engine.git
 cd agentic-video-engine
-npm ci && npm run build          # baut alle Pakete und kopiert das Studio ins CLI-Paket
+npm ci && npm run build          # builds all packages and copies the Studio into the CLI package
 alias openvideo="node $PWD/packages/cli/dist/bin.js"
 ```
 
-Nach der ersten Veröffentlichung ersetzt `npx @agentic-video/cli <befehl>` den Alias. Alle Befehle unten
-schreiben `openvideo`.
+After the first release `npx @agentic-video/cli <command>` replaces the alias. All commands below
+write `openvideo`.
 
-Prüfe alles mit `openvideo doctor`. Jede Zeile nennt bei Bedarf eine Lösung.
+Check everything with `openvideo doctor`. Every line names a fix when needed.
 
-## Projekt anlegen und ansehen
+## Create a project and look at it
 
-1. Lege ein Projekt an: `openvideo create hello`.
-2. Wechsle in den Ordner: `cd hello`.
-3. Starte das Studio: `openvideo dev`. Der Browser öffnet sich mit dem Projekt; die Adresse (mit Token im `#token=`-Fragment) steht auch in der Ausgabe.
+1. Create a project: `openvideo create hello` (`--tsx` for TypeScript/JSX, `--template <name>` for one of the 15 templates; `openvideo templates` lists them).
+2. Change into the folder: `cd hello`.
+3. Start the Studio: `openvideo dev`. The browser opens with the project; the address (with the token in the `#token=` fragment) is also printed.
 
-Das Studio zeigt die Composition. Änderungen im Studio landen als Patches in `project.json`.
+The Studio shows the composition. Changes in the Studio land as patches in `project.json`.
 
-`openvideo dev` beobachtet `src/**` und `project.json`:
+`openvideo dev` watches `src/**` and `project.json`:
 
-- Speicherst du in deinem Editor, kompiliert `dev` TSX-Projekte neu und schreibt die IR nach `project.json`. Kompilierfehler stehen im Terminal; das Studio behält den letzten guten Stand.
-- Ändert ein Agent (MCP, Agent API, `openvideo patch`) oder dein Editor das Projekt, lädt das Studio sofort neu (Server-Sent Events `GET /v1/events`, siehe [ADR 0025](../adr/0025-live-sync-ueber-inhaltsrevisionen.md)). Undo-Schritte von vor der Fremdänderung verfallen. Hast du im Code-Panel ungespeicherte Änderungen, warnt das Studio statt sie zu überschreiben.
-- `--no-open` öffnet keinen Browser (in CI und ohne grafische Sitzung öffnet `dev` ohnehin keinen). `openvideo serve --open` öffnet das Studio auch beim Agent-API-Server.
+- When you save in your editor, `dev` recompiles TSX projects and writes the IR to `project.json`. Compile errors appear in the terminal; the Studio keeps the last good state.
+- When an agent (MCP, Agent API, `openvideo patch`) or your editor changes the project, the Studio reloads at once (Server-Sent Events `GET /v1/events`, see [ADR 0025](../adr/0025-live-sync-ueber-inhaltsrevisionen.md)). Undo steps from before the external change expire. If the code panel has unsaved changes, the Studio warns instead of overwriting them.
+- `--no-open` does not open a browser (in CI and without a graphical session `dev` never opens one). `openvideo serve --open` also opens the Studio for the Agent API server.
 
-Im Studio hilft `?` mit allen Tastenkürzeln (u. a. J/K/L, I/O, M für Marker, Strg+←/→ für Keyframes).
+In the Studio, `?` shows all keyboard shortcuts (among them J/K/L, I/O, M for markers, Ctrl+←/→ for keyframes).
 
-## Rendern
+## Render
 
-1. Einen Frame ansehen: `openvideo render-frame --frame 2s --out out/frame.png`.
-2. Das Video rendern: `openvideo render --format mp4 --codec h264`.
-3. Neben dem Video liegt `<datei>.render-manifest.json` mit allen Versionen und Frame-Hashes.
+1. Look at a frame: `openvideo render-frame --frame 2s --out out/frame.png`.
+2. Render the video: `openvideo render --format mp4 --codec h264`.
+3. Next to the video lies `<file>.render-manifest.json` with all versions and frame hashes.
 
-Ein zweiter Lauf rendert nur geänderte Frames neu. Der Rest kommt aus dem Cache unter `.openvideo/cache`.
+`render` uses several worker processes by default (cores − 1, limited to 1.5 GB of memory per worker, at most 16); `--workers 1` renders in the process.
+A second run re-renders only changed frames; the rest comes from the cache in `.openvideo/cache`. An identical render reuses the whole output file.
 
-## TSX statt JSON
+## TSX instead of JSON
 
-1. Lege ein TSX-Projekt an: `openvideo create hello --tsx`.
-2. Die Quelle liegt in `src/video.tsx`. JSX ist nur Syntax; das Ergebnis ist dieselbe IR.
-3. TSX ist Code. OpenVideo führt ihn in einem Docker-Container ohne Netz aus.
-4. Für dein eigenes Projekt kannst du mit `--trusted` auf dem Host ausführen.
+1. Create a TSX project: `openvideo create hello --tsx`.
+2. The source lives in `src/video.tsx`. JSX is only syntax; the result is the same IR.
+3. TSX is code. OpenVideo runs it in a Docker container without network.
+4. For your own project you can run it on the host with `--trusted`.
 
-## Für Agents
+## For agents
 
 - Agent API: `openvideo serve --port 7788` (HTTP, `GET /v1/operations`).
-- MCP: `openvideo mcp` (stdio). Beispiel für Claude Code: `claude mcp add openvideo -- openvideo mcp --workspace ~/ov`, für ein bestehendes Projekt `openvideo mcp --project ./hello`.
-- Jede Operation auch ohne Server: `openvideo op <name> --input '<json>'` (Liste: `openvideo op --list`).
-- Lies danach [docs/ai/AGENTS.md](../ai/AGENTS.md).
+- MCP: `openvideo mcp` (stdio). Example for Claude Code: `claude mcp add openvideo -- openvideo mcp --workspace ~/ov`, for an existing project `openvideo mcp --project ./hello`. [examples/mcp.json](../../examples/mcp.json) is a client configuration.
+- Every operation also without a server: `openvideo op <name> --input '<json>'` (list: `openvideo op --list`).
+- Then read [docs/ai/AGENTS.md](../ai/AGENTS.md).
+
+## Useful environment variables
+
+| Variable | Effect |
+|---|---|
+| `OPENVIDEO_FFMPEG`, `OPENVIDEO_FFPROBE` | Paths to FFmpeg and FFprobe |
+| `OPENVIDEO_CHROMIUM`, `OPENVIDEO_BLENDER` | Paths to Chromium and Blender |
+| `OPENVIDEO_PIPER`, `OPENVIDEO_PIPER_MODEL`, `OPENVIDEO_ESPEAK`, `OPENVIDEO_WHISPER`, `OPENVIDEO_WHISPER_MODEL` | Speech synthesis and recognition |
+| `OPENVIDEO_API_TOKEN` | Bearer token of the Agent API (required on any non-loopback address) |
+| `OPENVIDEO_WORKSPACE`, `OPENVIDEO_PROJECT_ROOTS` | Workspace folder; folders that `project.open` may open |
+| `OPENVIDEO_WORKERS`, `OPENVIDEO_ENCODER_THREADS` | Local render processes; encoder threads (default fixed 4 for bit-identical files, `auto` for speed) |
+| `OPENVIDEO_CACHE_DIR`, `OPENVIDEO_CACHE_MAX_BYTES`, `OPENVIDEO_OUTPUT_CACHE` | Cache location, size limit, reuse of whole output files (`0` = off) |
+| `OPENVIDEO_RENDER_ISOLATION`, `OPENVIDEO_WORKER_IMAGE`, `OPENVIDEO_WORKER_GPUS` | Render chunks in Docker containers, with image and GPU quota |
+| `OPENVIDEO_BROWSER_GPU` | `1` renders WebGL/WebGPU on the host GPU instead of SwiftShader (not bit-identical) |
+| `OPENVIDEO_ALLOW_HTML_SCRIPTS`, `OPENVIDEO_ALLOW_PLUGINS`, `OPENVIDEO_PLUGIN_PERMISSIONS` | Allow HTML scripts (only with the Chromium OS sandbox) and plugins |
+
+Cluster settings (coordinator, S3, role tokens, metrics) are in [deploy/README.md](../../deploy/README.md).
