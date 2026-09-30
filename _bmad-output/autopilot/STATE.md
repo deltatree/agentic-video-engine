@@ -18,7 +18,10 @@ Coding Agents. Veröffentlichung als öffentliches Projekt unter github.com/delt
 
 ## Aktuelle Phase
 
-Phase 9 (Build): Epic 1 fertig; Welle 1 (Skia, Compositor, FFmpeg/Audio, Three/Pixi, Browser-Host) läuft; cache fertig
+Epics 1–22 umgesetzt. Nach dem Deep-Dive-Audit vom 2026-09-30 (sieben BMAD-Rollen, `planning-artifacts/audit-2026-09-30/`)
+wurden die Epics 16–22 (`planning-artifacts/epics-2026-09-30.md`) geplant, umgesetzt und in drei adversarialen Reviews
+(`implementation-artifacts/reviews/`) geprüft; alle Befunde sind behoben. Offen ist nur, was der Maintainer auslösen muss:
+npm-Veröffentlichung per Tag `v*` (Secret `NPM_TOKEN`), GitHub Pages aktivieren, Branch-Schutz setzen (docs/guide/maintainers.md).
 
 ## Entscheidungen
 
@@ -38,6 +41,10 @@ Phase 9 (Build): Epic 1 fertig; Welle 1 (Skia, Compositor, FFmpeg/Audio, Three/P
 | D13 | Three/Pixi-Festlegungen übernommen: Ortho-Kamera 10 m ÷ zoom, Postprocessing DoF → Bloom → Tone Mapping → Grading → Vignette → LUT, Pixi-GLSL `mainImage(out vec4, in vec2)` | Vom Renderer-Agenten begründet, in READMEs dokumentiert. |
 | D7 | Persönliche Agenten-Konfiguration (.claude, .cursor, _bmad …) wird nicht veröffentlicht | Stammt aus einem privaten Repo. |
 
+| T1–T12 | Team-Entscheidungen der Epics 16–22 | siehe `planning-artifacts/epics-2026-09-30.md` |
+| T13 | Encoder standardmäßig fest 4 Threads; `OPENVIDEO_ENCODER_THREADS=auto` ist Opt-in | Videodatei bleibt über Maschinen bitgleich (§20); ADR 0026 |
+| T14 | Output-Cache-Schlüssel über alle Frame-Schlüssel, Encoder und Runner | Review-Befunde M1/M2 (final) |
+
 ## Umgebung
 
 - Keine GPU, kein sudo, 16 Kerne, 62 GB RAM, Docker verfügbar.
@@ -45,4 +52,4 @@ Phase 9 (Build): Epic 1 fertig; Welle 1 (Skia, Compositor, FFmpeg/Audio, Three/P
 
 ## Nächster Schritt
 
-Welle 2 starten (SDK/Compiler/Sandbox, Komponenten, Importe, Blender, Untertitel/Speech); selbst: assets, render, CLI.
+Maintainer: PR prüfen und mergen, Tag `v0.1.0` für den ersten npm-Release, Pages und Branch-Schutz aktivieren.
