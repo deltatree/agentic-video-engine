@@ -29,6 +29,7 @@ import {
   type RgbaImage,
 } from '@agentic-video/core';
 import { decodeRawFrame, encodeRawFrameAsync } from '@agentic-video/png';
+import { MOTION_STATES_CAPABILITY, evaluateMotionStates, type BlenderLayerRequest, type MotionState } from '@agentic-video/renderer-blender';
 import type { CompositorNode, RenderEnvironment } from './environment.js';
 
 /** Optionen für {@link renderFrame}. */
@@ -158,6 +159,23 @@ class CacheWrites {
   }
 }
 
+/**
+ * Subframe-Zustände für Backends mit Fähigkeit `motion-states` (Blender, Story 17.5): Hat eine Node
+ * des Layers `motionBlur: true`, wird die Szene an den Nachbar-Subframes ausgewertet. Ohne solche
+ * Nodes oder ohne die Fähigkeit `undefined`.
+ */
+function motionStatesFor(ctx: PlanContext, capabilities: readonly string[], nodes: readonly EvaluatedNode[]): MotionState[] | undefined {
+  if (!capabilities.includes(MOTION_STATES_CAPABILITY) || !nodes.some((n) => n.props['motionBlur'] === true)) return undefined;
+  return evaluateMotionStates(
+    ctx.project,
+    ctx.compositionId,
+    ctx.scene.frame,
+    nodes.map((n) => n.id),
+    undefined,
+    { registry: ctx.env.registry },
+  );
+}
+
 async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: readonly EvaluatedNode[], layerId: string): Promise<RgbaImage> {
   const backend = ctx.env.registry.backends.get(backendId);
   if (backend === undefined) {
@@ -170,7 +188,8 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
       suggestions: [`Run \`openvideo doctor\` to see why the ${backendId} backend is unavailable.`],
     });
   }
-  const key = contentHash({ backend: backendId, versions: backend.versions(), nodes: nodes.map(stripNode), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
+  const motionStates = motionStatesFor(ctx, backend.capabilities, nodes);
+  const key = contentHash({ backend: backendId, versions: backend.versions(), nodes: nodes.map(stripNode), ...(motionStates !== undefined ? { motion: motionStates.map((m) => ({ offset: m.offset, nodes: m.nodes.map(stripNode) })) } : {}), width: ctx.width, height: ctx.height, scale: ctx.scale, scene: { w: ctx.scene.width, h: ctx.scene.height, seed: ctx.scene.seed, fps: ctx.scene.fps }, debug: ctx.debug ?? null });
   const tier = ctx.env.cache.tier('layer');
   const hit = await tier.get(key);
   if (hit !== undefined) {
@@ -180,7 +199,7 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
   }
   ctx.env.telemetry.metrics.cacheMiss('layer');
   if (ctx.signal?.aborted === true) throw new OpenVideoError({ code: 'OV_RENDER_CANCELLED', errorClass: 'RenderError', problem: 'The render was cancelled.', suggestions: [] });
-  const image = await backend.renderLayer({
+  const request: BlenderLayerRequest = {
     layerId,
     scene: ctx.scene,
     nodes,
@@ -191,7 +210,9 @@ async function renderLayerCached(ctx: PlanContext, backendId: string, nodes: rea
     fonts: ctx.env.fonts,
     ...(ctx.debug !== undefined ? { debug: ctx.debug } : {}),
     ...(ctx.signal !== undefined ? { signal: ctx.signal } : {}),
-  });
+    ...(motionStates !== undefined ? { motionStates } : {}),
+  };
+  const image = await backend.renderLayer(request);
   if (image.width !== ctx.width || image.height !== ctx.height) {
     throw new OpenVideoError({
       code: 'OV_BACKEND_SIZE',

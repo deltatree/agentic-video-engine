@@ -14,3 +14,5 @@ export * from './project.js';
 export * from './doctor.js';
 export * from './sources.js';
 export * from './ops.js';
+export * from './watch.js';
+export * from './browser.js';

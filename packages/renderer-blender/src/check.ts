@@ -5,9 +5,9 @@
 import { isRecord, type Diagnostic } from '@agentic-video/core';
 
 /** Node-Typen, die als Kinder einer `blender`-Node übertragen werden. */
-export const BLENDER_CHILD_TYPES: readonly string[] = ['camera3d', 'light3d', 'mesh3d', 'model3d', 'instances3d', 'group3d'];
+export const BLENDER_CHILD_TYPES: readonly string[] = ['camera3d', 'light3d', 'mesh3d', 'model3d', 'instances3d', 'particles3d', 'group3d'];
 
-/** Höchstzahl an Instanzen je `instances3d`, die als Einzelobjekte in Blender entstehen. */
+/** Höchstzahl an Instanzen je `instances3d` bzw. Partikeln je `particles3d`, die als Einzelobjekte in Blender entstehen. */
 export const MAX_BLENDER_INSTANCES = 10_000;
 
 const ERROR_CLASS = 'BlenderRendererError';
@@ -51,7 +51,7 @@ function info(code: string, problem: string, nodeId: string, pointer: string, su
  *
  * Fehler (Render bricht ab):
  * - `OV_BLENDER_NODE_TYPE`: Die Node ist keine `blender`-Node.
- * - `OV_BLENDER_UNSUPPORTED`: `particles3d`, `instances3d` mit mehr als 10 000 Instanzen,
+ * - `OV_BLENDER_UNSUPPORTED`: `instances3d` bzw. `particles3d` mit mehr als 10 000 Instanzen/Partikeln,
  *   GLSL-Shader-Material (`material.type: 'shader'`), `postprocessing`, 2D-Kinder.
  * - `OV_BLENDER_CAMERA_UNKNOWN`: `camera` nennt keine `camera3d` der Szene.
  * - `OV_BLENDER_MASK_OBJECT`: `pass: 'object-mask'` ohne gültiges `maskObject`.
@@ -84,13 +84,12 @@ export function checkBlenderNode(node: Readonly<Record<string, unknown>>): Diagn
   for (const { node: child, pointer } of all) {
     const id = idOf(child);
     const type = String(child['type']);
-    if (type === 'particles3d') {
-      out.push(unsupported('particles3d cannot be transferred to Blender.', id, pointer, [USE_THREE, 'Bake the particles into a model3d asset (glTF) and use that instead.']));
-    } else if (type === 'instances3d') {
+    if (type === 'instances3d' || type === 'particles3d') {
       const count = typeof child['count'] === 'number' ? child['count'] : 0;
+      const what = type === 'instances3d' ? 'instances' : 'particles';
       if (count > MAX_BLENDER_INSTANCES) {
         out.push(
-          unsupported(`instances3d with ${String(count)} instances exceeds the Blender limit of ${String(MAX_BLENDER_INSTANCES)}.`, id, `${pointer}/count`, [
+          unsupported(`${type} with ${String(count)} ${what} exceeds the Blender limit of ${String(MAX_BLENDER_INSTANCES)}.`, id, `${pointer}/count`, [
             USE_THREE,
             `Reduce count to ${String(MAX_BLENDER_INSTANCES)} or less.`,
           ]),
@@ -146,13 +145,13 @@ export function checkBlenderNode(node: Readonly<Record<string, unknown>>): Diagn
 
   if (node['pass'] === 'object-mask') {
     const mask = node['maskObject'];
-    const candidates = all.filter((w) => ['mesh3d', 'model3d', 'instances3d', 'group3d'].includes(String(w.node['type']))).map((w) => idOf(w.node));
+    const candidates = all.filter((w) => ['mesh3d', 'model3d', 'instances3d', 'particles3d', 'group3d'].includes(String(w.node['type']))).map((w) => idOf(w.node));
     if (typeof mask !== 'string' || !candidates.includes(mask)) {
       out.push({
         code: 'OV_BLENDER_MASK_OBJECT',
         severity: 'error',
         errorClass: ERROR_CLASS,
-        problem: typeof mask === 'string' ? `maskObject "${mask}" is not a mesh3d, model3d, instances3d or group3d child.` : 'pass "object-mask" needs maskObject.',
+        problem: typeof mask === 'string' ? `maskObject "${mask}" is not a mesh3d, model3d, instances3d, particles3d or group3d child.` : 'pass "object-mask" needs maskObject.',
         nodeId: sceneId,
         pointer: '/maskObject',
         suggestions: candidates.length > 0 ? [`maskObject: "${candidates[0] ?? ''}"`] : ['Add a mesh3d child and name it in maskObject.'],

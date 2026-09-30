@@ -1,0 +1,164 @@
+/**
+ * Story 20.1/20.5/20.8: Live-Ereignisse mit Projektrevision, transiente Vorschau-Patches in
+ * `frame.render` und die Job-Liste von `render.status`.
+ */
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { OPERATIONS, RevisionWatcher, invokeOperation, revisionOf, sseMessage, startAgentServer, type AgentServer, type AgentServices, type InvocationResult } from '@agentic-video/agent';
+import { smallProject, testServices } from './helpers.js';
+
+const RECT = { id: 'box', type: 'rect', x: 0, y: 0, width: 10, height: 10, fill: '#FF0000' };
+
+function newServices(): AgentServices {
+  return testServices(mkdtempSync(join(tmpdir(), 'ov-live-')));
+}
+
+async function run(services: AgentServices, op: string, input: unknown): Promise<InvocationResult> {
+  return invokeOperation(OPERATIONS, op, input, { services, via: 'test' });
+}
+
+async function ok(services: AgentServices, op: string, input: unknown): Promise<Record<string, unknown>> {
+  const r = await run(services, op, input);
+  if (!r.ok) throw new Error(`${op} failed: ${r.error.code} ${r.error.problem}`);
+  return r.result as Record<string, unknown>;
+}
+
+describe('Story 20.5: frame.render mit transienten Patches', () => {
+  it('rendert den geänderten Stand, speichert ihn aber nie', async () => {
+    const services = newServices();
+    const id = String((await ok(services, 'project.create', { name: 'Preview', project: smallProject([RECT]) }))['projectId']);
+    const file = join(services.workspace.projectDir(id), 'project.json');
+    const before = readFileSync(file, 'utf8');
+    const plain = await ok(services, 'frame.render', { projectId: id, frame: 0, inline: false });
+    const moved = await ok(services, 'frame.render', { projectId: id, frame: 0, inline: false, patches: [{ op: 'setProperty', nodeId: 'box', property: 'x', value: 30 }] });
+    expect(moved['key']).not.toBe(plain['key']);
+    expect(String((moved['image'] as { file: string }).file)).toMatch(/main-0-preview\.png$/u);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+    // Ohne Patches kommt wieder der gespeicherte Stand.
+    expect((await ok(services, 'frame.render', { projectId: id, frame: 0, inline: false }))['key']).toBe(plain['key']);
+  });
+
+  it('meldet abgelehnte Vorschau-Patches mit OV_PREVIEW_PATCH', async () => {
+    const services = newServices();
+    const id = String((await ok(services, 'project.create', { name: 'Preview', project: smallProject([RECT]) }))['projectId']);
+    const r = await run(services, 'frame.render', { projectId: id, frame: 0, patches: [{ op: 'setProperty', nodeId: 'nope', property: 'x', value: 1 }] });
+    expect(r.ok ? undefined : r.error.code).toBe('OV_PREVIEW_PATCH');
+    const bad = await run(services, 'frame.render', { projectId: id, frame: 0, patches: [{ op: 'explode' }] });
+    expect(bad.ok).toBe(false);
+  });
+});
+
+describe('Story 20.8: render.status ohne jobId', () => {
+  it('listet die Jobs eines Projekts, neueste zuerst', async () => {
+    const services = newServices();
+    const a = String((await ok(services, 'project.create', { name: 'A', project: smallProject([RECT]) }))['projectId']);
+    const b = String((await ok(services, 'project.create', { name: 'B', project: smallProject([RECT]) }))['projectId']);
+    const first = String((await ok(services, 'preview.render', { projectId: a, scale: 0.5 }))['jobId']);
+    await ok(services, 'preview.render', { projectId: b, scale: 0.5 });
+    const listed = await ok(services, 'render.status', { projectId: a });
+    const jobs = listed['jobs'] as { id: string; projectId: string; kind: string }[];
+    expect(jobs.map((j) => j.id)).toEqual([first]);
+    expect(jobs[0]?.projectId).toBe(a);
+    const all = (await ok(services, 'render.status', {}))['jobs'] as unknown[];
+    expect(all.length).toBe(2);
+  });
+});
+
+describe('Story 20.1: Revisionen und Server-Sent Events', () => {
+  const TOKEN = 'live-token-for-tests';
+  let services: AgentServices;
+  let server: AgentServer;
+  let projectId: string;
+
+  beforeAll(async () => {
+    services = newServices();
+    projectId = String((await ok(services, 'project.create', { name: 'Live', project: smallProject([RECT]) }))['projectId']);
+    server = await startAgentServer({ services, port: 0, token: TOKEN });
+  });
+
+  afterAll(async () => {
+    await server.close();
+  });
+
+  it('sseMessage formatiert Ereignisse', () => {
+    expect(sseMessage('revision', { revision: 'abc' })).toBe('event: revision\ndata: {"revision":"abc"}\n\n');
+  });
+
+  it('verlangt das Token und kennt nur vorhandene Projekte', async () => {
+    expect((await fetch(`${server.url}/v1/events?projectId=${projectId}`)).status).toBe(401);
+    const unknown = await fetch(`${server.url}/v1/events?projectId=missing`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(unknown.status).toBe(404);
+  });
+
+  it('sendet die Revision beim Verbinden und nach jeder Fremdänderung; ETag ist dieselbe Revision', async () => {
+    const file = join(services.workspace.projectDir(projectId), 'project.json');
+    const controller = new AbortController();
+    const response = await fetch(`${server.url}/v1/events?projectId=${projectId}`, { headers: { authorization: `Bearer ${TOKEN}` }, signal: controller.signal });
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    const body = response.body;
+    if (body === null) throw new Error('no body');
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const nextRevision = async (): Promise<string> => {
+      for (;;) {
+        const match = /event: revision\ndata: (.*)\n\n/u.exec(buffer);
+        if (match !== null) {
+          buffer = buffer.slice(match.index + match[0].length);
+          return String((JSON.parse(match[1] ?? '{}') as { revision: string }).revision);
+        }
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error('stream ended');
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
+    };
+    try {
+      const initial = await nextRevision();
+      expect(initial).toBe(revisionOf(readFileSync(file)));
+      const etag = (await fetch(`${server.url}/v1/files/${projectId}/project.json`, { headers: { authorization: `Bearer ${TOKEN}` } })).headers.get('etag');
+      expect(etag).toBe(`"${initial}"`);
+      // Fremdänderung (z. B. ein Editor) direkt auf der Platte.
+      const changed = smallProject([{ ...RECT, x: 5 }]);
+      writeFileSync(file, `${JSON.stringify(changed, null, 2)}\n`);
+      const next = await nextRevision();
+      expect(next).not.toBe(initial);
+      expect(next).toBe(revisionOf(readFileSync(file)));
+      // Änderung über die API erzeugt ebenfalls ein Ereignis.
+      await ok(services, 'composition.patch', { projectId, patches: [{ op: 'setProperty', nodeId: 'box', property: 'x', value: 7 }] });
+      expect(await nextRevision()).toBe(revisionOf(readFileSync(file)));
+    } finally {
+      controller.abort();
+    }
+  });
+
+  it('meldet gleiches Neuschreiben nicht als neue Revision', async () => {
+    const watcher = new RevisionWatcher(10);
+    const dir = services.workspace.projectDir(projectId);
+    const seen: string[] = [];
+    const stop = await watcher.subscribe(dir, (r) => seen.push(r));
+    try {
+      const file = join(dir, 'project.json');
+      writeFileSync(file, readFileSync(file));
+      await new Promise((r) => setTimeout(r, 150));
+      expect(seen).toEqual([]);
+      writeFileSync(file, `${JSON.stringify(smallProject([{ ...RECT, x: 9 }]))}\n`);
+      await expect.poll(() => seen.length, { timeout: 5000 }).toBe(1);
+    } finally {
+      stop();
+      watcher.closeAll();
+    }
+  });
+
+  it('close() beendet offene Streams', async () => {
+    const local = await startAgentServer({ services, port: 0, token: TOKEN });
+    const response = await fetch(`${local.url}/v1/events?projectId=${projectId}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(response.status).toBe(200);
+    await local.close();
+    const reader = response.body?.getReader();
+    // Nach dem Schließen endet der Stream (ggf. nach der ersten Nachricht).
+    for (let i = 0; i < 5; i++) if ((await reader?.read())?.done === true) return;
+    throw new Error('stream still open');
+  });
+});

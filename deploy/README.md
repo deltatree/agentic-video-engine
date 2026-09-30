@@ -18,7 +18,9 @@ Vorwissen: Docker, `kubectl` und Kustomize (in `kubectl` eingebaut).
 | `object-storage` | Gemeinsamer S3-Speicher (SeaweedFS) für Projekte und Frames. | `chrislusf/seaweedfs` (Digest) |
 
 Ein Chunk ist ein Bereich von Frames, zum Beispiel die Frames 0 bis 29.
-Worker holen sich Chunks beim Koordinator ab (Pull). Die Frames legen sie im S3-Speicher ab.
+Worker holen sich Chunks beim Koordinator ab (Pull). Die Frames legen sie im S3-Speicher unter
+`jobs/<jobId>/frames/<sha256>` ab. Die API übernimmt nur Frames mit diesem Präfix und prüft den
+SHA-256 jedes Frames (ADR 0023).
 
 Die Queues des Koordinators:
 
@@ -35,7 +37,7 @@ Alle Images entstehen aus `deploy/docker/Dockerfile`. Jedes Ziel ist ein Image.
 | Image | Inhalt |
 |---|---|
 | `openvideo-base` | Node 22, Anwendung, Schriften. Einstieg `openvideo`. |
-| `openvideo-render-cpu` | `base` + FFmpeg 7.1 (Debian 13) + Chromium (Playwright). |
+| `openvideo-render-cpu` | `base` + FFmpeg 7.1 (Debian 13) + Chromium (Chrome for Testing, Revision von playwright-core). |
 | `openvideo-render-gpu` | `render-cpu`, vorbereitet für NVIDIA (NVENC). |
 | `openvideo-blender` | `render-cpu` + Blender 4.2.23 LTS. |
 | `openvideo-studio` | `base` + Studio. Befehl `openvideo serve --host 0.0.0.0`. |
@@ -49,7 +51,7 @@ Eigenschaften aller Images:
 - Der Prozess läuft als Nutzer 65532, nie als root.
 - Das Root-Dateisystem darf read-only sein. Schreibpfade sind nur `/tmp` und `/cache`.
 - Der Container braucht keine Capabilities (`--cap-drop ALL`).
-- `OPENVIDEO_CONTAINER_IMAGE` nennt das Image. Der Wert steht im Render-Manifest.
+- `OPENVIDEO_CONTAINER_IMAGE` nennt das Image. Der Wert steht im Render-Manifest. Er erlaubt keine HTML-Skripte.
 - Labels `org.opencontainers.image.*` und `io.openvideo.*` nennen die Versionen.
 
 Reproduzierbarkeit:
@@ -57,7 +59,8 @@ Reproduzierbarkeit:
 - Das Basis-Image ist per Digest gepinnt.
 - apt lädt nur von `snapshot.debian.org` mit festem Datum. Wichtige Pakete haben feste Versionen.
 - `npm ci` installiert genau das Lockfile.
-- Das Blender-Archiv wird per SHA256 geprüft.
+- Die Archive von Blender und Chromium werden per SHA256 geprüft (`ADD --checksum` und `sha256sum -c`).
+  Beim Update von playwright-core bricht der Build ab, bis Revision und Prüfsummen in `chromium-fetch` passen.
 - `SOURCE_DATE_EPOCH` ist die Zeit des letzten Commits.
 
 ### Images bauen
@@ -110,7 +113,11 @@ Regeln des Servers:
   Weitere Namen stehen in `OPENVIDEO_ALLOWED_HOSTS` (kommagetrennt) oder in `--allowed-host`.
   Andere Namen bekommen 403 (`OV_API_HOST`). `/v1/health` ist davon ausgenommen.
 - POST-Anfragen brauchen den Header `content-type: application/json`.
-- HTML-Skripte laufen nur, wenn `OPENVIDEO_CONTAINER_IMAGE` gesetzt ist. Die Images setzen die Variable.
+- HTML-Skripte sind aus. Sie laufen nur mit `OPENVIDEO_ALLOW_HTML_SCRIPTS=1` (oder `--trusted`) **und** wenn
+  Chromium mit der OS-Sandbox startet. Fehlt die Sandbox (typisch im Container ohne User Namespaces),
+  bricht ein Render mit Skripten mit `OV_BROWSER_NO_OS_SANDBOX` ab, statt ungeschützt zu laufen.
+- Die Studio-Dateien kommen mit `Content-Security-Policy` (`frame-ancestors 'none'`, Skripte nur von der
+  eigenen Origin), `Referrer-Policy: no-referrer` und `X-Frame-Options: DENY`.
 
 Die Umgebung prüfen:
 
@@ -123,7 +130,12 @@ docker run --rm ghcr.io/deltatree/openvideo-render-cpu:0.1.0 doctor
 ### Voraussetzungen
 
 - Kubernetes 1.30 oder neuer, mit einer Standard-StorageClass.
-- Ein Netzwerk-Plugin, das NetworkPolicies durchsetzt (zum Beispiel Calico, Cilium, kindnet).
+- Ein Netzwerk-Plugin (CNI), das NetworkPolicies durchsetzt (zum Beispiel Calico, Cilium, kindnet ab
+  kind 0.24). **Pflicht:** Ohne ein solches Plugin nimmt Kubernetes die NetworkPolicies an, setzt sie aber
+  nicht durch. Dann erreicht jeder Pod den Koordinator und den S3-Speicher. Prüfen Sie das nach der
+  Installation, zum Beispiel aus einem anderen Namespace:
+  `kubectl -n default run probe --rm -it --image=busybox --restart=Never -- wget -qO- -T 3 http://coordinator.openvideo:8080/metrics`
+  muss scheitern (Zeitüberschreitung). Antwortet der Koordinator, setzt Ihr CNI keine NetworkPolicies durch.
 - KEDA 2.21 im Namespace `keda`.
 - Für GPU-Worker: der NVIDIA GPU Operator. Er setzt das Knoten-Label `nvidia.com/gpu.present=true`.
 
@@ -142,8 +154,10 @@ kubectl apply --server-side -f https://github.com/kedacore/keda/releases/downloa
    cp secrets.env.example secrets.env
    ```
 
-2. Ersetzen Sie jeden Wert in `secrets.env`. Nutzen Sie nur Buchstaben und Ziffern.
-   Beispiel für einen Wert: `openssl rand -hex 32`.
+2. Ersetzen Sie jeden Wert in `secrets.env`. Nutzen Sie nur Buchstaben und Ziffern und für jeden
+   Schlüssel einen eigenen Wert. Beispiel für einen Wert: `openssl rand -hex 32`.
+   Der Koordinator startet nicht mit `REPLACE…`, mit Tokens unter 24 Zeichen oder mit gleichen Tokens
+   für zwei Rollen (`OV_COORDINATOR_TOKEN_WEAK`, `OV_COORDINATOR_TOKEN_SHARED`).
 3. Prüfen Sie die Manifeste:
 
    ```bash
@@ -179,7 +193,10 @@ curl -H "Authorization: Bearer <api-token>" http://127.0.0.1:7788/v1/operations
 
 Nutzen Sie lokal denselben Port 7788. Sonst lehnt die Host-Prüfung die Anfrage ab.
 
-Das Studio erwartet das API-Token in der Adresse: `http://<studio>/?token=<api-token>`.
+Das Studio erwartet das API-Token im Fragment der Adresse: `http://<studio>/#token=<api-token>`.
+Das Fragment geht nie an den Server, nicht in Zugriffs-Logs und nicht in den Referer. Das Studio legt
+das Token in `sessionStorage` und entfernt es aus der Adresse. Ein `?token=` in der Query verwirft das
+Studio (es landet sonst in Logs und im Verlauf).
 
 ### Overlays
 
@@ -202,6 +219,15 @@ Die ConfigMap `openvideo-config` gilt für alle Pods:
 | `OPENVIDEO_COORDINATOR_QUEUES` | `cpu:8080,gpu:8081,blender:8082` | Queues und Ports des Koordinators. |
 | `OPENVIDEO_LEASE_SECONDS` | `120` | So lange hält ein Chunk ohne Heartbeat. |
 
+Grenzen des Koordinators (Umgebung des Pods `coordinator`, optional):
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `OPENVIDEO_COORDINATOR_MAX_BODY_BYTES` | `67108864` (64 MiB) | Größte Anfrage. Größere Projektdateien lädt die API vorher selbst als `inputs/sha256-…` in den Speicher. |
+| `OPENVIDEO_JOB_TTL_SECONDS` | `86400` | So lange bleibt ein fertiger Job abrufbar. Danach löscht der Koordinator ihn samt `jobs/<jobId>/` und kompaktiert das Journal. |
+
+Fest eingebaut: höchstens 10 000 Chunks je Job und 1000 laufende Jobs (`429 OV_COORDINATOR_BUSY`).
+
 Weitere Variablen in den Deployments:
 
 | Variable | Pod | Bedeutung |
@@ -210,6 +236,10 @@ Weitere Variablen in den Deployments:
 | `OPENVIDEO_CACHE_DIR` | alle | Frame-Cache, fest `/cache` (emptyDir). |
 | `OPENVIDEO_WORKSPACE` | `api` | Projekte und Jobs, `/workspace` (PVC). |
 | `OPENVIDEO_COORDINATOR_URL` | `api` | Video-Renders gehen als Chunks an diese Queue, Standard `http://coordinator:8080`. Ohne die Variable rendert die API selbst. |
+| `OPENVIDEO_SUBMIT_TOKEN` | `api`, `coordinator` | Token der Rolle `submit` (Jobs einreichen und abfragen). |
+| `OPENVIDEO_WORKER_TOKEN` | Worker, `coordinator` | Token der Rolle `worker` (`lease`, `heartbeat`, `complete`, `fail`). |
+| `OPENVIDEO_METRICS_TOKEN` | `coordinator` | Token der Rolle `metrics` (KEDA, nur `GET /v1/queue`). |
+| `OPENVIDEO_ALLOW_HTML_SCRIPTS` | – | `1` erlaubt HTML-Skripte, aber nur mit Chromium-OS-Sandbox. Standard: aus. |
 | `OPENVIDEO_METRICS` | `api` | `prometheus` exportiert Metriken auf Port 9464 (`OPENVIDEO_METRICS_PORT`). Das Overlay `prometheus` setzt das. |
 
 Erreichen Sie API oder Studio über einen Ingress-Namen, ergänzen Sie ihn in Ihrem Overlay:
@@ -230,9 +260,15 @@ Das Secret `openvideo-secrets` enthält:
 | Schlüssel | Bedeutung |
 |---|---|
 | `api-token` | Bearer-Token der Agent API und des Studios. |
-| `worker-token` | Token zwischen Koordinator, Workern und KEDA. |
-| `s3-access-key-id` | S3-Zugang. |
-| `s3-secret-access-key` | S3-Schlüssel. |
+| `submit-token` | Koordinator-Rolle `submit`: nur die API. |
+| `worker-token` | Koordinator-Rolle `worker`: nur die Worker. |
+| `metrics-token` | Koordinator-Rolle `metrics`: nur KEDA, nur `GET /v1/queue`. |
+| `s3-admin-access-key-id`, `s3-admin-secret-access-key` | S3-Identität `admin`: legt den Bucket an. Nur die Init-Container `s3-bucket` bekommen sie. |
+| `s3-api-access-key-id`, `s3-api-secret-access-key` | S3-Identität `api`: API und Koordinator, Lesen und Schreiben im Bucket. |
+| `s3-worker-access-key-id`, `s3-worker-secret-access-key` | S3-Identität `worker`: liest nur `inputs/`, liest und schreibt nur `jobs/`. |
+
+Die Identitäten richtet `base/object-storage.yaml` in SeaweedFS ein (Pfadregeln `Aktion:openvideo/<präfix>*`).
+Mit `OPENVIDEO_S3_PREFIX` passen Sie die Pfadregeln an. Warum die Trennung nötig ist: ADR 0023.
 
 Eigenen S3-Speicher nutzen (AWS S3, MinIO):
 
@@ -241,6 +277,11 @@ Eigenen S3-Speicher nutzen (AWS S3, MinIO):
 3. Setzen Sie `OPENVIDEO_S3_CREATE_BUCKET` auf `false`.
 4. Entfernen Sie `object-storage` mit einem Patch (`$patch: delete`) aus Ihrem Overlay.
 5. Erlauben Sie den Workern den Weg zu Ihrem S3 in einer eigenen NetworkPolicy.
+6. Legen Sie drei Identitäten mit denselben Rechten wie oben an. Beispiel einer IAM-Policy für den Worker:
+   `s3:GetObject` auf `arn:aws:s3:::<bucket>/inputs/*` und `arn:aws:s3:::<bucket>/jobs/*`,
+   `s3:PutObject` und `s3:DeleteObject` nur auf `arn:aws:s3:::<bucket>/jobs/*`.
+7. Löschen Sie `inputs/` mit einer Lifecycle-Regel (zum Beispiel nach 30 Tagen). Der Koordinator
+   löscht `jobs/<jobId>/` selbst nach der TTL.
 
 Der Namespace heißt fest `openvideo`. Die KEDA-Adressen in `base/autoscaling.yaml` nennen ihn.
 Ändern Sie ihn nur zusammen mit diesen Adressen.
@@ -255,10 +296,33 @@ Der Namespace heißt fest `openvideo`. Die KEDA-Adressen in `base/autoscaling.ya
   - Worker erreichen nur den Koordinator und den Object Storage.
   - Kein Pod erreicht `169.254.169.254`, andere Namespaces oder das Internet.
   - API und Studio sind von außen nur über Port 7788 erreichbar.
+- Getrennte Tokens am Koordinator (Story 16.3): Die API kann keine Chunks leasen, ein Worker keine Jobs
+  einreichen, KEDA nur die Queue-Länge lesen. Ohne Token startet der Koordinator nur auf Loopback.
+- `complete` und `fail` gelten nur mit der `leaseId` der aktuellen Lease. Ergebnis-Frames müssen unter
+  `jobs/<jobId>/frames/` liegen; die API prüft Präfix und SHA-256 jedes Frames (ADR 0023).
+- Workern fehlen S3-Admin-Rechte. Ein kompromittierter Worker kann keine Frames anderer Jobs im
+  gemeinsamen Cache vergiften; er kann höchstens `jobs/` beschreiben, und dort fällt jede Änderung
+  an der Prüfsumme auf.
+- Kindprozesse (Chromium, Blender, Piper, whisper.cpp) erben nur eine minimale Umgebung, keine Tokens
+  und keine S3-Schlüssel.
 - TSX-Projekte brauchen die Docker-Sandbox (ADR 0008). Im Cluster gibt es sie nicht.
   Die API meldet dann eine Diagnose. JSON-Projekte rendern ohne Einschränkung.
 - Die API darf keine Assets per URL aus dem Internet laden. Erlauben Sie das bei Bedarf
   mit einer zusätzlichen NetworkPolicy für `app.kubernetes.io/component: api`.
+
+### Verschlüsselung im Cluster (mTLS)
+
+Koordinator, Worker und S3 sprechen Klartext-HTTP. Die Tokens und Frames sind dann im Pod-Netz
+lesbar. Die NetworkPolicies begrenzen, wer mitlesen kann, verschlüsseln aber nicht. Für Cluster mit
+fremden Workloads oder Knoten in mehreren Netzen empfehlen wir eine der folgenden Optionen:
+
+- **Service Mesh mit mTLS**, zum Beispiel Linkerd (`linkerd.io/inject: enabled` am Namespace) oder
+  Istio mit `PeerAuthentication` im Modus `STRICT`. Die Anwendung bleibt unverändert.
+- **Verschlüsselung im CNI**, zum Beispiel Cilium mit WireGuard (`encryption.enabled=true`,
+  `encryption.type=wireguard`) oder Calico mit WireGuard.
+- **Eigener S3-Speicher mit TLS** (`OPENVIDEO_S3_ENDPOINT=https://…`).
+
+Mit einem Mesh brauchen die Probes und KEDA ggf. Ausnahmen; prüfen Sie `kubectl -n openvideo get scaledobject` nach der Umstellung.
 
 ## Skalierung
 
@@ -298,7 +362,7 @@ Den Zustand ansehen:
 ```bash
 kubectl -n openvideo get scaledobject,hpa
 kubectl -n openvideo port-forward svc/coordinator 8080:8080
-curl -H "Authorization: Bearer <worker-token>" http://127.0.0.1:8080/v1/queue
+curl -H "Authorization: Bearer <metrics-token>" http://127.0.0.1:8080/v1/queue
 ```
 
 ### Skalierung über Prometheus
@@ -351,7 +415,12 @@ Gut zu wissen:
 | Init-Container `s3-bucket` wartet | `kubectl -n openvideo logs <pod> -c s3-bucket` | Object Storage ist nicht bereit, oder die S3-Zugangsdaten stimmen nicht. |
 | Worker bleiben „nicht bereit“ | `kubectl -n openvideo logs deploy/worker-cpu` | Der Koordinator ist nicht erreichbar. Prüfen Sie Service und NetworkPolicy. |
 | Worker melden `OV_WORKER_STORE_MISSING` | Logs des Workers | Koordinator und Worker nutzen verschiedene S3-Einstellungen. |
-| Kein Hochskalieren | `kubectl -n openvideo describe scaledobject worker-cpu` | KEDA erreicht den Koordinator nicht, oder `worker-token` ist falsch. |
+| Kein Hochskalieren | `kubectl -n openvideo describe scaledobject worker-cpu` | KEDA erreicht den Koordinator nicht, oder `metrics-token` ist falsch. |
+| Koordinator startet nicht: `OV_COORDINATOR_TOKEN_WEAK` / `_SHARED` / `_REQUIRED` | `kubectl -n openvideo logs deploy/coordinator` | Tokens in `secrets.env` ersetzen: je Rolle ein eigener Wert, mindestens 24 Zeichen. |
+| Worker melden `409 OV_COORDINATOR_LEASE_INVALID` | Logs des Workers | Die Lease ist abgelaufen (Heartbeat fehlte). Der Chunk läuft auf einem anderen Worker erneut. |
+| Render scheitert mit `OV_SCHEDULER_CONTENT_MISMATCH` oder `OV_SCHEDULER_FRAME_FOREIGN` | Logs der API | Ein Frame im Speicher passt nicht zu seiner Prüfsumme. Prüfen Sie, wer auf `jobs/` schreiben darf. |
+| Worker melden `AccessDenied` von S3 | Logs des Workers | Worker nutzen die Identität `worker`; sie dürfen nur `inputs/` lesen und `jobs/` schreiben. |
+| Render mit HTML-Skripten scheitert: `OV_BROWSER_NO_OS_SANDBOX` | Diagnose des Renders | Chromium hat keine OS-Sandbox. Skripte entfernen oder einen Render-Host mit User Namespaces nutzen. |
 | GPU-Worker bleibt `Pending` | `kubectl -n openvideo describe pod <pod>` | Kein Knoten mit `nvidia.com/gpu.present=true` oder freier GPU. |
 | API antwortet 403 mit `OV_API_HOST` | Host-Header der Anfrage | Den Namen in `OPENVIDEO_ALLOWED_HOSTS` ergänzen. |
 | API-Pod startet nicht: `OV_API_TOKEN_REQUIRED` | `kubectl -n openvideo logs deploy/api` | `api-token` im Secret fehlt oder ist leer. |

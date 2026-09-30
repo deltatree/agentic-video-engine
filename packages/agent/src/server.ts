@@ -5,7 +5,8 @@
  * - `GET  /v1/operations` → alle Operationen mit Schemas und Beispielen
  * - `POST /v1/<operation>` → JSON-Eingabe, JSON-Ergebnis oder `{ error: Diagnostic }`
  * - `GET  /v1/jobs/<id>` → Job-Status
- * - `GET  /v1/files/<projectId>/<pfad>` → Dateien eines Projekts (Frames, Videos, Manifeste)
+ * - `GET  /v1/files/<projectId>/<pfad>` → Dateien eines Projekts (Frames, Videos, Manifeste); `ETag` ist die Inhalts-Revision
+ * - `GET  /v1/events?projectId=<id>` → Server-Sent Events `revision` bei jeder Änderung von `project.json` (Story 20.1)
  *
  * Optional schützt ein Bearer-Token (`OPENVIDEO_API_TOKEN`) alle Endpunkte außer `/v1/health`.
  * Ohne Token bindet der Server nur an Loopback-Adressen (B2).
@@ -19,6 +20,7 @@ import { extname } from 'node:path';
 import { OpenVideoError, type Diagnostic } from '@agentic-video/core';
 import { invokeOperation, type OperationDefinition } from './operation.js';
 import { OPERATIONS, readProjectFile } from './operations.js';
+import { RevisionWatcher, revisionOf, sseMessage } from './server-events.js';
 import type { AgentServices } from './services.js';
 
 /** Optionen für {@link startAgentServer}. */
@@ -192,6 +194,9 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     );
   }
   const gate = new RequestGate(options.maxConcurrentRequests ?? 8, options.maxQueuedRequests ?? 64);
+  const revisions = new RevisionWatcher();
+  /** Offene Ereignis-Streams; `close()` beendet sie, sonst wartet `server.close` ewig. */
+  const streams = new Set<ServerResponse>();
   const allowedHosts = new Set<string>();
 
   const hostOk = (req: IncomingMessage): boolean => typeof req.headers.host === 'string' && allowedHosts.has(req.headers.host.toLowerCase());
@@ -218,7 +223,7 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
 
   async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    const cors: Record<string, string> = options.corsOrigin !== undefined ? { 'access-control-allow-origin': options.corsOrigin, 'access-control-allow-headers': 'content-type, authorization, traceparent', 'access-control-allow-methods': 'GET, POST, OPTIONS' } : {};
+    const cors: Record<string, string> = options.corsOrigin !== undefined ? { 'access-control-allow-origin': options.corsOrigin, 'access-control-allow-headers': 'content-type, authorization, traceparent', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-expose-headers': 'etag' } : {};
     if (url.pathname === '/v1/health') {
       // Öffentlicher Vertrag für Monitore: ohne Token und ohne Host-Prüfung, verrät nichts.
       send(res, 200, { ok: true }, cors);
@@ -244,6 +249,11 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     if (!url.pathname.startsWith('/v1/')) {
       if (options.fallback !== undefined && (await options.fallback(req, res))) return;
       send(res, 404, apiError('OV_API_NOT_FOUND', `No route for ${req.method ?? 'GET'} ${url.pathname}.`, ['GET /v1/operations lists all operations.']), cors);
+      return;
+    }
+    // Ereignis-Streams bleiben offen und zählen darum nicht gegen die Anfragegrenze.
+    if (req.method === 'GET' && url.pathname === '/v1/events') {
+      await openEvents(url, res, cors);
       return;
     }
     const release = await gate.acquire();
@@ -309,6 +319,41 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     send(res, 404, apiError('OV_API_NOT_FOUND', `No route for ${req.method ?? 'GET'} ${url.pathname}.`, ['GET /v1/operations lists all operations.']), cors);
   }
 
+  async function openEvents(url: URL, res: ServerResponse, cors: Record<string, string>): Promise<void> {
+    const projectId = url.searchParams.get('projectId') ?? '';
+    let dir: string;
+    try {
+      dir = services.workspace.projectDir(projectId);
+    } catch (error) {
+      if (!(error instanceof OpenVideoError)) throw error;
+      send(res, 400, { error: error.diagnostic }, cors);
+      return;
+    }
+    if (!services.workspace.exists(projectId)) {
+      send(res, 404, apiError('OV_PROJECT_UNKNOWN', `Project "${projectId}" does not exist.`, ['List projects with project.inspect.']), cors);
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', connection: 'keep-alive', 'x-accel-buffering': 'no', ...SECURITY_HEADERS, ...cors });
+    streams.add(res);
+    const push = (revision: string): void => {
+      res.write(sseMessage('revision', { projectId, revision }));
+    };
+    const unsubscribe = await revisions.subscribe(dir, push);
+    const current = revisions.current(dir);
+    // Erste Nachricht: der Stand beim Verbinden (der Client vergleicht mit dem, was er geladen hat).
+    res.write(`retry: 2000\n\n${current !== undefined ? sseMessage('revision', { projectId, revision: current }) : ''}`);
+    // Kommentarzeilen halten Proxys und den Browser-Timeout offen.
+    const heartbeat = setInterval(() => {
+      res.write(': keep-alive\n\n');
+    }, 15_000);
+    heartbeat.unref();
+    res.on('close', () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+      streams.delete(res);
+    });
+  }
+
   async function sendFile(res: ServerResponse, ctx: Parameters<typeof readProjectFile>[0], projectId: string, rawPath: string, cors: Record<string, string>): Promise<void> {
     let bytes: Uint8Array;
     try {
@@ -323,7 +368,8 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     const inline = INLINE_MIME[ext];
     const headers: Record<string, string> =
       inline !== undefined ? { 'content-type': inline } : { 'content-type': ATTACHMENT_MIME[ext] ?? 'application/octet-stream', 'content-disposition': 'attachment' };
-    res.writeHead(200, { ...headers, 'content-length': String(bytes.length), 'cache-control': 'no-store', ...FILE_HEADERS, ...cors });
+    // Die ETag ist die Inhalts-Revision; für project.json dieselbe wie in /v1/events.
+    res.writeHead(200, { ...headers, 'content-length': String(bytes.length), 'cache-control': 'no-store', etag: `"${revisionOf(bytes)}"`, ...FILE_HEADERS, ...cors });
     res.end(bytes);
   }
 
@@ -348,6 +394,9 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
         url: `http://${urlHost(bindHost)}:${String(port)}`,
         close: () =>
           new Promise((r, j) => {
+            revisions.closeAll();
+            for (const stream of streams) stream.end();
+            streams.clear();
             server.close((e) => {
               if (e !== undefined) j(e);
               else r();

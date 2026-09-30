@@ -26,7 +26,7 @@ OpenVideo führt Code aus, den Agenten schreiben. Dieser Code gilt als nicht ver
 | Eingabe | Wo sie läuft |
 |---|---|
 | TSX-Projekte | Im Docker-Container ohne Netz, ohne Capabilities, mit Speicher- und Prozessgrenze (Standard `container`) |
-| HTML-Layer mit Skripten | Nur mit ausdrücklicher Freigabe oder im Container; sonst sind Skripte gesperrt |
+| HTML-Layer mit Skripten | Nur mit ausdrücklicher Freigabe (`--trusted` oder `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) **und** mit Chromium-OS-Sandbox; sonst gesperrt (`OV_BROWSER_NO_OS_SANDBOX`). Das Container-Image allein erlaubt nichts. |
 | JSON-Projekte | Auf dem Host; JSON enthält keinen ausführbaren Code |
 | Asset-URLs | Nur öffentliche Adressen; private, Loopback- und Metadaten-Adressen sind gesperrt |
 
@@ -36,3 +36,27 @@ Die HTTP-API bindet ohne Token nur an Loopback-Adressen.
 Setze für jede andere Adresse ein Token mit `OPENVIDEO_API_TOKEN`.
 
 Details stehen in `docs/adr/0008-nicht-vertrauenswuerdiger-code-nur-im-container.md`.
+
+## Betrieb im Cluster
+
+Die Regeln für Kubernetes stehen in `deploy/README.md` (Abschnitt „Sicherheit“) und in
+`docs/adr/0023-remote-worker-schreiben-nur-unter-jobs-praefix.md`. Kurz:
+
+- Der Koordinator trennt die Rollen `submit` (API), `worker` und `metrics` (KEDA) mit eigenen Tokens.
+  Tokens haben mindestens 24 Zeichen; Platzhalter (`REPLACE…`) lehnt er ab. Ohne Token bindet er nur an Loopback.
+- Worker haben keine S3-Admin-Rechte. Sie lesen `inputs/` und schreiben nur `jobs/<jobId>/frames/`.
+  Die API übernimmt nur Frames mit dem Präfix des eigenen Jobs und prüft den SHA-256 jedes Frames.
+- `complete`/`fail` gelten nur mit gültiger Lease. Anfragen sind auf 64 MiB begrenzt, fertige Jobs verfallen.
+- FFmpeg liest Eingaben nur über `file`/`pipe` und nur aus einer Liste erlaubter Container (keine Playlists,
+  kein `concat`). Chromium, Blender, Piper und whisper.cpp erben keine Tokens oder S3-Schlüssel.
+- Das Studio setzt `Content-Security-Policy` mit `frame-ancestors 'none'` und `Referrer-Policy: no-referrer`
+  und nimmt das Token nur aus `#token=` (nie aus `?token=`).
+- Die Verbindungen im Cluster sind Klartext-HTTP. Für Verschlüsselung empfehlen wir ein Service Mesh mit
+  mTLS oder WireGuard im CNI; NetworkPolicies brauchen ein CNI, das sie durchsetzt.
+
+## Lieferkette
+
+- GitHub Actions sind per Commit-SHA gepinnt; Dependabot hält Actions, npm und Basis-Images aktuell
+  (`.github/dependabot.yml`).
+- Jeder Workflow-Job hat nur die Rechte, die er braucht (`permissions` je Job).
+- Downloads in CI und Images (FFmpeg, Blender, Chromium) werden gegen feste SHA-256-Prüfsummen geprüft.

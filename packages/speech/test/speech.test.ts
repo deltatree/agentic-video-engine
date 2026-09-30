@@ -125,7 +125,7 @@ describe('Hilfsfunktionen', () => {
     expect(toolEnv({ PATH: '/bin', AWS_SECRET_ACCESS_KEY: 'k', OPENVIDEO_S3_SECRET_ACCESS_KEY: 'k', OMP_NUM_THREADS: '2' })).toEqual({ PATH: '/bin', OMP_NUM_THREADS: '2' });
   });
 
-  it('normalizeWav liest nur lokale Dateien in erlaubten Formaten (Story 16.5, M3)', async () => {
+  it('normalizeWav liest nur lokale Dateien in erlaubten Formaten (Story 16.5, M3)', () => {
     const args = normalizeWavArgs('in.wav', 'out.wav', 48000);
     expect(args.slice(args.indexOf('-protocol_whitelist'), args.indexOf('-i'))).toEqual(['-protocol_whitelist', 'file,pipe', '-format_whitelist', SPEECH_INPUT_FORMATS.join(',')]);
     expect(SPEECH_INPUT_FORMATS).not.toContain('concat');

@@ -31,11 +31,13 @@ import {
 import { encodePng } from '@agentic-video/png';
 import { createTemplateCatalog } from '@agentic-video/templates';
 import { checkProject, createNodeEnvironment, describeScene, inspectTimeline, profileById, renderFrame, renderVideo, sceneTree, OPENVIDEO_VERSION, type OutputProfile } from '@agentic-video/render';
+import { cannotOpenReason, openBrowser } from './browser.js';
 import { runDoctor } from './doctor.js';
 import { createProjectDir, helloProject, loadProject, singleProjectWorkspace } from './project.js';
 import { createLocalServices, htmlScriptsAllowed, processRunner, type LocalServices } from './services.js';
 import { createSourceService } from './sources.js';
 import { importInput, isProjectDir, parseInputArg, projectContext, projectRootsOf, resultFailed, runOperation, withDefaults } from './ops.js';
+import { watchProject, type WatchEvent } from './watch.js';
 
 /** Ein- und Ausgabe der CLI (für Tests austauschbar). */
 export interface CliIo {
@@ -45,6 +47,10 @@ export interface CliIo {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Beendet `serve`, `dev` und `studio`, sobald das Versprechen erfüllt ist (Tests); sonst SIGINT/SIGTERM. */
   readonly stop?: Promise<void>;
+  /** Öffnet eine URL im Browser (Tests ersetzen das); liefert bei Fehlern den Grund. */
+  readonly openUrl?: (url: string) => Promise<string | undefined>;
+  /** Plattform für `--open` (Tests); Standard `process.platform`. */
+  readonly platform?: NodeJS.Platform;
 }
 
 class UsageError extends Error {}
@@ -56,7 +62,7 @@ Usage: ${CLI_NAME} <command> [options]
 Commands:
   create <dir>          Create a project (--tsx for TypeScript/JSX, --template <name>)
   templates             List the project templates
-  dev [dir]             Studio with live preview for a project
+  dev [dir]             Studio with live preview; watches src/** and project.json, opens the browser (--no-open)
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
   render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>)
@@ -83,6 +89,7 @@ Server options (serve, dev, studio):
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
   --workers <n>          Render videos with n local worker processes
+  --open / --no-open     Open the Studio in the browser (default on for dev/studio, off for serve)
 
 Project and workspace (serve, mcp, op):
   --project <dir>        Open this project folder (project.open may open folders inside it)
@@ -151,6 +158,19 @@ interface ServeOptions {
   readonly projectId?: string;
   /** Token im Studio-Link ausgeben (dev/studio mit erzeugtem Token). */
   readonly showToken?: boolean;
+  /** Studio im Browser öffnen (Story 20.1). */
+  readonly open?: boolean;
+  /** Projektordner beobachten und TSX neu kompilieren (`openvideo dev`). */
+  readonly watch?: { readonly dir: string; readonly entry: string; readonly sources: SourceServiceOf };
+}
+
+type SourceServiceOf = ReturnType<typeof createSourceService>;
+
+/** Meldung des Datei-Watchers für das Terminal. */
+function watchMessage(event: WatchEvent): string {
+  if (event.kind === 'compiled') return event.changed ? `Recompiled after ${event.file} changed; the Studio reloads.\n` : `Recompiled after ${event.file} changed (no change in the IR).\n`;
+  if (event.kind === 'changed') return `${event.file} changed; the Studio reloads.\n`;
+  return `${event.file}: ${event.diagnostics.filter((d) => d.severity === 'error').map((d) => formatDiagnostic(d)).join('\n\n')}\n`;
 }
 
 async function serveServices(services: AgentServices, io: CliIo, options: ServeOptions): Promise<void> {
@@ -179,8 +199,24 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
   io.stdout(`${PRODUCT_NAME} API: ${server.url}/v1/operations\n`);
   if (options.showToken === true && options.token !== undefined) io.stdout(`API token (send as "Authorization: Bearer <token>"): token=${options.token}\n`);
   io.stdout(studio !== undefined ? `${PRODUCT_NAME} Studio: ${link}\n` : 'Studio files not found (build apps/studio or set OPENVIDEO_STUDIO_DIR).\n');
+  const watcher =
+    options.watch !== undefined
+      ? watchProject({
+          ...options.watch,
+          onEvent: (event) => {
+            (event.kind === 'error' ? io.stderr : io.stdout)(watchMessage(event));
+          },
+        })
+      : undefined;
+  if (watcher !== undefined) io.stdout(`Watching ${options.watch?.entry === 'project.json' ? 'project.json' : 'src/** and project.json'} for changes.\n`);
+  if (options.open === true && studio !== undefined) {
+    const reason = io.openUrl !== undefined ? undefined : cannotOpenReason(io.platform ?? process.platform, io.env);
+    const problem = reason !== undefined ? `not opened: ${reason}` : await (io.openUrl ?? ((u: string) => openBrowser(u, io.platform ?? process.platform)))(link);
+    if (problem !== undefined) io.stderr(`Browser ${problem.startsWith('not opened') ? problem : `not opened: ${problem}`}. Open the Studio link above.\n`);
+  }
   await new Promise<void>((resolveStop) => {
     const stop = () => {
+      watcher?.close();
       void server.close().then(resolveStop);
     };
     if (io.stop !== undefined) void io.stop.then(stop);
@@ -262,6 +298,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         write: { type: 'boolean' },
         id: { type: 'string' },
         open: { type: 'boolean' },
+        'no-open': { type: 'boolean' },
         offline: { type: 'boolean' },
         stdio: { type: 'boolean' },
         coordinator: { type: 'string' },
@@ -624,7 +661,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         const base = await createLocalServices({ workspaceDir: context.workspaceDir, isolation, sources, env: io.env, ...offline, ...workersOption });
         const services: LocalServices = { ...base, projectRoots: projectRootsOf(context.projectDir !== undefined ? [context.projectDir] : [], io.env, io.cwd) };
         const projectId = await context.link(services);
-        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env), ...(projectId !== undefined ? { projectId } : {}) });
+        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token: values.token ?? io.env['OPENVIDEO_API_TOKEN'], allowedHosts: allowedHostsOf(values['allowed-host'], io.env), ...(projectId !== undefined ? { projectId } : {}), open: values.open === true && values['no-open'] !== true });
       }
       case 'dev':
       case 'studio': {
@@ -634,7 +671,17 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // dev/studio schützen die API immer mit einem Token; ohne Vorgabe ein zufälliges (B1).
         const given = values.token ?? io.env['OPENVIDEO_API_TOKEN'];
         const token = given !== undefined && given !== '' ? given : randomBytes(32).toString('base64url');
-        return await runServer(services, io, { port: num(values.port, 'port') ?? 7788, host: values.host ?? '127.0.0.1', token, allowedHosts: allowedHostsOf(values['allowed-host'], io.env), projectId, showToken: true });
+        // Story 20.1: Watcher auf src/** und project.json; der Browser öffnet sich, außer mit --no-open.
+        return await runServer(services, io, {
+          port: num(values.port, 'port') ?? 7788,
+          host: values.host ?? '127.0.0.1',
+          token,
+          allowedHosts: allowedHostsOf(values['allowed-host'], io.env),
+          projectId,
+          showToken: true,
+          open: values['no-open'] !== true,
+          watch: { dir: loaded.dir, entry: loaded.entry, sources },
+        });
       }
       case 'mcp': {
         const context = await projectContext({ project: values.project, workspace: values.workspace, cwd: io.cwd, env: io.env });

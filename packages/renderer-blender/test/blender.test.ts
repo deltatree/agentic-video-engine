@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { evaluateScene, isOpenVideoError, type AssetRecord, type AssetResolver, type EvaluatedNode, type FontResolver, type RgbaImage } from '@agentic-video/core';
+import { evaluateScene, isOpenVideoError, isRecord, type AssetRecord, type AssetResolver, type EvaluatedNode, type FontResolver, type RgbaImage } from '@agentic-video/core';
 import { decodePng, encodePng } from '@agentic-video/png';
+import { particles3d } from '@agentic-video/renderer-three';
 import {
   blenderEnv,
   checkBlenderNode,
@@ -12,6 +13,8 @@ import {
   describeScene,
   detectBlender,
   evaluateMotionStates,
+  MOTION_STATES_CAPABILITY,
+  blenderParticles,
   placeImage,
   type BlenderLayerRequest,
 } from '@agentic-video/renderer-blender';
@@ -122,13 +125,14 @@ describe('check()', () => {
         { id: 'many', type: 'instances3d', count: 20000, geometry: { type: 'box' }, layout: { type: 'grid', columns: 100, spacing: 1 } },
         { id: 'few', type: 'instances3d', count: 50, geometry: { type: 'box' }, layout: { type: 'grid', columns: 10, spacing: 1 } },
         { id: 'sparks', type: 'particles3d', count: 100 },
+        { id: 'storm', type: 'particles3d', count: 20000 },
         { id: 'glsl', type: 'mesh3d', geometry: { type: 'box' }, material: { type: 'shader', fragmentShader: 'void main() {}' } },
       ],
     };
     const result = backend.check(node);
     expect(result.supported).toBe(false);
     const unsupported = result.diagnostics.filter((d) => d.code === 'OV_BLENDER_UNSUPPORTED');
-    expect(unsupported.map((d) => d.nodeId).sort()).toEqual(['b', 'glsl', 'many', 'sparks']);
+    expect(unsupported.map((d) => d.nodeId).sort()).toEqual(['b', 'glsl', 'many', 'storm']);
     for (const d of unsupported) expect(d.suggestions.join(' ')).toContain('scene3d');
   });
 
@@ -164,7 +168,7 @@ describe('check()', () => {
     expect(result.diagnostics.map((d) => `${d.severity}:${d.code}`)).toEqual(['info:OV_BLENDER_APPROXIMATED']);
     expect(backend.fusable).toBe(false);
     expect(backend.nodeTypes).toEqual(['blender']);
-    expect(backend.capabilities).toEqual(expect.arrayContaining(['blender.cycles', 'blender.eevee', 'blender.passes.depth', 'blender.motion-blur', 'blender.gltf', 'blender.transparent']));
+    expect(backend.capabilities).toEqual(expect.arrayContaining(['blender.cycles', 'blender.eevee', 'blender.passes.depth', 'blender.motion-blur', 'blender.gltf', 'blender.transparent', 'blender.particles', MOTION_STATES_CAPABILITY]));
   });
 });
 
@@ -218,6 +222,134 @@ describe('Szenenbeschreibung und Platzierung', () => {
     if (result.found) return;
     expect(result.diagnostic.code).toBe('OV_BLENDER_MISSING');
     expect(result.diagnostic.suggestions.join(' ')).toContain('download.blender.org');
+  });
+});
+
+describe('particles3d als Instanzen (Story 17.5)', () => {
+  const sparks = {
+    id: 'sparks',
+    type: 'particles3d',
+    count: 40,
+    seed: 3,
+    emitter: { shape: 'sphere', size: 0.3 },
+    gravity: [0, -1, 0],
+    size: { start: 0.2, end: 0.05 },
+    color: { start: '#FF0000', end: '#0000FF' },
+    additive: true,
+  };
+
+  it('akzeptiert particles3d in check()', () => {
+    const result = checkBlenderNode({ id: 'b', type: 'blender', width: 10, height: 10, children: [sparks] });
+    expect(result.filter((d) => d.severity === 'error')).toEqual([]);
+  });
+
+  it('berechnet dieselben Partikel wie der Three.js-Renderer', () => {
+    const scene = evaluateScene(project({ children: [sparks] }), 'main', 12);
+    const node = scene.nodes[0]?.children[0];
+    if (node === undefined) throw new Error('particles node missing');
+    const ours = blenderParticles(node, 12 / 30, 30, 7);
+    expect(ours.length).toBeGreaterThan(3);
+    expect(ours).toEqual(particles3d(node, 12 / 30, 30, 7));
+  });
+
+  it('beschreibt lebende Partikel mit linearer Farbe, Größe und stabilem Index', () => {
+    const scene = evaluateScene(project({ children: [sparks] }), 'main', 12);
+    const node = scene.nodes[0];
+    if (node === undefined) throw new Error('blender node missing');
+    const state = describeScene(node, { width: W, height: H, fps: 30, seed: 7, assets });
+    const obj = state.objects.find((o) => o.key === 'b:sparks');
+    expect(obj?.kind).toBe('particles');
+    const items = obj?.particles?.items ?? [];
+    const child = node.children[0];
+    if (child === undefined) throw new Error('particles node missing');
+    const expected = blenderParticles(child, 12 / 30, 30, 7);
+    expect(items.map((p) => p.index)).toEqual(expected.map((p) => p.index));
+    expect(items[0]?.size).toBe(expected[0]?.size);
+    expect(obj?.particles?.additive).toBe(true);
+    // Lineare Farben zwischen Rot und Blau: kein Grün.
+    for (const p of items) expect(p.color[1]).toBe(0);
+  });
+});
+
+describe('Job-Datei an Blender (ohne Blender, mit Test-Programm)', () => {
+  /** Test-Programm statt Blender: meldet eine Version, speichert den Job und schreibt je Frame ein 2×2-PNG. */
+  function fakeBlender(): { path: string; captured: string } {
+    const dir = mkdtempSync(join(tmpdir(), 'ov-fake-blender-'));
+    const captured = join(dir, 'captured');
+    mkdirSync(captured);
+    const png = Buffer.from(encodePng({ width: 2, height: 2, data: new Uint8Array(16).fill(255) })).toString('base64');
+    const path = join(dir, 'blender');
+    writeFileSync(
+      path,
+      [
+        '#!/usr/bin/env node',
+        "const fs = require('node:fs');",
+        "const path = require('node:path');",
+        "if (process.argv.includes('--version')) { console.log('Blender 4.2.0'); process.exit(0); }",
+        "const jobPath = process.argv[process.argv.indexOf('--') + 1];",
+        "const job = JSON.parse(fs.readFileSync(jobPath, 'utf8'));",
+        `fs.writeFileSync(path.join(${JSON.stringify(captured)}, 'job-' + String(fs.readdirSync(${JSON.stringify(captured)}).length) + '.json'), JSON.stringify(job));`,
+        `job.frames.forEach((f, i) => { fs.writeFileSync(path.join(job.outDir, 'frame_' + String(i).padStart(5, '0') + '.png'), Buffer.from(${JSON.stringify(png)}, 'base64')); console.log('OV_FRAME_DONE ' + String(i)); });`,
+      ].join('\n'),
+    );
+    chmodSync(path, 0o755);
+    return { path, captured };
+  }
+
+  function lastJob(captured: string): Record<string, unknown> {
+    const files = readdirSync(captured).sort();
+    const last = files[files.length - 1];
+    if (last === undefined) throw new Error('no job captured');
+    const job: unknown = JSON.parse(readFileSync(join(captured, last), 'utf8'));
+    if (!isRecord(job)) throw new Error('job is not an object');
+    return job;
+  }
+
+  function statesOf(job: Record<string, unknown>): { offset: number; scene: Record<string, unknown> }[] {
+    const frames = job['frames'];
+    if (!Array.isArray(frames) || !isRecord(frames[0])) throw new Error('no frames');
+    const states = frames[0]['states'];
+    if (!Array.isArray(states)) throw new Error('no states');
+    return states.filter(isRecord).map((st) => ({ offset: Number(st['offset']), scene: isRecord(st['scene']) ? st['scene'] : {} }));
+  }
+
+  it('überträgt motionStates als Subframe-Zustände und Partikel als Objekte', async () => {
+    const fake = fakeBlender();
+    const backend = createBlenderBackend({ workDir, blenderPath: fake.path, threads: 1 });
+    const moving = project({
+      motionBlur: true,
+      children: [
+        { id: 'cube', type: 'mesh3d', position: { $keyframes: [{ t: 0, v: [-3, 0, 0] }, { t: 10, v: [3, 0, 0] }] } },
+        { id: 'sparks', type: 'particles3d', count: 10, seed: 1 },
+      ],
+    });
+    const req = request(moving, 5);
+    const motionStates = evaluateMotionStates(moving, 'main', 5, ['b']);
+    const image = await backend.renderLayer({ ...req, motionStates });
+    expect([image.width, image.height]).toEqual([W, H]);
+    const states = statesOf(lastJob(fake.captured));
+    expect(states.map((st) => st.offset)).toEqual([0, -0.25, 0.25]);
+    const cubeX = states.map((st) => {
+      const objects = Array.isArray(st.scene['objects']) ? st.scene['objects'].filter(isRecord) : [];
+      const cube = objects.find((o) => o['key'] === 'b:cube');
+      return Array.isArray(cube?.['position']) ? Number(cube['position'][0]) : Number.NaN;
+    });
+    // Keyframes: -3 → 3 über 10 Frames = 0,6 m je Frame.
+    expect(cubeX[0]).toBeCloseTo(0, 6);
+    expect(cubeX[1]).toBeCloseTo(-0.15, 6);
+    expect(cubeX[2]).toBeCloseTo(0.15, 6);
+    const main = states[0]?.scene;
+    const objects = Array.isArray(main?.['objects']) ? main['objects'].filter(isRecord) : [];
+    expect(objects.find((o) => o['key'] === 'b:sparks')?.['kind']).toBe('particles');
+    expect(main?.['motionBlur']).toBe(true);
+  });
+
+  it('ignoriert motionStates ohne motionBlur', async () => {
+    const fake = fakeBlender();
+    const backend = createBlenderBackend({ workDir, blenderPath: fake.path, threads: 1 });
+    const still = project({ children: [{ id: 'cube', type: 'mesh3d' }] });
+    await backend.renderLayer({ ...request(still, 5), motionStates: evaluateMotionStates(still, 'main', 5, ['b']) });
+    expect(statesOf(lastJob(fake.captured)).map((st) => st.offset)).toEqual([0]);
   });
 });
 

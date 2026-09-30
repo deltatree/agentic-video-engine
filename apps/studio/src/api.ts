@@ -17,26 +17,44 @@ const TOKEN_KEY = 'openvideo.token';
 let cachedToken: string | null | undefined;
 
 /**
- * Liest das Token einmal aus `#token=` (oder `?token=`), legt es in `sessionStorage`
- * und entfernt es aus der Adresse. So landet es nicht im Verlauf und nicht im Referer.
+ * Wertet die Adresse aus (Story 16.7, N2): Das Token gilt nur aus dem Fragment `#token=`, das der
+ * Browser nie an einen Server sendet. Ein `?token=` in der Query landet in Server-Logs, im Verlauf
+ * und im Referer; es wird deshalb verworfen und nicht benutzt.
+ *
+ * @example
+ * ```ts
+ * tokenFromLocation('#token=abc', '?project=demo'); // { token: 'abc', discarded: false, search: 'project=demo' }
+ * tokenFromLocation('', '?token=abc'); // { token: null, discarded: true, search: '' }
+ * ```
+ */
+export function tokenFromLocation(hash: string, search: string): { readonly token: string | null; readonly discarded: boolean; readonly search: string } {
+  const fromHash = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash).get('token');
+  const query = new URLSearchParams(search);
+  const discarded = query.has('token');
+  query.delete('token');
+  return { token: fromHash !== null && fromHash !== '' ? fromHash : null, discarded, search: query.toString() };
+}
+
+/**
+ * Liest das Token einmal aus `#token=`, legt es in `sessionStorage` und entfernt es aus der
+ * Adresse. So landet es nicht im Verlauf und nicht im Referer. `?token=` wird verworfen.
  */
 function apiToken(): string | null {
   if (cachedToken !== undefined) return cachedToken;
-  const fromHash = new URLSearchParams(window.location.hash.slice(1)).get('token');
-  const search = new URLSearchParams(window.location.search);
-  const fresh = fromHash ?? search.get('token');
-  if (fresh !== null && fresh !== '') {
-    cachedToken = fresh;
+  const parsed = tokenFromLocation(window.location.hash, window.location.search);
+  if (parsed.discarded) console.warn('OpenVideo Studio: ignoring "?token=" in the address; open the Studio with "#token=<token>" instead.');
+  if (parsed.token !== null || parsed.discarded) {
+    window.history.replaceState(null, '', `${window.location.pathname}${parsed.search !== '' ? `?${parsed.search}` : ''}`);
+  }
+  if (parsed.token !== null) {
+    cachedToken = parsed.token;
     try {
-      sessionStorage.setItem(TOKEN_KEY, fresh);
+      sessionStorage.setItem(TOKEN_KEY, parsed.token);
     } catch (error) {
       // Gesperrter Speicher: Das Token gilt dann nur für diese Seite.
       console.warn('OpenVideo Studio: token not stored', error);
     }
-    search.delete('token');
-    const rest = search.toString();
-    window.history.replaceState(null, '', `${window.location.pathname}${rest !== '' ? `?${rest}` : ''}`);
-    return fresh;
+    return parsed.token;
   }
   try {
     cachedToken = sessionStorage.getItem(TOKEN_KEY);

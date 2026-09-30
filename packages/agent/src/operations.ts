@@ -367,11 +367,23 @@ const assetInspect = defineOperation({
 const frameRender = defineOperation({
   name: 'frame.render',
   summary: 'Render one frame to PNG; returns the image, diagnostics and the frame cache key.',
-  input: Type.Object({ projectId: ProjectId, compositionId: CompositionId, frame: FrameRef, scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 4 })), debug: Type.Optional(DebugSchema), inline: Type.Optional(Type.Boolean()) }, { additionalProperties: false }),
+  input: Type.Object(
+    {
+      projectId: ProjectId,
+      compositionId: CompositionId,
+      frame: FrameRef,
+      scale: Type.Optional(Type.Number({ exclusiveMinimum: 0, maximum: 4 })),
+      debug: Type.Optional(DebugSchema),
+      inline: Type.Optional(Type.Boolean()),
+      patches: Type.Optional(Type.Array(PatchSchema, { minItems: 1, description: 'Transient preview: applied only for this render and never saved (e.g. while dragging in the Studio).' })),
+    },
+    { additionalProperties: false },
+  ),
   output: Type.Object({ image: ImageResult, key: Type.String(), cached: Type.Boolean(), diagnostics: Diagnostics }),
   example: { input: { projectId: 'launch-video', frame: '2s', scale: 0.5, debug: { showBounds: true } } },
+  check: (input) => (isRecord(input) && input['patches'] !== undefined ? checkPatchList(input['patches'], 'patches') : undefined),
   async handler(input, ctx) {
-    const loaded = await loadProject(ctx, input.projectId);
+    const loaded = await withPreviewPatches(ctx, await loadProject(ctx, input.projectId), input.patches);
     const comp = findComposition(loaded.project, input.compositionId);
     const scale = input.scale ?? 1;
     assertImageSize(Number(comp['width']) * scale, Number(comp['height']) * scale, 'frame.render');
@@ -380,12 +392,33 @@ const frameRender = defineOperation({
       assertRenderable(ctx, loaded.project, env.registry, [{ compositionId: input.compositionId, frame }]);
       const r = await renderFrame(env, loaded.project, { ...(input.compositionId !== undefined ? { compositionId: input.compositionId } : {}), frame, scale, ...(input.debug !== undefined ? { debug: input.debug } : {}) });
       // Der Name kommt aus geprüften Teilen; Varianten (scale, debug) bekommen einen eigenen Hash (B4, B16).
-      const variant = input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
+      // Transiente Vorschauen überschreiben eine feste Datei, statt je Zwischenstand eine neue anzulegen.
+      const variant = input.patches !== undefined ? '-preview' : input.scale !== undefined || input.debug !== undefined ? `-${shortHash({ scale: input.scale, debug: input.debug })}` : '';
       const image = await imageOutput(ctx, input.projectId, `${fileSafe(r.scene.compositionId)}-${String(frame)}${variant}.png`, ctx.services.encodePng(r.image), r.image, input.inline !== false);
       return { image, key: r.key, cached: r.cached, diagnostics: plainDiagnostics(r.diagnostics) };
     });
   },
 });
+
+/**
+ * Wendet Vorschau-Patches nur im Speicher an (`frame.render` mit `patches`, Story 20.5).
+ * Abgelehnte Patches melden die erste neue Fehlerdiagnose; gespeichert wird nie.
+ */
+async function withPreviewPatches(ctx: OperationContext, loaded: Loaded, patches: readonly unknown[] | undefined): Promise<Loaded> {
+  if (patches === undefined) return loaded;
+  const result = await withEnv(ctx, loaded, (env) => Promise.resolve(applyPatches(loaded.project, toCorePatches(patches), { validateOptions: validateOptionsOf(env.registry) })));
+  if (!result.ok) {
+    const first = result.diagnostics.find((d) => d.severity === 'error');
+    throw new OpenVideoError({
+      code: 'OV_PREVIEW_PATCH',
+      errorClass: 'ValidationError',
+      problem: `The preview patches were rejected: ${first?.problem ?? 'unknown error'}`,
+      ...(first?.nodeId !== undefined ? { nodeId: first.nodeId } : {}),
+      suggestions: ['Check the patches with composition.patch { dryRun: true }.', ...(first?.suggestions ?? [])],
+    });
+  }
+  return { ...loaded, project: result.project };
+}
 
 const frameRenderMany = defineOperation({
   name: 'frame.renderMany',
@@ -613,12 +646,19 @@ const videoRender = defineOperation({
 
 const renderStatus = defineOperation({
   name: 'render.status',
-  summary: 'Status, progress and result of a render job.',
-  input: Type.Object({ jobId: Type.String() }, { additionalProperties: false }),
+  summary: 'Status, progress and result of a render job; without jobId, all jobs (optionally of one project), newest first.',
+  input: Type.Object({ jobId: Type.Optional(Type.String()), projectId: Type.Optional(ProjectId) }, { additionalProperties: false }),
   output: AnyObject,
   example: { input: { jobId: 'job-…' } },
   handler(input, ctx) {
-    return Promise.resolve({ ...ctx.services.jobs.status(input.jobId) });
+    if (input.jobId !== undefined) return Promise.resolve({ ...ctx.services.jobs.status(input.jobId) });
+    // Liste (Story 20.8): das Studio stellt damit seine Render Queue nach einem Neuladen wieder her.
+    const jobs = ctx.services.jobs
+      .list()
+      .filter((j) => input.projectId === undefined || j.projectId === input.projectId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((j) => ({ ...j }));
+    return Promise.resolve({ jobs });
   },
 });
 

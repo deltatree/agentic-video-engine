@@ -94,14 +94,24 @@ describe('Tokens (Story 16.3, M1/M4)', () => {
   });
 
   it('lehnt kurze Tokens, Platzhalter und gleiche Tokens für verschiedene Rollen ab', async () => {
-    expect(() => assertStrongToken('worker', 'short')).toThrow(/shorter than 24/u);
-    expect(() => assertStrongToken('worker', 'REPLACE-WITH-A-LONG-RANDOM-WORKER-TOKEN')).toThrow(/placeholder/u);
-    expect(() => assertStrongToken('worker', 'REPLACE')).toThrow(OpenVideoError);
-    expect(() => assertStrongToken('worker', 'has whitespace 0123456789abcdef')).toThrow(/whitespace/u);
-    expect(() => assertStrongToken('worker', 'a'.repeat(COORDINATOR_LIMITS.minTokenLength))).not.toThrow();
+    expect(() => {
+      assertStrongToken('worker', 'short');
+    }).toThrow(/shorter than 24/u);
+    expect(() => {
+      assertStrongToken('worker', 'REPLACE-WITH-A-LONG-RANDOM-WORKER-TOKEN');
+    }).toThrow(/placeholder/u);
+    expect(() => {
+      assertStrongToken('worker', 'REPLACE');
+    }).toThrow(OpenVideoError);
+    expect(() => {
+      assertStrongToken('worker', 'has whitespace 0123456789abcdef');
+    }).toThrow(/whitespace/u);
+    expect(() => {
+      assertStrongToken('worker', 'a'.repeat(COORDINATOR_LIMITS.minTokenLength));
+    }).not.toThrow();
     await expect(start({ tokens: { submit: SUBMIT, worker: 'REPLACE' } })).rejects.toMatchObject({ diagnostic: { code: 'OV_COORDINATOR_TOKEN_WEAK' } });
     await expect(start({ tokens: { submit: SUBMIT, worker: SUBMIT } })).rejects.toMatchObject({ diagnostic: { code: 'OV_COORDINATOR_TOKEN_SHARED' } });
-    await expect(start({ tokens: undefined, token: 't' })).rejects.toMatchObject({ diagnostic: { code: 'OV_COORDINATOR_TOKEN_WEAK' } });
+    await expect(start({ tokens: {}, token: 't' })).rejects.toMatchObject({ diagnostic: { code: 'OV_COORDINATOR_TOKEN_WEAK' } });
   });
 
   it('erkennt Loopback-Adressen', () => {

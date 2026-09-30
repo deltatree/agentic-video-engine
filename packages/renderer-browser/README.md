@@ -54,7 +54,7 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
 
 - CSS-Variablen auf `:root`: `--ov-time` (Sekunden), `--ov-frame`, `--ov-progress` (ohne Einheit).
 - CSS- und Web-Animationen werden pausiert und auf die lokale Zeit gesetzt.
-- `<script>` läuft nur in der Sandbox (ADR 0008); `check()` meldet dazu `OV_HTML_SCRIPT` als Info.
+- `<script>` läuft nur ausdrücklich erlaubt (`--trusted` oder `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) und nur mit OS-Sandbox (ADR 0008, Story 16.1); `check()` meldet dazu `OV_HTML_SCRIPT` als Info.
 - Skripte laufen nur mit der Host-Option `allowHtmlScripts: true`. Standard ist `false`.
   Dann hat das iframe `sandbox="allow-same-origin"` und die CSP `script-src 'none'`.
   Es laufen keine `<script>`-Elemente, Event-Handler, `javascript:`-URLs und verschachtelten iframes.
@@ -68,5 +68,13 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
   Das Token steht nicht in der URL der Seite.
 - Frame-Uploads haben zufällige IDs (`crypto.randomUUID`).
 - Chromium löst keine Hostnamen auf, nutzt einen toten Proxy (außer für `127.0.0.1`) und kennt kein WebRTC.
-- Chromium startet mit OS-Sandbox. Klappt das nicht, läuft es ohne und `host.diagnostics` meldet `OV_BROWSER_NO_OS_SANDBOX`.
+- Chromium startet mit OS-Sandbox. Klappt das nicht und sind Skripte verlangt (`allowHtmlScripts: true`),
+  bricht der Host mit dem Fehler `OV_BROWSER_NO_OS_SANDBOX` ab: Skripte laufen nie ohne OS-Sandbox.
+  Ohne Skripte läuft Chromium dann ohne Sandbox weiter, und `host.diagnostics` meldet `OV_BROWSER_NO_OS_SANDBOX` als Warnung.
+  `probeOsSandbox()` prüft vorab, ob die Sandbox verfügbar ist (nicht als root, User Namespaces nötig).
+- `--enable-unsafe-swiftshader` und `--enable-unsafe-webgpu` (`CHROMIUM_GRAPHICS_ARGS`) setzt der Host erst,
+  wenn der erste `three`- oder `pixi`-Layer kommt; dafür startet er Chromium einmal neu. HTML rastert mit
+  und ohne diese Schalter pixelgleich.
+- Chromium erbt nur eine minimale Umgebung (`chromiumEnv`: `PATH`, `HOME`, `TMPDIR`, Locale, Fontconfig …),
+  keine Tokens und keine S3-Schlüssel.
 - Höchstens `maxPages` Seiten (Standard 4) bleiben offen. Nach einem Absturz startet Chromium bei der nächsten Anfrage neu.

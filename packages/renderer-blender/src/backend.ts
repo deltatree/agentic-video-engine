@@ -30,6 +30,16 @@ import { placeImage, renderSize } from './place.js';
 /** Pfad des mitgelieferten Python-Skripts. */
 export const BLENDER_SCRIPT_PATH: string = fileURLToPath(new URL('../python/openvideo_blender.py', import.meta.url));
 
+/**
+ * Fähigkeit eines Backends, Motion Blur aus Nachbar-Subframes zu rechnen (Story 17.5): Der Frame-Render
+ * wertet für Nodes mit `motionBlur: true` die Szene an den Offsets {@link DEFAULT_MOTION_OFFSETS} aus und
+ * übergibt die Zustände als `motionStates` ({@link BlenderLayerRequest}).
+ */
+export const MOTION_STATES_CAPABILITY = 'motion-states';
+
+/** Standard-Offsets der Subframes in Frames: Verschlusszeit ½ Frame, zentriert. */
+export const DEFAULT_MOTION_OFFSETS: readonly number[] = [-0.25, 0.25];
+
 /** Fähigkeiten des Blender-Backends. */
 export const BLENDER_CAPABILITIES: readonly string[] = [
   'blender.cycles',
@@ -44,6 +54,8 @@ export const BLENDER_CAPABILITIES: readonly string[] = [
   'blender.obj',
   'blender.hdri',
   'blender.transparent',
+  'blender.particles',
+  MOTION_STATES_CAPABILITY,
 ];
 
 /** Standard-Timeout je Frame (inklusive Start von Blender beim ersten Frame). */
@@ -127,7 +139,7 @@ export function evaluateMotionStates(
   compositionId: string | undefined,
   frame: number,
   nodeIds: readonly string[],
-  offsets: readonly number[] = [-0.25, 0.25],
+  offsets: readonly number[] = DEFAULT_MOTION_OFFSETS,
   options: EvaluateOptions = {},
 ): MotionState[] {
   return offsets.map((offset) => {
