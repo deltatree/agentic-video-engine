@@ -1,0 +1,4 @@
+.openvideo/
+out/
+# Written by the compiler from src/video.tsx on every load.
+project.json

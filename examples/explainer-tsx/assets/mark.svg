@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <!-- Hand-drawn brand mark for examples/explainer-tsx, CC0-1.0 -->
+  <rect x="6" y="6" width="108" height="108" rx="28" fill="#0F766E"/>
+  <path d="M34 78 L56 42 L70 64 L86 40" fill="none" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="86" cy="40" r="8" fill="#F59E0B"/>
+</svg>

@@ -379,7 +379,8 @@ export class Studio {
       this.set({ kind: info['kind'] === 'tsx' ? 'tsx' : 'json', entry: str(info['entry'], 'project.json') });
       await this.reload();
       this.set({ status: 'ready' });
-      if (!this.disposed) this.stopLive ??= subscribeRevisions(
+      // `dispose` kann während der awaits oben gelaufen sein.
+      if (!this.isDisposed()) this.stopLive ??= subscribeRevisions(
         this.state.projectId,
         (revision) => {
           this.onRemoteRevision(revision);
@@ -392,6 +393,10 @@ export class Studio {
     } catch (error) {
       this.set({ status: 'error', loadError: errorText(error) });
     }
+  }
+
+  private isDisposed(): boolean {
+    return this.disposed;
   }
 
   /** Beendet Live-Updates, Wiedergabe und Abfragen (beim Verlassen der Seite). */
