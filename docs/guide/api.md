@@ -1,6 +1,6 @@
 # Agent API
 
-Generiert von `scripts/generate-docs.mjs`. Jede der 30 Operationen ist über HTTP (`POST /v1/<name>`), MCP (Tool `<name>` mit `_` statt `.`) und die CLI (`openvideo op <name> --input <json|@datei>`) erreichbar (ADR 0009).
+Generiert von `scripts/generate-docs.mjs`. Jede der 31 Operationen ist über HTTP (`POST /v1/<name>`), MCP (Tool `<name>` mit `_` statt `.`) und die CLI (`openvideo op <name> --input <json|@datei>`) erreichbar (ADR 0009).
 Der MCP-Server bietet zusätzlich die Resources `openvideo://agents.md`, `openvideo://schema.json` und `openvideo://capabilities.json`.
 
 | Operation | Zweck | Job |
@@ -35,6 +35,7 @@ Der MCP-Server bietet zusätzlich die Resources `openvideo://agents.md`, `openvi
 | `scene.tree` | Scene tree of a frame with bounds and opacity. |  |
 | `timeline.inspect` | Timing windows, animated properties, keyframe times, markers and tracks. |  |
 | `benchmark.run` | Run a reproducible benchmark scenario and return the measurements. |  |
+| `plugins.list` | List the plugins of a project and what they add: agent tools (operations plugin.<name>), codecs, exporters (output formats plugin:<id>), asset loaders and Studio panels. |  |
 
 ## Beispiele
 
@@ -399,6 +400,16 @@ Run a reproducible benchmark scenario and return the measurements.
   "scenario": "text-heavy",
   "resolution": "1080p30",
   "frames": 60
+}
+```
+
+### plugins.list
+
+List the plugins of a project and what they add: agent tools (operations plugin.<name>), codecs, exporters (output formats plugin:<id>), asset loaders and Studio panels.
+
+```json
+{
+  "projectId": "launch-video"
 }
 ```
 

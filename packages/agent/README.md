@@ -11,6 +11,8 @@ Agent API: Operationsregister (`OPERATIONS`), typisiertes Patch-Schema (`PatchSc
 | `GET /v1/files/<projectId>/<pfad>` | Projektdateien; `ETag` = Inhaltsrevision (SHA-256, 16 Hex-Zeichen) |
 | `GET /v1/events?projectId=<id>` | Server-Sent Events `revision` bei jeder Änderung von `project.json`, egal von wem (ADR 0025); höchstens `maxEventStreams` (Standard 32) gleichzeitig |
 | `GET /v1/health` | Lebenszeichen ohne Token |
+| `POST /v1/plugin.<name>` | Agent Tool aus einem Plugin des Projekts (Eingabe `projectId` plus Tool-Schema; `plugins.list` zeigt alle) |
+| `GET /plugin-panels/<projectId>/<panelId>/<signatur>/` | Studio-Panel eines Plugins: Seite (Sandbox-CSP) und `module.js`; ohne Token, die signierte URL aus `plugins.list` ist die Berechtigung |
 
 `frame.render` nimmt optional `patches`: Sie gelten nur für diesen Render und werden nie gespeichert
 (Live-Vorschau im Studio). `render.status` ohne `jobId` listet alle Jobs, mit `projectId` die eines Projekts.

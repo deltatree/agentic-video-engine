@@ -238,17 +238,9 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
       send(res, 403, apiError('OV_API_HOST', `Host "${req.headers.host ?? ''}" is not allowed.`, ['Use http://localhost:<port> or add the host name with --allowed-host / OPENVIDEO_ALLOWED_HOSTS.']));
       return;
     }
-    if (!originOk(req)) {
-      send(res, 403, apiError('OV_API_ORIGIN', `Origin "${req.headers.origin ?? ''}" is not allowed.`, ['Call the API from the Studio on the same origin, or configure --cors-origin.']));
-      return;
-    }
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204, cors);
-      res.end();
-      return;
-    }
     // Studio-Panels aus Plugins (Story 21.1): iframes senden kein Bearer-Token; die signierte URL
-    // aus plugins.list ist die Berechtigung. Unbekannte oder falsch signierte Pfade: 404.
+    // aus plugins.list ist die Berechtigung. Unbekannte oder falsch signierte Pfade: 404. Vor der
+    // Origin-Prüfung, weil die sandboxed Panel-Seite Module mit `Origin: null` lädt (nur GET, ohne Wirkung).
     if (req.method === 'GET' && url.pathname.startsWith(PLUGIN_PANEL_PATH)) {
       let panel: PanelResponse | undefined;
       try {
@@ -262,6 +254,15 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
         res.writeHead(panel.status, panel.headers);
         res.end(panel.body);
       }
+      return;
+    }
+    if (!originOk(req)) {
+      send(res, 403, apiError('OV_API_ORIGIN', `Origin "${req.headers.origin ?? ''}" is not allowed.`, ['Call the API from the Studio on the same origin, or configure --cors-origin.']));
+      return;
+    }
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, cors);
+      res.end();
       return;
     }
     if (url.pathname.startsWith('/v1/') && token !== undefined && !tokenOk(req.headers.authorization, token)) {

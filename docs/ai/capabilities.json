@@ -817,6 +817,7 @@
         "children",
         "backend",
         "antialias",
+        "textureDownscale",
         "postprocessing"
       ],
       "required": [
@@ -7011,6 +7012,14 @@
         "scenario": "text-heavy",
         "resolution": "1080p30",
         "frames": 60
+      }
+    },
+    {
+      "name": "plugins.list",
+      "summary": "List the plugins of a project and what they add: agent tools (operations plugin.<name>), codecs, exporters (output formats plugin:<id>), asset loaders and Studio panels.",
+      "job": false,
+      "example": {
+        "projectId": "launch-video"
       }
     }
   ],
