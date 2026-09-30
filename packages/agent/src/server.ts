@@ -46,6 +46,12 @@ export interface AgentServerOptions {
   readonly extraOperations?: ReadonlyMap<string, OperationDefinition>;
   /** Höchstzahl gleichzeitig offener Ereignis-Streams (`/v1/events`, Standard 32). */
   readonly maxEventStreams?: number;
+  /**
+   * Der Server steht hinter einem vertrauten Reverse-Proxy, der TLS beendet: `X-Forwarded-Proto: https`
+   * gilt dann als Schema der Studio-Origin (z. B. für die CSP der Plugin-Panels). Ohne diese Option zählt
+   * der Kopf nur von Loopback-Adressen (Proxy auf demselben Rechner). Standard `false`.
+   */
+  readonly trustProxy?: boolean;
   /** Weitere Routen (z. B. Studio-Dateien); liefert `true`, wenn die Anfrage behandelt wurde. */
   readonly fallback?: (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 }
@@ -132,6 +138,28 @@ function tokenOk(header: string | undefined, token: string): boolean {
 export function isLoopbackHost(host: string): boolean {
   const h = host.toLowerCase().replace(/^\[|\]$/gu, '');
   return h === 'localhost' || h === '::1' || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/u.test(h);
+}
+
+/**
+ * Origin einer Anfrage, wie der Browser sie sieht: Schema plus geprüfter `Host`-Kopf. `https`, wenn die
+ * Verbindung selbst TLS ist oder ein vertrauter Proxy (`trustProxy` oder Loopback-Gegenstelle)
+ * `X-Forwarded-Proto: https` sendet; sonst `http`. Den Host muss der Aufrufer vorher geprüft haben.
+ *
+ * @example
+ * ```ts
+ * requestOrigin(req, false); // 'http://localhost:7788'
+ * ```
+ */
+export function requestOrigin(req: IncomingMessage, trustProxy: boolean): string | undefined {
+  const host = req.headers.host;
+  if (typeof host !== 'string' || host === '') return undefined;
+  const socket = req.socket;
+  const tls = 'encrypted' in socket && socket.encrypted === true;
+  const forwardedHeader = req.headers['x-forwarded-proto'];
+  const forwarded = (Array.isArray(forwardedHeader) ? forwardedHeader[0] : forwardedHeader)?.split(',')[0]?.trim().toLowerCase();
+  const proxyTrusted = trustProxy || isLoopbackHost(socket.remoteAddress?.replace(/^::ffff:/u, '') ?? '');
+  const https = tls || (proxyTrusted && forwarded === 'https');
+  return `${https ? 'https' : 'http'}://${host.toLowerCase()}`;
 }
 
 /** Host-Teil einer URL für eine Bind-Adresse (`0.0.0.0` → `127.0.0.1`, IPv6 in Klammern). */
@@ -244,7 +272,9 @@ export function startAgentServer(options: AgentServerOptions): Promise<AgentServ
     if (req.method === 'GET' && url.pathname.startsWith(PLUGIN_PANEL_PATH)) {
       let panel: PanelResponse | undefined;
       try {
-        panel = await servePluginPanel(services, url.pathname);
+        // Die CSP nennt die absolute Modul-URL; die Origin stammt aus dem oben geprüften Host-Kopf.
+        const origin = requestOrigin(req, options.trustProxy === true);
+        panel = await servePluginPanel(services, url.pathname, origin !== undefined ? { origin } : {});
       } catch (error) {
         if (!(error instanceof OpenVideoError)) throw error;
         panel = undefined;

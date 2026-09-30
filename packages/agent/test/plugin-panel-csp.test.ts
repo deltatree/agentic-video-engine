@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Registry, isRecord } from '@agentic-video/core';
-import { OPERATIONS, invokeOperation, pluginPanelUrl, servePluginPanel, type AgentServices } from '@agentic-video/agent';
+import { IncomingMessage, request } from 'node:http';
+import { Socket } from 'node:net';
+import { OPERATIONS, invokeOperation, pluginPanelUrl, requestOrigin, servePluginPanel, startAgentServer, type AgentServices } from '@agentic-video/agent';
 import { smallProject, testServices } from './helpers.js';
 
 let services: AgentServices;
@@ -92,5 +94,47 @@ describe('Panel-CSP (Review Q5)', () => {
       const r = await servePluginPanel(services, `${pluginPanelUrl(services, projectId, id)}${suffix}`, { origin: 'http://localhost:4000' });
       expect(r?.status, `${id}/${suffix}`).toBe(404);
     }
+  });
+
+  it('der Server übergibt die Origin aus dem geprüften Host-Kopf: CSP enthält die absolute Modul-URL', async () => {
+    const server = await startAgentServer({ services, port: 0, allowedHosts: ['studio.example.com'] });
+    try {
+      const path = pluginPanelUrl(services, projectId, 'ok');
+      const port = new URL(server.url).port;
+      const csp = (headers: Record<string, string>): Promise<string> =>
+        new Promise((resolve, reject) => {
+          const req = request({ host: '127.0.0.1', port, path, headers }, (res) => {
+            res.resume();
+            const value = res.headers['content-security-policy'];
+            resolve(typeof value === 'string' ? value : '');
+          });
+          req.on('error', reject);
+          req.end();
+        });
+      const escaped = path.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+      expect(await csp({ host: `localhost:${port}` })).toMatch(new RegExp(`script-src 'nonce-[^']+' http://localhost:${port}${escaped}module\\.js;`, 'u'));
+      // Erlaubter fremder Host-Name (z. B. hinter einem Proxy) erscheint so, wie der Browser ihn sieht.
+      expect(await csp({ host: 'studio.example.com' })).toContain(`http://studio.example.com${path}module.js`);
+      // Proxy auf demselben Rechner (Loopback-Gegenstelle) beendet TLS: https.
+      expect(await csp({ host: 'studio.example.com', 'x-forwarded-proto': 'https' })).toContain(`https://studio.example.com${path}module.js`);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('requestOrigin vertraut X-Forwarded-Proto nur mit trustProxy oder von Loopback', () => {
+    const message = (remoteAddress: string, headers: Record<string, string>): IncomingMessage => {
+      const socket = new Socket();
+      Object.defineProperty(socket, 'remoteAddress', { value: remoteAddress });
+      const m = new IncomingMessage(socket);
+      m.headers = headers;
+      return m;
+    };
+    const remote = message('203.0.113.9', { host: 'studio.example.com', 'x-forwarded-proto': 'https' });
+    expect(requestOrigin(remote, false)).toBe('http://studio.example.com');
+    expect(requestOrigin(remote, true)).toBe('https://studio.example.com');
+    expect(requestOrigin(message('::ffff:127.0.0.1', { host: 'Localhost:4000', 'x-forwarded-proto': 'https, http' }), false)).toBe('https://localhost:4000');
+    expect(requestOrigin(message('127.0.0.1', { host: 'localhost:4000', 'x-forwarded-proto': 'http' }), false)).toBe('http://localhost:4000');
+    expect(requestOrigin(message('127.0.0.1', {}), false)).toBeUndefined();
   });
 });

@@ -5758,7 +5758,36 @@
         }
       },
       "additionalProperties": false,
-      "description": "Groups children with a shared transform."
+      "description": "Groups children with a shared transform.",
+      "examples": [
+        {
+          "id": "badge",
+          "type": "group",
+          "x": 220,
+          "y": 148,
+          "children": [
+            {
+              "id": "badge-bg",
+              "type": "rect",
+              "width": 200,
+              "height": 64,
+              "cornerRadius": 32,
+              "fill": "#FF5A1F"
+            },
+            {
+              "id": "badge-label",
+              "type": "text",
+              "text": "NEW",
+              "y": 12,
+              "width": 200,
+              "textAlign": "center",
+              "fontSize": 32,
+              "fontWeight": 700,
+              "fill": "#FFFFFF"
+            }
+          ]
+        }
+      ]
     },
     "Node_layer": {
       "type": "object",
@@ -6360,7 +6389,32 @@
         }
       },
       "additionalProperties": false,
-      "description": "Compositing boundary: always rendered as its own layer."
+      "description": "Compositing boundary: always rendered as its own layer.",
+      "examples": [
+        {
+          "id": "glow-layer",
+          "type": "layer",
+          "blendMode": "screen",
+          "effects": [
+            {
+              "type": "glow",
+              "radius": 16,
+              "intensity": 0.8
+            }
+          ],
+          "children": [
+            {
+              "id": "orb",
+              "type": "ellipse",
+              "x": 220,
+              "y": 80,
+              "width": 200,
+              "height": 200,
+              "fill": "#4F8CFF"
+            }
+          ]
+        }
+      ]
     },
     "Node_composition_ref": {
       "type": "object",
@@ -6511,7 +6565,19 @@
         }
       },
       "additionalProperties": false,
-      "description": "Nested composition, evaluated at the remapped local time."
+      "description": "Nested composition, evaluated at the remapped local time.",
+      "examples": [
+        {
+          "id": "intro-ref",
+          "type": "composition-ref",
+          "composition": "intro",
+          "timing": {
+            "from": 0,
+            "duration": "2s",
+            "speed": 1
+          }
+        }
+      ]
     },
     "Node_sequence": {
       "type": "object",
@@ -6670,7 +6736,39 @@
         }
       },
       "additionalProperties": false,
-      "description": "Plays its children one after another (each needs timing.duration, or is a composition-ref). Consecutive children overlap by the transition duration and cross over automatically."
+      "description": "Plays its children one after another (each needs timing.duration, or is a composition-ref). Consecutive children overlap by the transition duration and cross over automatically.",
+      "examples": [
+        {
+          "id": "slides",
+          "type": "sequence",
+          "between": {
+            "type": "fade",
+            "duration": "0.5s"
+          },
+          "children": [
+            {
+              "id": "slide-1",
+              "type": "rect",
+              "width": 640,
+              "height": 360,
+              "fill": "#1B2A4A",
+              "timing": {
+                "duration": "1.25s"
+              }
+            },
+            {
+              "id": "slide-2",
+              "type": "rect",
+              "width": 640,
+              "height": 360,
+              "fill": "#FF5A1F",
+              "timing": {
+                "duration": "1.25s"
+              }
+            }
+          ]
+        }
+      ]
     },
     "Node_component": {
       "type": "object",
@@ -6826,7 +6924,20 @@
         }
       },
       "additionalProperties": false,
-      "description": "Reusable component expanded at evaluation time."
+      "description": "Reusable component expanded at evaluation time.",
+      "examples": [
+        {
+          "id": "name-tag",
+          "type": "component",
+          "component": "LowerThird",
+          "props": {
+            "name": "Ada Lovelace",
+            "role": "Engineer"
+          },
+          "x": 40,
+          "y": 250
+        }
+      ]
     },
     "Node_rect": {
       "type": "object",
@@ -7054,7 +7165,41 @@
         }
       },
       "additionalProperties": false,
-      "description": "Rectangle, optionally rounded."
+      "description": "Rectangle, optionally rounded.",
+      "examples": [
+        {
+          "id": "card",
+          "type": "rect",
+          "x": 120,
+          "y": 80,
+          "width": 400,
+          "height": 200,
+          "cornerRadius": 24,
+          "fill": {
+            "type": "linear",
+            "stops": [
+              {
+                "offset": 0,
+                "color": "#FF5A1F"
+              },
+              {
+                "offset": 1,
+                "color": "#8A2BE2"
+              }
+            ],
+            "start": {
+              "x": 0,
+              "y": 0
+            },
+            "end": {
+              "x": 1,
+              "y": 1
+            }
+          },
+          "stroke": "#FFFFFF",
+          "strokeWidth": 4
+        }
+      ]
     },
     "Node_ellipse": {
       "type": "object",
@@ -7255,7 +7400,30 @@
         }
       },
       "additionalProperties": false,
-      "description": "Ellipse inside the box. Equal width and height = circle."
+      "description": "Ellipse inside the box. Equal width and height = circle.",
+      "examples": [
+        {
+          "id": "dot",
+          "type": "ellipse",
+          "x": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 40
+              },
+              {
+                "t": "1s",
+                "v": 520,
+                "ease": "easeInOutCubic"
+              }
+            ]
+          },
+          "y": 140,
+          "width": 80,
+          "height": 80,
+          "fill": "#FF5A1F"
+        }
+      ]
     },
     "Node_line": {
       "type": "object",
@@ -7590,7 +7758,37 @@
         }
       },
       "additionalProperties": false,
-      "description": "Straight line between two points."
+      "description": "Straight line between two points.",
+      "examples": [
+        {
+          "id": "underline",
+          "type": "line",
+          "from": {
+            "x": 80,
+            "y": 180
+          },
+          "to": {
+            "x": 560,
+            "y": 180
+          },
+          "stroke": "#FFFFFF",
+          "strokeWidth": 8,
+          "strokeCap": "round",
+          "trimEnd": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": 0
+              },
+              {
+                "t": "1s",
+                "v": 1,
+                "ease": "easeOutCubic"
+              }
+            ]
+          }
+        }
+      ]
     },
     "Node_polyline": {
       "type": "object",
@@ -7955,7 +8153,34 @@
         }
       },
       "additionalProperties": false,
-      "description": "Open line through points."
+      "description": "Open line through points.",
+      "examples": [
+        {
+          "id": "trend",
+          "type": "polyline",
+          "points": [
+            [
+              40,
+              300
+            ],
+            [
+              200,
+              220
+            ],
+            [
+              360,
+              260
+            ],
+            [
+              600,
+              80
+            ]
+          ],
+          "stroke": "#4F8CFF",
+          "strokeWidth": 6,
+          "strokeJoin": "round"
+        }
+      ]
     },
     "Node_polygon": {
       "type": "object",
@@ -8320,7 +8545,28 @@
         }
       },
       "additionalProperties": false,
-      "description": "Closed shape through points."
+      "description": "Closed shape through points.",
+      "examples": [
+        {
+          "id": "triangle",
+          "type": "polygon",
+          "points": [
+            [
+              320,
+              60
+            ],
+            [
+              520,
+              300
+            ],
+            [
+              120,
+              300
+            ]
+          ],
+          "fill": "#FFC857"
+        }
+      ]
     },
     "Node_path": {
       "type": "object",
@@ -8568,7 +8814,18 @@
         }
       },
       "additionalProperties": false,
-      "description": "Vector path from SVG path data."
+      "description": "Vector path from SVG path data.",
+      "examples": [
+        {
+          "id": "check",
+          "type": "path",
+          "d": "M 200 180 L 280 260 L 440 100",
+          "stroke": "#3DDC97",
+          "strokeWidth": 16,
+          "strokeCap": "round",
+          "strokeJoin": "round"
+        }
+      ]
     },
     "Node_text": {
       "type": "object",
@@ -8885,7 +9142,30 @@
         }
       },
       "additionalProperties": false,
-      "description": "Single-style text with wrapping, shaping and per-unit animation."
+      "description": "Single-style text with wrapping, shaping and per-unit animation.",
+      "examples": [
+        {
+          "id": "headline",
+          "type": "text",
+          "text": "Hello OpenVideo",
+          "x": 40,
+          "y": 140,
+          "width": 560,
+          "textAlign": "center",
+          "fontSize": 56,
+          "fontWeight": 700,
+          "fill": "#F5F7FF",
+          "textAnimation": {
+            "unit": "char",
+            "stagger": 2,
+            "duration": 12,
+            "from": {
+              "opacity": 0,
+              "y": 20
+            }
+          }
+        }
+      ]
     },
     "Node_rich_text": {
       "type": "object",
@@ -9251,7 +9531,29 @@
         }
       },
       "additionalProperties": false,
-      "description": "Text with differently styled spans."
+      "description": "Text with differently styled spans.",
+      "examples": [
+        {
+          "id": "tagline",
+          "type": "rich-text",
+          "x": 40,
+          "y": 150,
+          "width": 560,
+          "textAlign": "center",
+          "fontSize": 44,
+          "fill": "#F5F7FF",
+          "spans": [
+            {
+              "text": "Video as "
+            },
+            {
+              "text": "code",
+              "fill": "#FF5A1F",
+              "fontWeight": 800
+            }
+          ]
+        }
+      ]
     },
     "Node_image": {
       "type": "object",
@@ -9438,7 +9740,19 @@
         }
       },
       "additionalProperties": false,
-      "description": "Raster image from an asset."
+      "description": "Raster image from an asset.",
+      "examples": [
+        {
+          "id": "logo-image",
+          "type": "image",
+          "asset": "logo",
+          "x": 220,
+          "y": 80,
+          "width": 200,
+          "height": 200,
+          "fit": "contain"
+        }
+      ]
     },
     "Node_video": {
       "type": "object",
@@ -9625,7 +9939,18 @@
         }
       },
       "additionalProperties": false,
-      "description": "Video from an asset; its audio joins the mix unless muted."
+      "description": "Video from an asset; its audio joins the mix unless muted.",
+      "examples": [
+        {
+          "id": "clip-video",
+          "type": "video",
+          "asset": "clip",
+          "width": 640,
+          "height": 360,
+          "fit": "cover",
+          "muted": true
+        }
+      ]
     },
     "Node_svg": {
       "type": "object",
@@ -9800,7 +10125,18 @@
         }
       },
       "additionalProperties": false,
-      "description": "SVG from an asset or inline markup."
+      "description": "SVG from an asset or inline markup.",
+      "examples": [
+        {
+          "id": "star",
+          "type": "svg",
+          "x": 270,
+          "y": 130,
+          "width": 100,
+          "height": 100,
+          "markup": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7z\" fill=\"#FFC857\"/></svg>"
+        }
+      ]
     },
     "Node_sprite": {
       "type": "object",
@@ -10019,7 +10355,22 @@
         }
       },
       "additionalProperties": false,
-      "description": "Frame from a sprite sheet grid."
+      "description": "Frame from a sprite sheet grid.",
+      "examples": [
+        {
+          "id": "walker",
+          "type": "sprite",
+          "asset": "walk-sheet",
+          "columns": 4,
+          "rows": 1,
+          "frameRate": 8,
+          "loop": true,
+          "x": 270,
+          "y": 130,
+          "width": 100,
+          "height": 100
+        }
+      ]
     },
     "Node_lottie": {
       "type": "object",
@@ -10202,7 +10553,19 @@
         }
       },
       "additionalProperties": false,
-      "description": "Lottie animation, frame-exact."
+      "description": "Lottie animation, frame-exact.",
+      "examples": [
+        {
+          "id": "spinner-anim",
+          "type": "lottie",
+          "asset": "spinner",
+          "x": 220,
+          "y": 80,
+          "width": 200,
+          "height": 200,
+          "loop": true
+        }
+      ]
     },
     "Node_shader": {
       "type": "object",
@@ -10364,7 +10727,16 @@
         }
       },
       "additionalProperties": false,
-      "description": "Custom shader filling the box. Uniforms `time`, `frame`, `resolution` are provided."
+      "description": "Custom shader filling the box. Uniforms `time`, `frame`, `resolution` are provided.",
+      "examples": [
+        {
+          "id": "plasma",
+          "type": "shader",
+          "width": 640,
+          "height": 360,
+          "sksl": "uniform float time;\nuniform float2 resolution;\nhalf4 main(float2 coord) {\n  float2 uv = coord / resolution;\n  return half4(half(uv.x), half(uv.y), half(0.5 + 0.5 * sin(time * 3.0)), 1.0);\n}"
+        }
+      ]
     },
     "Node_particles": {
       "type": "object",
@@ -10675,7 +11047,43 @@
         }
       },
       "additionalProperties": false,
-      "description": "Stateless 2D particle system: particle state is a pure function of time and seed."
+      "description": "Stateless 2D particle system: particle state is a pure function of time and seed.",
+      "examples": [
+        {
+          "id": "sparks",
+          "type": "particles",
+          "width": 640,
+          "height": 360,
+          "count": 200,
+          "seed": 7,
+          "emitter": {
+            "x": 320,
+            "y": 180,
+            "radius": 10,
+            "shape": "circle"
+          },
+          "lifetime": {
+            "min": 0.5,
+            "max": 1.5
+          },
+          "speed": {
+            "min": 60,
+            "max": 180
+          },
+          "angle": {
+            "min": 0,
+            "max": 360
+          },
+          "size": {
+            "start": 6,
+            "end": 1
+          },
+          "color": {
+            "start": "#FFC857",
+            "end": "#FF5A1F"
+          }
+        }
+      ]
     },
     "Node_html": {
       "type": "object",
@@ -10847,7 +11255,20 @@
         }
       },
       "additionalProperties": false,
-      "description": "HTML/CSS/SVG/Canvas/WebGL content rendered by Chromium."
+      "description": "HTML/CSS/SVG/Canvas/WebGL content rendered by Chromium.",
+      "examples": [
+        {
+          "id": "html-card",
+          "type": "html",
+          "x": 120,
+          "y": 80,
+          "width": 400,
+          "height": 200,
+          "html": "<div class=\"card\">Hello from HTML</div>",
+          "css": ".card { font: 600 40px sans-serif; color: #FFFFFF; padding: 72px 40px; }",
+          "background": "#1B2A4A"
+        }
+      ]
     },
     "Node_subtitles": {
       "type": "object",
@@ -11183,7 +11604,19 @@
         }
       },
       "additionalProperties": false,
-      "description": "Animated captions from a subtitle track. textAnimation animates each word from its own start time."
+      "description": "Animated captions from a subtitle track. textAnimation animates each word from its own start time.",
+      "examples": [
+        {
+          "id": "captions-view",
+          "type": "subtitles",
+          "track": "captions",
+          "fontSize": 36,
+          "style": "karaoke",
+          "color": "#FFFFFF",
+          "highlightColor": "#FFC857",
+          "position": "bottom"
+        }
+      ]
     },
     "Node_scene3d": {
       "type": "object",
@@ -11480,7 +11913,62 @@
         }
       },
       "additionalProperties": false,
-      "description": "Real-time 3D scene rendered with Three.js."
+      "description": "Real-time 3D scene rendered with Three.js.",
+      "examples": [
+        {
+          "id": "stage",
+          "type": "scene3d",
+          "width": 640,
+          "height": 360,
+          "camera": "cam",
+          "background": "#0B0D12",
+          "children": [
+            {
+              "id": "cam",
+              "type": "camera3d",
+              "position": [
+                0,
+                1.5,
+                5
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "fov": 45
+            },
+            {
+              "id": "key",
+              "type": "light3d",
+              "kind": "directional",
+              "position": [
+                3,
+                5,
+                4
+              ],
+              "intensity": 2.5,
+              "castShadow": true
+            },
+            {
+              "id": "cube",
+              "type": "mesh3d",
+              "geometry": {
+                "type": "box"
+              },
+              "material": {
+                "color": "#FF5A1F",
+                "roughness": 0.4
+              },
+              "rotation": [
+                20,
+                35,
+                0
+              ]
+            }
+          ]
+        }
+      ]
     },
     "Node_blender": {
       "type": "object",
@@ -11743,7 +12231,60 @@
         }
       },
       "additionalProperties": false,
-      "description": "Offline 3D scene rendered with Blender (Cycles or Eevee)."
+      "description": "Offline 3D scene rendered with Blender (Cycles or Eevee).",
+      "examples": [
+        {
+          "id": "hero-shot",
+          "type": "blender",
+          "width": 640,
+          "height": 360,
+          "engine": "eevee",
+          "samples": 16,
+          "camera": "cam",
+          "children": [
+            {
+              "id": "cam",
+              "type": "camera3d",
+              "position": [
+                0,
+                1.5,
+                5
+              ],
+              "target": [
+                0,
+                0,
+                0
+              ],
+              "fov": 45
+            },
+            {
+              "id": "key",
+              "type": "light3d",
+              "kind": "directional",
+              "position": [
+                3,
+                5,
+                4
+              ],
+              "intensity": 2.5,
+              "castShadow": true
+            },
+            {
+              "id": "ball",
+              "type": "mesh3d",
+              "geometry": {
+                "type": "sphere",
+                "radius": 1
+              },
+              "material": {
+                "color": "#4F8CFF",
+                "metalness": 0.2,
+                "roughness": 0.3
+              }
+            }
+          ]
+        }
+      ]
     },
     "Node_camera3d": {
       "type": "object",
@@ -12083,7 +12624,24 @@
         }
       },
       "additionalProperties": false,
-      "description": "3D camera."
+      "description": "3D camera.",
+      "examples": [
+        {
+          "id": "cam",
+          "type": "camera3d",
+          "position": [
+            0,
+            1.5,
+            5
+          ],
+          "target": [
+            0,
+            0,
+            0
+          ],
+          "fov": 45
+        }
+      ]
     },
     "Node_light3d": {
       "type": "object",
@@ -12439,7 +12997,21 @@
         }
       },
       "additionalProperties": false,
-      "description": "3D light."
+      "description": "3D light.",
+      "examples": [
+        {
+          "id": "key",
+          "type": "light3d",
+          "kind": "directional",
+          "position": [
+            3,
+            5,
+            4
+          ],
+          "intensity": 2.5,
+          "castShadow": true
+        }
+      ]
     },
     "Node_mesh3d": {
       "type": "object",
@@ -12512,7 +13084,43 @@
         }
       },
       "additionalProperties": false,
-      "description": "3D mesh with built-in geometry."
+      "description": "3D mesh with built-in geometry.",
+      "examples": [
+        {
+          "id": "spinning-cube",
+          "type": "mesh3d",
+          "geometry": {
+            "type": "box",
+            "width": 1,
+            "height": 1,
+            "depth": 1
+          },
+          "material": {
+            "color": "#FF5A1F",
+            "roughness": 0.4
+          },
+          "rotation": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": [
+                  0,
+                  0,
+                  0
+                ]
+              },
+              {
+                "t": "2s",
+                "v": [
+                  0,
+                  180,
+                  0
+                ]
+              }
+            ]
+          }
+        }
+      ]
     },
     "Node_model3d": {
       "type": "object",
@@ -12619,7 +13227,24 @@
         }
       },
       "additionalProperties": false,
-      "description": "glTF, GLB or OBJ model."
+      "description": "glTF, GLB or OBJ model.",
+      "examples": [
+        {
+          "id": "robot-model",
+          "type": "model3d",
+          "asset": "robot",
+          "position": [
+            0,
+            -1,
+            0
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      ]
     },
     "Node_instances3d": {
       "type": "object",
@@ -12948,7 +13573,32 @@
         }
       },
       "additionalProperties": false,
-      "description": "Many instances of one mesh."
+      "description": "Many instances of one mesh.",
+      "examples": [
+        {
+          "id": "dot-field",
+          "type": "instances3d",
+          "geometry": {
+            "type": "sphere",
+            "radius": 0.08
+          },
+          "material": {
+            "color": "#4F8CFF"
+          },
+          "count": 100,
+          "seed": 3,
+          "layout": {
+            "type": "grid",
+            "columns": 10,
+            "spacing": 0.3
+          },
+          "position": [
+            -1.35,
+            -1.35,
+            0
+          ]
+        }
+      ]
     },
     "Node_particles3d": {
       "type": "object",
@@ -13123,7 +13773,36 @@
         }
       },
       "additionalProperties": false,
-      "description": "Stateless 3D particle system."
+      "description": "Stateless 3D particle system.",
+      "examples": [
+        {
+          "id": "dust",
+          "type": "particles3d",
+          "count": 500,
+          "seed": 1,
+          "emitter": {
+            "shape": "sphere",
+            "size": 2
+          },
+          "lifetime": {
+            "min": 1,
+            "max": 3
+          },
+          "speed": {
+            "min": 0.1,
+            "max": 0.5
+          },
+          "size": {
+            "start": 0.05,
+            "end": 0
+          },
+          "color": {
+            "start": "#FFFFFF",
+            "end": "#4F8CFF"
+          },
+          "additive": true
+        }
+      ]
     },
     "Node_group3d": {
       "type": "object",
@@ -13190,7 +13869,67 @@
         }
       },
       "additionalProperties": false,
-      "description": "Groups 3D nodes."
+      "description": "Groups 3D nodes.",
+      "examples": [
+        {
+          "id": "rig",
+          "type": "group3d",
+          "rotation": {
+            "$keyframes": [
+              {
+                "t": 0,
+                "v": [
+                  0,
+                  0,
+                  0
+                ]
+              },
+              {
+                "t": "2s",
+                "v": [
+                  0,
+                  90,
+                  0
+                ]
+              }
+            ]
+          },
+          "children": [
+            {
+              "id": "rig-left",
+              "type": "mesh3d",
+              "geometry": {
+                "type": "sphere",
+                "radius": 0.4
+              },
+              "position": [
+                -1,
+                0,
+                0
+              ],
+              "material": {
+                "color": "#FF5A1F"
+              }
+            },
+            {
+              "id": "rig-right",
+              "type": "mesh3d",
+              "geometry": {
+                "type": "sphere",
+                "radius": 0.4
+              },
+              "position": [
+                1,
+                0,
+                0
+              ],
+              "material": {
+                "color": "#4F8CFF"
+              }
+            }
+          ]
+        }
+      ]
     },
     "Node": {
       "oneOf": [

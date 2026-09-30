@@ -14,6 +14,13 @@ Agent API: Operationsregister (`OPERATIONS`), typisiertes Patch-Schema (`PatchSc
 | `POST /v1/plugin.<name>` | Agent Tool aus einem Plugin des Projekts (Eingabe `projectId` plus Tool-Schema; `plugins.list` zeigt alle) |
 | `GET /plugin-panels/<projectId>/<panelId>/<signatur>/` | Studio-Panel eines Plugins: Seite (Sandbox-CSP) und `module.js`; ohne Token, die signierte URL aus `plugins.list` ist die Berechtigung |
 
+Die CSP einer Panel-Seite erlaubt als Skript nur die Nonce und die absolute URL ihres `module.js`. Die Origin
+dafür bildet der Server aus dem geprüften `Host`-Kopf; das Schema ist `https`, wenn die Verbindung TLS ist oder
+ein vertrauter Proxy `X-Forwarded-Proto: https` sendet (Option `trustProxy: true`, ohne sie nur von Loopback-Adressen).
+
+Endet die Beobachtung eines Projektordners von selbst (Ordner gelöscht oder ersetzt, Watcher-Fehler), schließt
+der Server die betroffenen `/v1/events`-Ströme; Clients verbinden neu und beobachten den aktuellen Ordner.
+
 `frame.render` nimmt optional `patches`: Sie gelten nur für diesen Render und werden nie gespeichert
 (Live-Vorschau im Studio). `render.status` ohne `jobId` listet alle Jobs, mit `projectId` die eines Projekts.
 Eingebundene Projekte (Symlinks von `project.open`) prüft jeder Zugriff erneut gegen `projectRoots` und

@@ -86,6 +86,7 @@ Nach jedem Patch rendert OpenVideo nur die Frames neu, die sich wirklich ändern
 | [Maintainer](docs/guide/maintainers.md) | Branch-Schutz für `main` als Ruleset (gh api), Pflicht-Checks, Repository-Einstellungen |
 | [API-Referenz](docs/api/README.md) | Alle exportierten Funktionen und Typen je Paket (TypeDoc) |
 | [Render-Semantik](docs/reference/node-semantics.md) | Verbindliche Bedeutung jedes Node-Typs |
+| [Render-Manifest](docs/reference/render-manifest.md) | Felder des Render-Manifests und des Kurzmanifests für Frames |
 | [Architektur-Entscheidungen](docs/adr/README.md) | ADR 0001–0017 |
 | [Betrieb mit Docker und Kubernetes](deploy/README.md) | Images, Skalierung, Updates |
 

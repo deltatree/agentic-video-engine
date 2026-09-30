@@ -40,6 +40,10 @@ describe('Definition of Done (Auftrag Abschnitt 50), kurze Variante', () => {
     const reportFile = join(out, 'dod-report.json');
     expect(existsSync(reportFile), `run.mjs schrieb keinen Bericht.\n${r.stdout}\n${r.stderr}`).toBe(true);
     const parsed: unknown = JSON.parse(readFileSync(reportFile, 'utf8'));
+    // Bricht run.mjs ab, fehlt ein Teil des Berichts: dann zuerst den Grund nennen, nicht nur „falsche Form“.
+    if (typeof parsed === 'object' && parsed !== null && 'error' in parsed && typeof parsed.error === 'string') {
+      throw new Error(`run.mjs brach ab: ${parsed.error}`);
+    }
     if (!isReport(parsed)) throw new Error(`dod-report.json hat nicht die erwartete Form:\n${JSON.stringify(parsed).slice(0, 2000)}`);
     const report = parsed;
     expect(report.error, r.stdout).toBeUndefined();

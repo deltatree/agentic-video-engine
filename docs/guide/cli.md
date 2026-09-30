@@ -13,12 +13,13 @@ Commands:
   dev [dir]             Studio with live preview; watches src/** and project.json, opens the browser (--no-open)
   studio [dir]          Same as dev
   validate [path]       Validate schema, assets, fonts and backends
-  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>, default by cores and memory)
-  render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe)
+  render [path]         Render a video (--format --codec --width --height --fps --out --workers <n>, default by cores and memory;
+                        --isolation docker renders chunks in containers: --image <worker image> --gpus all|1|device=0)
+  render-frame [path]   Render one frame to PNG (--frame 2s --scale 0.5 --debug bounds,safe; --manifest writes <out>.manifest.json)
   inspect [path]        Project summary, scene tree (--frame) or timeline (--timeline)
   op <name>             Run any Agent API operation, same as HTTP/MCP (--input <json|@file>; op --list)
   patch [path]          Apply semantic patches (--input <json|@file> with a patch list; --dry-run)
-  contact-sheet [path]  Render several frames into one image (--frames 0,2s,4s | --count 8 --out sheet.png)
+  contact-sheet [path]  Render several frames into one image (--frames 0,2s,4s | --count 8 --out sheet.png; --manifest writes <out>.manifest.json)
   import <file> [path]  Import SVG, Lottie, glTF, HTML, anime/motion-canvas JSON (--format --id-prefix)
   doctor                Check the environment and suggest fixes
   benchmark             Run reproducible benchmarks (--scenario --resolution --frames --compare)
@@ -37,6 +38,8 @@ Server options (serve, dev, studio):
   --token <secret>       Bearer token (or OPENVIDEO_API_TOKEN); dev/studio create one
   --allowed-host <name>  Extra host name for the Host/Origin check (or OPENVIDEO_ALLOWED_HOSTS)
   --workers <n>          Render videos with n local worker processes (default by cores and memory; 1 = in process)
+  --isolation <mode>     Where video chunks render: process (default) or docker (OPENVIDEO_RENDER_ISOLATION;
+                         image OPENVIDEO_WORKER_IMAGE / --image, GPU quota OPENVIDEO_WORKER_GPUS / --gpus)
   --open / --no-open     Open the Studio in the browser (default on for dev/studio, off for serve)
 
 Project and workspace (serve, mcp, op):

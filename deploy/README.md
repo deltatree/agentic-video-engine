@@ -38,7 +38,7 @@ Alle Images entstehen aus `deploy/docker/Dockerfile`. Jedes Ziel ist ein Image.
 |---|---|
 | `openvideo-base` | Node 22, Anwendung, Schriften. Einstieg `openvideo`. |
 | `openvideo-render-cpu` | `base` + FFmpeg 7.1 (Debian 13) + Chromium (Chrome for Testing, Revision von playwright-core). |
-| `openvideo-render-gpu` | `render-cpu`, vorbereitet für NVIDIA (NVENC). |
+| `openvideo-render-gpu` | `render-cpu`, vorbereitet für NVIDIA (NVENC; WebGL/WebGPU mit `OPENVIDEO_BROWSER_GPU=1`, ADR 0019). |
 | `openvideo-blender` | `render-cpu` + Blender 4.2.23 LTS. |
 | `openvideo-studio` | `base` + Studio. Befehl `openvideo serve --host 0.0.0.0`. |
 | `openvideo-worker` | `render-cpu`. Befehl `openvideo-worker`. |
@@ -52,6 +52,8 @@ Eigenschaften aller Images:
 - Das Root-Dateisystem darf read-only sein. Schreibpfade sind nur `/tmp` und `/cache`.
 - Der Container braucht keine Capabilities (`--cap-drop ALL`).
 - `OPENVIDEO_CONTAINER_IMAGE` nennt das Image. Der Wert steht im Render-Manifest. Er erlaubt keine HTML-Skripte.
+- Das Render-Manifest nennt außerdem die erkannte GPU (`nvidia-smi` oder `/dev/dri`), die tatsächliche
+  Chromium-Version und den Grafik-Modus. Hardware-Encoding (NVENC) ist Opt-in: `hardwareAcceleration` im Render-Profil.
 - Labels `org.opencontainers.image.*` und `io.openvideo.*` nennen die Versionen.
 
 Reproduzierbarkeit:
@@ -124,6 +126,28 @@ Die Umgebung prüfen:
 ```bash
 docker run --rm ghcr.io/deltatree/openvideo-render-cpu:0.1.0 doctor
 ```
+
+### Chunks in Docker-Containern rendern (ohne Kubernetes)
+
+`openvideo render --isolation docker` (oder `OPENVIDEO_RENDER_ISOLATION=docker` für `serve`, `mcp` und das Studio)
+startet je Worker einen Container: ohne Netz, read-only, `--cap-drop ALL`, Projekt über stdin, Frames über stdout
+zurück in den lokalen Cache. `--workers <n>` legt die Zahl der Container fest.
+
+```bash
+openvideo render my-project --isolation docker --workers 2
+# mit GPU-Quota (NVIDIA Container Toolkit) und Browser-GPU im Container:
+OPENVIDEO_BROWSER_GPU=1 openvideo render my-project --isolation docker --gpus device=0
+```
+
+| Einstellung | Standard | Bedeutung |
+|---|---|---|
+| `--image` / `OPENVIDEO_WORKER_IMAGE` | `ghcr.io/deltatree/openvideo-worker:<version>`, mit GPU-Quota `…/openvideo-render-gpu:<version>` | Worker-Image. |
+| `--gpus` / `OPENVIDEO_WORKER_GPUS` | keine GPU | `docker run --gpus`: `all`, eine Anzahl (`2`) oder Geräte (`device=0`, `0,1`, `device=GPU-<uuid>`). Setzt `NVIDIA_DRIVER_CAPABILITIES=compute,utility,video,graphics`. |
+| `OPENVIDEO_BROWSER_GPU` | aus | `1` reicht den GPU-Modus des Browser-Renderers in den Container (nativer ANGLE statt SwiftShader; nicht bitgleich, eigene Cache-Schlüssel). |
+| `OPENVIDEO_DOCKER` | `docker` | Programm für `docker run` (z. B. `podman`). |
+
+Ohne eigenes Image startet das GPU-Image `openvideo worker --stdio` (Einstieg `openvideo`), das Worker-Image
+`openvideo-worker --stdio`.
 
 ## Installation in Kubernetes
 
@@ -246,6 +270,8 @@ Weitere Variablen in den Deployments:
 | `OPENVIDEO_ENCODER_THREADS` | `api` | Threads des Video-Encoders. Standard: fest 4, damit die Videodatei über Maschinen hinweg bitgleich ist. `auto` nutzt die freien Kerne neben den Render-Prozessen (schneller, Datei nicht mehr maschinenübergreifend bitgleich; ADR 0026). |
 | `OPENVIDEO_CACHE_MAX_BYTES` | `api`, Worker | Obergrenze des lokalen Caches; nach jedem Video-Render räumt OpenVideo die ältesten Einträge bis dahin auf. Ohne Wert: kein Aufräumen. |
 | `OPENVIDEO_CHUNK_TIMEOUT_MS` | `api` | Höchstdauer eines Chunks auf einem lokalen Worker-Prozess; danach wird der Worker beendet und der Chunk wiederholt. |
+| `OPENVIDEO_BROWSER_GPU` | `worker-gpu` (optional) | `1` startet Chromium mit nativem ANGLE auf der GPU statt SwiftShader (WebGL/WebGPU von `three` und `pixi`). Nicht bitgleich zu CPU-Renders; der Modus steht im Cache-Schlüssel und im Manifest (ADR 0019). Standard: aus. |
+| `OPENVIDEO_OUTPUT_CACHE` | `api` | `0` schaltet die Wiederverwendung ganzer Ausgabedateien ab (Cache-Ebene `encoding`, ADR 0021). Standard: an. |
 
 Erreichen Sie API oder Studio über einen Ingress-Namen, ergänzen Sie ihn in Ihrem Overlay:
 

@@ -9,7 +9,7 @@ Alle Runner erfüllen den Typ `ChunkRunner` aus `@agentic-video/render`. Übergi
 | Runner | Worker | Frames |
 | --- | --- | --- |
 | `createProcessChunkRunner` | N lokale Node-Prozesse (Shared-Modus) | gemeinsamer `FileStore` des Aufrufers |
-| `createDockerChunkRunner` | N Container ohne Netz und ohne Host-Mounts (Stream-Modus) | über stdout zurück in den Cache des Aufrufers |
+| `createDockerChunkRunner` | N Container ohne Netz und ohne Host-Mounts (Stream-Modus), optional mit GPU-Quota | über stdout zurück in den Cache des Aufrufers |
 | `createRemoteChunkRunner` | Pull-Worker am Koordinator | gemeinsamer S3-Speicher |
 
 Beispiel:
@@ -31,6 +31,12 @@ Abbruch und Timeout (Story 18.8):
   beendet den Worker; der Chunk läuft auf einem neuen Worker erneut und zählt als Versuch.
 - `defaultWorkerCount()` (Story 18.7): Standardzahl lokaler Worker aus `availableParallelism()` minus 1 und einem
   Speicherbudget (halber Arbeitsspeicher, höchstens der freie, 1,5 GB je Worker), mindestens 1, höchstens 16.
+
+GPU-Quota im Docker-Runner (Story 21.3): `limits.gpus` (`all`, eine Anzahl wie `2`, Geräte wie `device=0` oder
+`0,1`, GPU-UUIDs als `device=GPU-…`) wird zu `docker run --gpus …` samt `NVIDIA_DRIVER_CAPABILITIES=…,graphics`
+(`dockerGpusArg` prüft die Angabe). `worker.browserGpu` setzt `OPENVIDEO_BROWSER_GPU=1` im Container (ADR 0019),
+`worker.command` die Argumente nach dem Image (Standard `--stdio`; für Images mit Einstieg `openvideo`:
+`worker --stdio`). In der CLI: `openvideo render --isolation docker --gpus device=0`.
 
 stdio-Protokoll: `init`, `chunk`, `cancel` (Koordinator → Worker), `frame`, `result`, `error`, `log` (Worker → Koordinator), `shutdown`.
 

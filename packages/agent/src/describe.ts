@@ -21,15 +21,13 @@ import {
   VIDEO_CODECS,
   buildJsonSchema,
   closest,
+  summarizeNodeType,
   isRecord,
   type Registry,
 } from '@agentic-video/core';
 import { defineOperation, type OperationDefinition } from './operation.js';
 import { PATCH_EXAMPLES, PATCH_SCHEMAS, PatchSchema } from './patch-schema.js';
 import { AnyObject, ProjectId, loadProject } from './shared.js';
-
-/** Felder, die jede Node hat und die der Manifest-Auszug weglässt. */
-const COMMON_FIELDS = new Set(['id', 'type', 'name', 'comment', 'meta']);
 
 /** `const`-Werte des Feldes `type` aller Zweige einer Union (z. B. Filter-Typen). */
 function unionTypes(schema: unknown): string[] {
@@ -46,13 +44,6 @@ function toJson(value: unknown): unknown {
   const text = JSON.stringify(value);
   const parsed: unknown = JSON.parse(text);
   return parsed;
-}
-
-function nodeTypeSummary(schema: unknown): { description: string; properties: string[]; required: string[] } {
-  const s = isRecord(schema) ? schema : {};
-  const props = isRecord(s['properties']) ? Object.keys(s['properties']) : [];
-  const required = Array.isArray(s['required']) ? s['required'].filter((r): r is string => typeof r === 'string') : [];
-  return { description: typeof s['description'] === 'string' ? s['description'] : '', properties: props.filter((k) => !COMMON_FIELDS.has(k)), required: required.filter((k) => k !== 'id' && k !== 'type') };
 }
 
 /** Optionen für {@link buildCapabilities}. */
@@ -77,7 +68,8 @@ export function buildCapabilities(registry: Registry, operations: ReadonlyMap<st
   return {
     product: PRODUCT_NAME,
     schemaVersion: SCHEMA_VERSION,
-    nodeTypes: Object.fromEntries(Object.entries(nodeSchemas).map(([type, s]) => [type, nodeTypeSummary(s)])),
+    // Story 19.7: Property-Typen und ein gültiges JSON-Beispiel je Node-Typ.
+    nodeTypes: Object.fromEntries(Object.entries(nodeSchemas).map(([type, s]) => [type, summarizeNodeType(type, s)])),
     components: [...registry.components.values()].map((c) => ({ name: c.name, description: c.description, props: toJson(c.propsSchema ?? {}), example: toJson(c.example) })),
     operations: [...operations.values()].map((op) => ({ name: op.name, summary: op.summary, job: op.job === true, example: toJson(op.example.input) })),
     patchOps: [...PATCH_OPS],
@@ -133,10 +125,10 @@ function inlineRefs(value: unknown, defs: Readonly<Record<string, unknown>>, dep
 export function describeOperations(operations: () => ReadonlyMap<string, OperationDefinition>) {
   const capabilitiesGet = defineOperation({
     name: 'capabilities.get',
-    summary: 'What this host can do: node types, components (props + example), operations, patch ops, backends, easings, formats. Filter with nodeType or component.',
+    summary: 'What this host can do: node types (property types + example), components (props + example), operations, patch ops, backends, easings, formats. Filter with nodeType or component.',
     input: Type.Object(
       {
-        nodeType: Type.Optional(Type.String({ description: 'Only this node type (properties, required fields, backends that render it).' })),
+        nodeType: Type.Optional(Type.String({ description: 'Only this node type (property types, required fields, a valid JSON example, backends that render it).' })),
         component: Type.Optional(Type.String({ description: 'Only this component (props schema and example).' })),
         projectId: Type.Optional(ProjectId),
       },

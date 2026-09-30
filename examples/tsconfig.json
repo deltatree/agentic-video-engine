@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@agentic-video/sdk",
+    "types": ["node"],
+    "paths": {
+      "@agentic-video/*": ["../packages/*/src/index.ts"],
+      "@agentic-video/sdk/jsx-runtime": ["../packages/sdk/src/jsx-runtime.ts"],
+      "@agentic-video/sdk/jsx-dev-runtime": ["../packages/sdk/src/jsx-dev-runtime.ts"]
+    }
+  },
+  "include": ["example-test-utils.ts", "*/*.test.ts", "explainer-tsx/src/**/*.ts", "explainer-tsx/src/**/*.tsx"],
+  "exclude": ["dod", "plugin-hello"]
+}

@@ -256,7 +256,7 @@ export class Studio {
   private clipboard: Rec[] = [];
   private stopLive: (() => void) | undefined;
   private previewing = false;
-  /** Nach `dispose`: keine Live-Updates und keine Prüfungen mehr (auch nicht aus laufendem `load`). */
+  /** Nach `dispose` bis zum nächsten `load`: keine Live-Updates und keine Prüfungen (auch nicht aus einem laufenden `load`). */
   private disposed = false;
   /** Ungespeicherter Text des Code-Editors (überlebt Tab-Wechsel). */
   private draft: string | undefined;
@@ -371,6 +371,8 @@ export class Studio {
 
   /** Lädt Projekt, IR, Timeline und den aktuellen Frame; Fehler zeigen einen Retry-Zustand. */
   async load(): Promise<void> {
+    // Ein neues `load` nach `dispose` (React StrictMode, Retry) belebt das Studio wieder.
+    this.disposed = false;
     this.set({ status: 'loading', loadError: undefined });
     try {
       const info = await call('project.inspect', this.input);

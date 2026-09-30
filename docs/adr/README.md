@@ -20,7 +20,9 @@
 | 0016 | [Paketname @agentic-video, CLI openvideo](0016-paketname-@agentic-video-cli-openvideo.md) |
 | 0017 | [Eigener Schema-Interpreter für Fehlermeldungen](0017-eigener-schema-interpreter-fuer-fehlermeldungen.md) |
 | 0018 | [Rolle von PixiJS – optionaler GPU-2D-Renderer mit Rückfall pro Node auf Skia](0018-pixi-rolle-rueckfall-pro-node.md) |
+| 0019 | [GPU im Browser-Renderer – SwiftShader als Standard, nativer ANGLE als Opt-in](0019-gpu-im-browser-renderer.md) |
 | 0020 | [Dual-Source-Shader statt Transpiler](0020-dual-source-shader.md) |
+| 0021 | [Genutzte Cache-Ebenen – `compiled` und `encoding` statt `font`, `geometry`, `shader`](0021-cache-ebenen.md) |
 | 0023 | [Remote-Worker schreiben nur unter `jobs/<jobId>/`, getrennte Rollen und S3-Identitäten](0023-remote-worker-schreiben-nur-unter-jobs-praefix.md) |
 | 0024 | [Der Compositor wendet Eigenschaften über Backend-Grenzen an](0024-compositor-wendet-grenzueberschreitende-eigenschaften-an.md) |
 | 0025 | [Live-Sync des Studios über Inhaltsrevisionen und Server-Sent Events](0025-live-sync-ueber-inhaltsrevisionen.md) |

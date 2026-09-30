@@ -129,12 +129,14 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
   const minDelay = options.minDelayMs ?? 1000;
   const maxDelay = Math.max(minDelay, options.maxDelayMs ?? 15_000);
   let stopped = false;
+  // Als Funktion gelesen: `stop()` setzt den Wert zwischen den awaits.
+  const isStopped = (): boolean => stopped;
   let controller: AbortController | undefined;
   let retry = minDelay;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
   const connect = async (): Promise<void> => {
-    if (stopped) return;
+    if (isStopped()) return;
     controller = new AbortController();
     onState('connecting');
     try {
@@ -144,14 +146,14 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
       const reader = body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      if (stopped) {
+      if (isStopped()) {
         await reader.cancel();
         return;
       }
       onState('live');
       for (;;) {
         const chunk = await reader.read();
-        if (chunk.done || stopped) break;
+        if (chunk.done || isStopped()) break;
         buffer += decoder.decode(chunk.value, { stream: true });
         const parsed = parseSse(buffer);
         buffer = parsed.rest;
@@ -166,10 +168,10 @@ export function subscribeRevisions(projectId: string, onRevision: (revision: str
         }
       }
     } catch (error) {
-      if (stopped) return;
+      if (isStopped()) return;
       console.warn('OpenVideo Studio: live updates interrupted', error);
     }
-    if (stopped) return;
+    if (isStopped()) return;
     onState('offline');
     timer = setTimeout(() => {
       timer = undefined;

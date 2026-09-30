@@ -188,7 +188,14 @@ function largestComposition(project: Readonly<Record<string, unknown>>): { width
   return comps.reduce<{ width: number; height: number }>((acc, c) => ({ width: Math.max(acc.width, Number(c['width']) || 0), height: Math.max(acc.height, Number(c['height']) || 0) }), { width: 1, height: 1 });
 }
 
-/** Enthält das Projekt eine `scene3d`-Node (in irgendeiner Composition)? */
+/**
+ * Enthält das Projekt eine `scene3d`-Node (in irgendeiner Composition)?
+ *
+ * @example
+ * ```ts
+ * projectUsesScene3d({ compositions: [{ nodes: [{ type: 'scene3d' }] }] }); // true
+ * ```
+ */
 export function projectUsesScene3d(project: Readonly<Record<string, unknown>>): boolean {
   const walk = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(walk);
@@ -206,6 +213,11 @@ export function projectUsesScene3d(project: Readonly<Record<string, unknown>>): 
  * Enthält das Projekt `scene3d`-Nodes, startet Chromium schon beim Registrieren mit den
  * Grafik-Schaltern und prüft WebGPU (Story 21.5): Ob `backend: 'auto'` WebGPU oder WebGL2 nutzt,
  * steht dann als `three-webgpu` in den Versionen und damit in jedem Frame- und Layer-Schlüssel.
+ *
+ * @example
+ * ```ts
+ * const providers = defaultProviders('/work/demo', project, { browserGpu: false });
+ * ```
  */
 export function defaultProviders(projectDir: string, project: Readonly<Record<string, unknown>>, options: { readonly allowHtmlScripts?: boolean; readonly browserGpu?: boolean } = {}): BackendProvider[] {
   let lazy: ReturnType<typeof createLazyBrowserBackends> | undefined;

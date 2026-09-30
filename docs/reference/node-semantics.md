@@ -147,3 +147,578 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 - **light3d**: `intensity` 1, `color` `#FFFFFF`.
 - **mesh3d**, **model3d**, **instances3d**, **particles3d**, **group3d**: Position in Metern, Rotation XYZ in Grad.
 - **blender**: wie `scene3d`, gerendert mit Blender. `particles3d` wird als Instanzen übertragen (je lebendes Partikel eine unbeleuchtete Kugel, gleiche Formel wie Three.js). `motionBlur: true`: Der Frame-Render übergibt die Zustände bei ±0,25 Frames (Verschlusszeit ½ Frame); Blender interpoliert Position, Rotation und Skalierung linear dazwischen.
+
+## 3. Beispiele je Node-Typ
+
+Ein kleines, gültiges JSON-Beispiel je Node-Typ. Dieselben Beispiele liefern `capabilities.get` (Feld `example`), `docs/ai/capabilities.json` und das JSON Schema (`examples` je `Node_<typ>`).
+Durchgehende Beispielprojekte liegen in [`examples/`](../../examples/README.md).
+
+<!-- node-examples:start -->
+
+Generiert von `scripts/generate-docs.mjs` aus `NODE_EXAMPLES` (`@agentic-video/schema`). Jedes Beispiel ist gültig; `exampleProject(type)` bettet es in ein Projekt mit Composition `main` (640 × 360, 30 fps, 2 s) ein. 3D-Nodes stehen dort in einer `scene3d` mit Kamera und Licht. Verweise: Assets `logo` (image, `assets/logo.png`), `clip` (video, `assets/clip.mp4`), `walk-sheet` (image, `assets/walk-sheet.png`), `spinner` (lottie, `assets/spinner.json`), `robot` (model, `assets/robot.glb`); Untertitel-Track `captions`; Composition `intro`.
+
+### `group`
+
+Groups children with a shared transform.
+
+```json
+{
+  "id": "badge",
+  "type": "group",
+  "x": 220,
+  "y": 148,
+  "children": [
+    { "id": "badge-bg", "type": "rect", "width": 200, "height": 64, "cornerRadius": 32, "fill": "#FF5A1F" },
+    {
+      "id": "badge-label",
+      "type": "text",
+      "text": "NEW",
+      "y": 12,
+      "width": 200,
+      "textAlign": "center",
+      "fontSize": 32,
+      "fontWeight": 700,
+      "fill": "#FFFFFF"
+    }
+  ]
+}
+```
+
+### `layer`
+
+Compositing boundary: always rendered as its own layer.
+
+```json
+{
+  "id": "glow-layer",
+  "type": "layer",
+  "blendMode": "screen",
+  "effects": [{ "type": "glow", "radius": 16, "intensity": 0.8 }],
+  "children": [{ "id": "orb", "type": "ellipse", "x": 220, "y": 80, "width": 200, "height": 200, "fill": "#4F8CFF" }]
+}
+```
+
+### `composition-ref`
+
+Nested composition, evaluated at the remapped local time.
+
+```json
+{
+  "id": "intro-ref",
+  "type": "composition-ref",
+  "composition": "intro",
+  "timing": { "from": 0, "duration": "2s", "speed": 1 }
+}
+```
+
+### `sequence`
+
+Plays its children one after another (each needs timing.duration, or is a composition-ref). Consecutive children overlap by the transition duration and cross over automatically.
+
+```json
+{
+  "id": "slides",
+  "type": "sequence",
+  "between": { "type": "fade", "duration": "0.5s" },
+  "children": [
+    {
+      "id": "slide-1",
+      "type": "rect",
+      "width": 640,
+      "height": 360,
+      "fill": "#1B2A4A",
+      "timing": { "duration": "1.25s" }
+    },
+    {
+      "id": "slide-2",
+      "type": "rect",
+      "width": 640,
+      "height": 360,
+      "fill": "#FF5A1F",
+      "timing": { "duration": "1.25s" }
+    }
+  ]
+}
+```
+
+### `component`
+
+Reusable component expanded at evaluation time.
+
+```json
+{
+  "id": "name-tag",
+  "type": "component",
+  "component": "LowerThird",
+  "props": { "name": "Ada Lovelace", "role": "Engineer" },
+  "x": 40,
+  "y": 250
+}
+```
+
+### `rect`
+
+Rectangle, optionally rounded.
+
+```json
+{
+  "id": "card",
+  "type": "rect",
+  "x": 120,
+  "y": 80,
+  "width": 400,
+  "height": 200,
+  "cornerRadius": 24,
+  "fill": {
+    "type": "linear",
+    "stops": [{ "offset": 0, "color": "#FF5A1F" }, { "offset": 1, "color": "#8A2BE2" }],
+    "start": { "x": 0, "y": 0 },
+    "end": { "x": 1, "y": 1 }
+  },
+  "stroke": "#FFFFFF",
+  "strokeWidth": 4
+}
+```
+
+### `ellipse`
+
+Ellipse inside the box. Equal width and height = circle.
+
+```json
+{
+  "id": "dot",
+  "type": "ellipse",
+  "x": { "$keyframes": [{ "t": 0, "v": 40 }, { "t": "1s", "v": 520, "ease": "easeInOutCubic" }] },
+  "y": 140,
+  "width": 80,
+  "height": 80,
+  "fill": "#FF5A1F"
+}
+```
+
+### `line`
+
+Straight line between two points.
+
+```json
+{
+  "id": "underline",
+  "type": "line",
+  "from": { "x": 80, "y": 180 },
+  "to": { "x": 560, "y": 180 },
+  "stroke": "#FFFFFF",
+  "strokeWidth": 8,
+  "strokeCap": "round",
+  "trimEnd": { "$keyframes": [{ "t": 0, "v": 0 }, { "t": "1s", "v": 1, "ease": "easeOutCubic" }] }
+}
+```
+
+### `polyline`
+
+Open line through points.
+
+```json
+{
+  "id": "trend",
+  "type": "polyline",
+  "points": [[40, 300], [200, 220], [360, 260], [600, 80]],
+  "stroke": "#4F8CFF",
+  "strokeWidth": 6,
+  "strokeJoin": "round"
+}
+```
+
+### `polygon`
+
+Closed shape through points.
+
+```json
+{ "id": "triangle", "type": "polygon", "points": [[320, 60], [520, 300], [120, 300]], "fill": "#FFC857" }
+```
+
+### `path`
+
+Vector path from SVG path data.
+
+```json
+{
+  "id": "check",
+  "type": "path",
+  "d": "M 200 180 L 280 260 L 440 100",
+  "stroke": "#3DDC97",
+  "strokeWidth": 16,
+  "strokeCap": "round",
+  "strokeJoin": "round"
+}
+```
+
+### `text`
+
+Single-style text with wrapping, shaping and per-unit animation.
+
+```json
+{
+  "id": "headline",
+  "type": "text",
+  "text": "Hello OpenVideo",
+  "x": 40,
+  "y": 140,
+  "width": 560,
+  "textAlign": "center",
+  "fontSize": 56,
+  "fontWeight": 700,
+  "fill": "#F5F7FF",
+  "textAnimation": { "unit": "char", "stagger": 2, "duration": 12, "from": { "opacity": 0, "y": 20 } }
+}
+```
+
+### `rich-text`
+
+Text with differently styled spans.
+
+```json
+{
+  "id": "tagline",
+  "type": "rich-text",
+  "x": 40,
+  "y": 150,
+  "width": 560,
+  "textAlign": "center",
+  "fontSize": 44,
+  "fill": "#F5F7FF",
+  "spans": [{ "text": "Video as " }, { "text": "code", "fill": "#FF5A1F", "fontWeight": 800 }]
+}
+```
+
+### `image`
+
+Raster image from an asset.
+
+```json
+{
+  "id": "logo-image",
+  "type": "image",
+  "asset": "logo",
+  "x": 220,
+  "y": 80,
+  "width": 200,
+  "height": 200,
+  "fit": "contain"
+}
+```
+
+### `video`
+
+Video from an asset; its audio joins the mix unless muted.
+
+```json
+{
+  "id": "clip-video",
+  "type": "video",
+  "asset": "clip",
+  "width": 640,
+  "height": 360,
+  "fit": "cover",
+  "muted": true
+}
+```
+
+### `svg`
+
+SVG from an asset or inline markup.
+
+```json
+{
+  "id": "star",
+  "type": "svg",
+  "x": 270,
+  "y": 130,
+  "width": 100,
+  "height": 100,
+  "markup": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7z\" fill=\"#FFC857\"/></svg>"
+}
+```
+
+### `sprite`
+
+Frame from a sprite sheet grid.
+
+```json
+{
+  "id": "walker",
+  "type": "sprite",
+  "asset": "walk-sheet",
+  "columns": 4,
+  "rows": 1,
+  "frameRate": 8,
+  "loop": true,
+  "x": 270,
+  "y": 130,
+  "width": 100,
+  "height": 100
+}
+```
+
+### `lottie`
+
+Lottie animation, frame-exact.
+
+```json
+{
+  "id": "spinner-anim",
+  "type": "lottie",
+  "asset": "spinner",
+  "x": 220,
+  "y": 80,
+  "width": 200,
+  "height": 200,
+  "loop": true
+}
+```
+
+### `shader`
+
+Custom shader filling the box. Uniforms `time`, `frame`, `resolution` are provided.
+
+```json
+{
+  "id": "plasma",
+  "type": "shader",
+  "width": 640,
+  "height": 360,
+  "sksl": "uniform float time;\nuniform float2 resolution;\nhalf4 main(float2 coord) {\n  float2 uv = coord / resolution;\n  return half4(half(uv.x), half(uv.y), half(0.5 + 0.5 * sin(time * 3.0)), 1.0);\n}"
+}
+```
+
+### `particles`
+
+Stateless 2D particle system: particle state is a pure function of time and seed.
+
+```json
+{
+  "id": "sparks",
+  "type": "particles",
+  "width": 640,
+  "height": 360,
+  "count": 200,
+  "seed": 7,
+  "emitter": { "x": 320, "y": 180, "radius": 10, "shape": "circle" },
+  "lifetime": { "min": 0.5, "max": 1.5 },
+  "speed": { "min": 60, "max": 180 },
+  "angle": { "min": 0, "max": 360 },
+  "size": { "start": 6, "end": 1 },
+  "color": { "start": "#FFC857", "end": "#FF5A1F" }
+}
+```
+
+### `html`
+
+HTML/CSS/SVG/Canvas/WebGL content rendered by Chromium.
+
+```json
+{
+  "id": "html-card",
+  "type": "html",
+  "x": 120,
+  "y": 80,
+  "width": 400,
+  "height": 200,
+  "html": "<div class=\"card\">Hello from HTML</div>",
+  "css": ".card { font: 600 40px sans-serif; color: #FFFFFF; padding: 72px 40px; }",
+  "background": "#1B2A4A"
+}
+```
+
+### `subtitles`
+
+Animated captions from a subtitle track. textAnimation animates each word from its own start time.
+
+```json
+{
+  "id": "captions-view",
+  "type": "subtitles",
+  "track": "captions",
+  "fontSize": 36,
+  "style": "karaoke",
+  "color": "#FFFFFF",
+  "highlightColor": "#FFC857",
+  "position": "bottom"
+}
+```
+
+### `scene3d`
+
+Real-time 3D scene rendered with Three.js.
+
+```json
+{
+  "id": "stage",
+  "type": "scene3d",
+  "width": 640,
+  "height": 360,
+  "camera": "cam",
+  "background": "#0B0D12",
+  "children": [
+    { "id": "cam", "type": "camera3d", "position": [0, 1.5, 5], "target": [0, 0, 0], "fov": 45 },
+    {
+      "id": "key",
+      "type": "light3d",
+      "kind": "directional",
+      "position": [3, 5, 4],
+      "intensity": 2.5,
+      "castShadow": true
+    },
+    {
+      "id": "cube",
+      "type": "mesh3d",
+      "geometry": { "type": "box" },
+      "material": { "color": "#FF5A1F", "roughness": 0.4 },
+      "rotation": [20, 35, 0]
+    }
+  ]
+}
+```
+
+### `blender`
+
+Offline 3D scene rendered with Blender (Cycles or Eevee).
+
+```json
+{
+  "id": "hero-shot",
+  "type": "blender",
+  "width": 640,
+  "height": 360,
+  "engine": "eevee",
+  "samples": 16,
+  "camera": "cam",
+  "children": [
+    { "id": "cam", "type": "camera3d", "position": [0, 1.5, 5], "target": [0, 0, 0], "fov": 45 },
+    {
+      "id": "key",
+      "type": "light3d",
+      "kind": "directional",
+      "position": [3, 5, 4],
+      "intensity": 2.5,
+      "castShadow": true
+    },
+    {
+      "id": "ball",
+      "type": "mesh3d",
+      "geometry": { "type": "sphere", "radius": 1 },
+      "material": { "color": "#4F8CFF", "metalness": 0.2, "roughness": 0.3 }
+    }
+  ]
+}
+```
+
+### `camera3d`
+
+3D camera.
+
+```json
+{ "id": "cam", "type": "camera3d", "position": [0, 1.5, 5], "target": [0, 0, 0], "fov": 45 }
+```
+
+### `light3d`
+
+3D light.
+
+```json
+{
+  "id": "key",
+  "type": "light3d",
+  "kind": "directional",
+  "position": [3, 5, 4],
+  "intensity": 2.5,
+  "castShadow": true
+}
+```
+
+### `mesh3d`
+
+3D mesh with built-in geometry.
+
+```json
+{
+  "id": "spinning-cube",
+  "type": "mesh3d",
+  "geometry": { "type": "box", "width": 1, "height": 1, "depth": 1 },
+  "material": { "color": "#FF5A1F", "roughness": 0.4 },
+  "rotation": { "$keyframes": [{ "t": 0, "v": [0, 0, 0] }, { "t": "2s", "v": [0, 180, 0] }] }
+}
+```
+
+### `model3d`
+
+glTF, GLB or OBJ model.
+
+```json
+{ "id": "robot-model", "type": "model3d", "asset": "robot", "position": [0, -1, 0], "scale": [1, 1, 1] }
+```
+
+### `instances3d`
+
+Many instances of one mesh.
+
+```json
+{
+  "id": "dot-field",
+  "type": "instances3d",
+  "geometry": { "type": "sphere", "radius": 0.08 },
+  "material": { "color": "#4F8CFF" },
+  "count": 100,
+  "seed": 3,
+  "layout": { "type": "grid", "columns": 10, "spacing": 0.3 },
+  "position": [-1.35, -1.35, 0]
+}
+```
+
+### `particles3d`
+
+Stateless 3D particle system.
+
+```json
+{
+  "id": "dust",
+  "type": "particles3d",
+  "count": 500,
+  "seed": 1,
+  "emitter": { "shape": "sphere", "size": 2 },
+  "lifetime": { "min": 1, "max": 3 },
+  "speed": { "min": 0.1, "max": 0.5 },
+  "size": { "start": 0.05, "end": 0 },
+  "color": { "start": "#FFFFFF", "end": "#4F8CFF" },
+  "additive": true
+}
+```
+
+### `group3d`
+
+Groups 3D nodes.
+
+```json
+{
+  "id": "rig",
+  "type": "group3d",
+  "rotation": { "$keyframes": [{ "t": 0, "v": [0, 0, 0] }, { "t": "2s", "v": [0, 90, 0] }] },
+  "children": [
+    {
+      "id": "rig-left",
+      "type": "mesh3d",
+      "geometry": { "type": "sphere", "radius": 0.4 },
+      "position": [-1, 0, 0],
+      "material": { "color": "#FF5A1F" }
+    },
+    {
+      "id": "rig-right",
+      "type": "mesh3d",
+      "geometry": { "type": "sphere", "radius": 0.4 },
+      "position": [1, 0, 0],
+      "material": { "color": "#4F8CFF" }
+    }
+  ]
+}
+```
+
+<!-- node-examples:end -->

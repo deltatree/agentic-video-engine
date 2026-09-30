@@ -76,5 +76,20 @@ Das erzeugt `dist/runtime.js` (Host-Seite) und `dist/clock.js` (virtuelle Uhr f�
   wenn der erste `three`- oder `pixi`-Layer kommt; dafür startet er Chromium einmal neu. HTML rastert mit
   und ohne diese Schalter pixelgleich.
 - Chromium erbt nur eine minimale Umgebung (`chromiumEnv`: `PATH`, `HOME`, `TMPDIR`, Locale, Fontconfig …),
-  keine Tokens und keine S3-Schlüssel.
+  keine Tokens und keine S3-Schlüssel. Im GPU-Modus kommen nur die Variablen der Treiber dazu (`chromiumGpuEnv`).
 - Höchstens `maxPages` Seiten (Standard 4) bleiben offen. Nach einem Absturz startet Chromium bei der nächsten Anfrage neu.
+
+## GPU-Modus und Grafik-Probe (T5, ADR 0019)
+
+- Standard ist SwiftShader (CPU, bitgleich). `OPENVIDEO_BROWSER_GPU=1` bzw. Option `gpu: true` startet Chromium mit
+  nativem ANGLE (`CHROMIUM_NATIVE_GPU_ARGS`: `--use-angle=default --ignore-gpu-blocklist --enable-gpu`). HTML rastert
+  weiter auf der CPU. Die Browser-Backends tragen dann `browser-gpu: native` in `versions()` (Cache-Schlüssel);
+  im Standardmodus fehlt der Eintrag.
+- `host.graphics()` bzw. `lazy.prepareGraphics()` prüft auf der Render-Seite WebGL2 (`MAX_TEXTURE_SIZE`) und den
+  WebGPU-Adapter. Danach trägt das `three`-Backend `three-webgpu` (`available`/`unavailable`) und `three-max-texture`
+  in `versions()`: So steht die WebGPU/WebGL2-Wahl von `backend: 'auto'` (Regel: `threeBackendFor`) und die
+  Texturverkleinerung im Cache-Schlüssel.
+- `lazy.runtimeVersions()` liefert nach dem Start die tatsächliche Chromium-Version (`browser.version()`); vorher gilt
+  im Schlüssel die zu playwright-core gehörende Version (`expectedChromiumVersion`).
+- Gemeinsame Proben für `openvideo doctor`, Manifest und Telemetrie: `probeBrowserGraphics` (Chromium, WebGL2,
+  WebGPU auf einer Probe-Seite) und `probeHostGpu` (`nvidia-smi`, sonst `/dev/dri`).

@@ -3,6 +3,7 @@
  * Audio → Encoding → Render-Manifest. Frames liegen im Frame-Cache; nur Geändertes wird neu gerendert.
  */
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { dirname, join, basename } from 'node:path';
@@ -228,7 +229,14 @@ export async function renderChunk(env: RenderEnvironment, project: Readonly<Reco
   };
 }
 
-/** Liest `OPENVIDEO_OUTPUT_CACHE`: `0`/`false`/`off` schaltet die Wiederverwendung ganzer Ausgaben ab. */
+/**
+ * Liest `OPENVIDEO_OUTPUT_CACHE`: `0`/`false`/`off` schaltet die Wiederverwendung ganzer Ausgaben ab.
+ *
+ * @example
+ * ```ts
+ * outputCacheFromEnv({ OPENVIDEO_OUTPUT_CACHE: '0' }); // false
+ * ```
+ */
 export function outputCacheFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): boolean {
   const raw = env['OPENVIDEO_OUTPUT_CACHE']?.trim().toLowerCase();
   return !(raw === '0' || raw === 'false' || raw === 'off');
@@ -308,7 +316,8 @@ async function restoreOutput(env: Env, key: string, outPath: string): Promise<Ou
   }
   if (!isOutputEntry(entry)) return undefined;
   const local = tier.localPath(entry.file);
-  if (local !== undefined && (await tier.has(entry.file))) {
+  // Lokale Datei direkt kopieren (kein Laden in den Speicher); sonst über den Speicher (z. B. S3).
+  if (local !== undefined && existsSync(local)) {
     await copyFile(local, outPath);
   } else {
     const bytes = await tier.get(entry.file);

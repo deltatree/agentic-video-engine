@@ -102,6 +102,11 @@ export interface PageGraphics {
 /**
  * Läuft in der Seite (per `page.evaluate`): WebGL2-Renderer und WebGPU-Adapter. Die Funktion darf
  * nichts von außen referenzieren, weil Playwright nur ihren Quelltext überträgt.
+ *
+ * @example
+ * ```ts
+ * const info = await page.evaluate(pageGraphics); // { webgl2: 'ANGLE (…)', webgl2MaxTextureSize: 8192, webgpu: '…', webgpuAvailable: true }
+ * ```
  */
 export async function pageGraphics(): Promise<PageGraphics> {
   const gl = document.createElement('canvas').getContext('webgl2');
@@ -199,7 +204,7 @@ const MIB = 1024 * 1024;
 function defaultRun(command: string, args: readonly string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(command, [...args], { timeout: 5000, env: minimalChildEnv(process.env, { prefixes: ['NVIDIA_', 'CUDA_'] }) }, (error, stdout) => {
-      if (error !== null) reject(error);
+      if (error !== null) reject(error instanceof Error ? error : new Error(`${command} failed`));
       else resolve(stdout);
     });
   });

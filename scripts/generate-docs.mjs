@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Erzeugt Agent-Doku aus dem Code (FR-93): docs/ai/capabilities.json, docs/guide/api.md,
-// docs/guide/cli.md und packages/mcp/src/agents-doc.ts (docs/ai/AGENTS.md als MCP-Resource).
+// docs/guide/cli.md, die Node-Beispiele in docs/reference/node-semantics.md und packages/mcp/src/agents-doc.ts (docs/ai/AGENTS.md als MCP-Resource).
 // Braucht gebaute Pakete (npm run build); danach packages/mcp neu bauen.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -24,9 +24,8 @@ const noAssets = { get: () => undefined, bytes: () => Promise.reject(new Error('
 const lazy = createLazyBrowserBackends({ assets: noAssets, fonts, width: 1920, height: 1080 });
 const backends = [createSkiaBackend({ canvasKit, fonts }), lazy.browser, lazy.three, lazy.pixi, createBlenderBackend({ workDir: join(tmpdir(), 'ov-docs-blender') })];
 
-const nodeTypes = Object.fromEntries(
-  Object.entries(schema.NODE_SCHEMAS).map(([type, s]) => [type, { description: s.description, properties: Object.keys(s.properties).filter((k) => !['id', 'type', 'name', 'comment', 'meta'].includes(k)), required: (s.required ?? []).filter((k) => k !== 'id' && k !== 'type') }]),
-);
+// Story 19.7: je Node-Typ Property-Typen und ein gültiges JSON-Beispiel (dieselbe Quelle wie capabilities.get).
+const nodeTypes = Object.fromEntries(Object.entries(schema.NODE_SCHEMAS).map(([type, s]) => [type, schema.summarizeNodeType(type, s)]));
 const manifest = {
   generated: 'scripts/generate-docs.mjs',
   product: schema.PRODUCT_NAME,
@@ -70,6 +69,33 @@ writeFileSync(join(root, 'docs', 'guide', 'api.md'), api.join('\n'));
 let help = '';
 await runCli(['--help'], { stdout: (t) => (help += t), stderr: () => undefined, cwd: root, env: process.env });
 writeFileSync(join(root, 'docs', 'guide', 'cli.md'), ['# Kommandozeile `openvideo`', '', 'Generiert von `scripts/generate-docs.mjs` aus `openvideo --help`.', '', '```text', help.trim(), '```', '', '## Beispiel aus dem Auftrag (A28)', '', '```bash', 'openvideo render src/video.tsx \\', '  --composition hero \\', '  --format mp4 \\', '  --codec h264 \\', '  --width 3840 \\', '  --height 2160 \\', '  --fps 60', '```', ''].join('\n'));
+/** JSON mit kurzen Objekten und Listen auf einer Zeile (für lesbare Doku-Beispiele). */
+function flatJson(value) {
+  if (Array.isArray(value)) return `[${value.map(flatJson).join(', ')}]`;
+  if (typeof value === 'object' && value !== null) return `{ ${Object.entries(value).map(([k, v]) => `${JSON.stringify(k)}: ${flatJson(v)}`).join(', ')} }`;
+  return JSON.stringify(value) ?? 'null';
+}
+function compactJson(value, indent = '') {
+  const flat = flatJson(value);
+  if (flat.length + indent.length <= 110 || typeof value !== 'object' || value === null) return flat;
+  const inner = `${indent}  `;
+  if (Array.isArray(value)) return `[\n${value.map((v) => inner + compactJson(v, inner)).join(',\n')}\n${indent}]`;
+  return `{\n${Object.entries(value).map(([k, v]) => `${inner}${JSON.stringify(k)}: ${compactJson(v, inner)}`).join(',\n')}\n${indent}}`;
+}
+
+// Beispiele je Node-Typ in docs/reference/node-semantics.md (zwischen den Markierungen, Story 19.7).
+const semanticsFile = join(root, 'docs', 'reference', 'node-semantics.md');
+const semantics = readFileSync(semanticsFile, 'utf8');
+const START = '<!-- node-examples:start -->';
+const END = '<!-- node-examples:end -->';
+if (!semantics.includes(START) || !semantics.includes(END)) throw new Error(`${semanticsFile} braucht die Markierungen ${START} und ${END}.`);
+const exampleBlocks = [START, '', `Generiert von \`scripts/generate-docs.mjs\` aus \`NODE_EXAMPLES\` (\`@agentic-video/schema\`). Jedes Beispiel ist gültig; \`exampleProject(type)\` bettet es in ein Projekt mit Composition \`main\` (640 × 360, 30 fps, 2 s) ein. 3D-Nodes stehen dort in einer \`scene3d\` mit Kamera und Licht. Verweise: Assets ${schema.EXAMPLE_ASSETS.map((a) => `\`${a.id}\` (${a.type}, \`${a.src}\`)`).join(', ')}; Untertitel-Track \`captions\`; Composition \`intro\`.`, ''];
+for (const [type, summary] of Object.entries(nodeTypes)) {
+  exampleBlocks.push(`### \`${type}\``, '', summary.description, '', '```json', compactJson(summary.example), '```', '');
+}
+exampleBlocks.push(END);
+writeFileSync(semanticsFile, semantics.slice(0, semantics.indexOf(START)) + exampleBlocks.join('\n') + semantics.slice(semantics.indexOf(END) + END.length));
+
 const agentsMd = readFileSync(join(root, 'docs', 'ai', 'AGENTS.md'), 'utf8');
 writeFileSync(
   join(root, 'packages', 'mcp', 'src', 'agents-doc.ts'),

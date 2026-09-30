@@ -5,7 +5,7 @@ Der MCP-Server bietet zusätzlich die Resources `openvideo://agents.md`, `openvi
 
 | Operation | Zweck | Job |
 |---|---|---|
-| `capabilities.get` | What this host can do: node types, components (props + example), operations, patch ops, backends, easings, formats. Filter with nodeType or component. |  |
+| `capabilities.get` | What this host can do: node types (property types + example), components (props + example), operations, patch ops, backends, easings, formats. Filter with nodeType or component. |  |
 | `schema.get` | JSON Schema of the Composition IR, of one node type, of the patch format, or of an operation input/output. |  |
 | `project.create` | Create a project from a template, a JSON project, TSX source, or an empty composition. |  |
 | `project.open` | Open an existing project folder (openvideo.json or project.json) inside the allowed project roots and return its projectId. |  |
@@ -41,7 +41,7 @@ Der MCP-Server bietet zusätzlich die Resources `openvideo://agents.md`, `openvi
 
 ### capabilities.get
 
-What this host can do: node types, components (props + example), operations, patch ops, backends, easings, formats. Filter with nodeType or component.
+What this host can do: node types (property types + example), components (props + example), operations, patch ops, backends, easings, formats. Filter with nodeType or component.
 
 ```json
 {

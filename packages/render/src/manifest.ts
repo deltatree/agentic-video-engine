@@ -144,7 +144,14 @@ function rawNode(node: EvaluatedNode): Record<string, unknown> {
   return { ...node.props, id: node.id, type: node.type, children: node.children.map(rawNode) };
 }
 
-/** Standard-2D-Renderer des Projekts (`settings.renderer2d`, Standard `skia`). */
+/**
+ * Standard-2D-Renderer des Projekts (`settings.renderer2d`, Standard `skia`).
+ *
+ * @example
+ * ```ts
+ * renderer2dOf({ settings: { renderer2d: 'pixi' } }); // 'pixi'
+ * ```
+ */
 export function renderer2dOf(project: Readonly<Record<string, unknown>>): string {
   const settings = project['settings'];
   return isRecord(settings) && typeof settings['renderer2d'] === 'string' ? settings['renderer2d'] : 'skia';
@@ -210,6 +217,11 @@ export function manifestGraphics(env: Pick<RenderEnvironment, 'platform'>, runti
  * Chromium-Version für das Manifest: die tatsächliche aus `browser.version()` (lokal oder aus den
  * Worker-Ergebnissen), sonst eine Begründung. Die erwartete Version aus playwright-core steht nur im
  * Cache-Schlüssel.
+ *
+ * @example
+ * ```ts
+ * manifestChromium(undefined, ['141.0.7390.37'], true); // '141.0.7390.37'
+ * ```
  */
 export function manifestChromium(runtime: RuntimeInfo | undefined, fromWorkers: readonly string[], usedBrowser: boolean): VersionOrReason {
   const actual = runtime?.versions['chromium'] ?? fromWorkers[0];
@@ -217,7 +229,14 @@ export function manifestChromium(runtime: RuntimeInfo | undefined, fromWorkers: 
   return { version: null, reason: usedBrowser ? 'Chromium ran in a worker that did not report its version.' : 'No layer of this render used Chromium.' };
 }
 
-/** GPU für das Manifest: erkannte GPU oder Begründung. */
+/**
+ * GPU für das Manifest: erkannte GPU oder Begründung.
+ *
+ * @example
+ * ```ts
+ * manifestGpu(env); // 'NVIDIA A10G (23028 MiB)' oder { version: null, reason: 'No GPU detected …' }
+ * ```
+ */
 export function manifestGpu(env: Pick<RenderEnvironment, 'platform'>): VersionOrReason {
   return env.platform.gpu ?? { version: null, reason: 'No GPU detected (nvidia-smi, /dev/dri); software rendering (SwiftShader/CPU).' };
 }
