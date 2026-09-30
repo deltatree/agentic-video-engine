@@ -8,15 +8,24 @@ import {
   contentHash,
   evaluateScene,
   frameKey,
+  getNumber,
   isRecord,
+  localBox,
+  localMatrix,
+  multiply,
   planFrame,
+  scale as scaleMatrix,
+  transformRect,
+  unionRect,
   walkEvaluated,
+  type AssetResolver,
   type DebugOptions,
   type Diagnostic,
   type EvaluatedNode,
   type EvaluatedScene,
   type LayerPlan,
   type NodeBounds,
+  type Rect,
   type RgbaImage,
 } from '@agentic-video/core';
 import { decodeRawFrame, encodeRawFrameAsync } from '@agentic-video/png';
@@ -73,6 +82,36 @@ function stripNode(node: EvaluatedNode): unknown {
   return { id: node.id, type: node.type, props: node.props, children: node.children.map(stripNode), mask: node.mask === undefined ? undefined : { ...node.mask, node: stripNode(node.mask.node) }, reveal: node.reveal, time: node.time.localFrame };
 }
 
+/**
+ * Animierte Rasterbilder (GIF, animiertes WebP, APNG) in `image`-Nodes laufen über den
+ * Video-Frame-Pfad: Die Asset-Pipeline normalisiert sie zu einem verlustfreien Video; hier wird
+ * die Node zu einer stummen, endlos laufenden `video`-Node mit denselben Maßen, `fit` und `smoothing`.
+ * Dadurch ist die Node zeitabhängig (Frame- und Layer-Schlüssel enthalten die lokale Zeit).
+ * Ohne animierte Bilder kommt dieselbe Szene zurück.
+ *
+ * @example
+ * ```ts
+ * const scene = resolveAnimatedImages(env.assets, evaluateScene(project, 'main', 12));
+ * ```
+ */
+export function resolveAnimatedImages(assets: AssetResolver, scene: EvaluatedScene): EvaluatedScene {
+  const animated = (node: EvaluatedNode): boolean => {
+    if (node.type !== 'image') return false;
+    const asset = node.props['asset'];
+    return typeof asset === 'string' && assets.get(asset)?.metadata['animated'] === true;
+  };
+  const any = (nodes: readonly EvaluatedNode[]): boolean => nodes.some((n) => animated(n) || any(n.children) || (n.mask !== undefined && any([n.mask.node])));
+  if (!any(scene.nodes)) return scene;
+  const map = (node: EvaluatedNode): EvaluatedNode => {
+    const children = node.children.map(map);
+    const mask = node.mask === undefined ? undefined : { ...node.mask, node: map(node.mask.node) };
+    const base: EvaluatedNode = { ...node, children, ...(mask !== undefined ? { mask } : {}) };
+    if (!animated(node)) return base;
+    return { ...base, type: 'video', props: { ...node.props, loop: true, muted: true } };
+  };
+  return { ...scene, nodes: scene.nodes.map(map) };
+}
+
 interface PlanContext {
   readonly env: RenderEnvironment;
   readonly scene: EvaluatedScene;
@@ -86,6 +125,8 @@ interface PlanContext {
   readonly signal: { readonly aborted: boolean } | undefined;
   /** Laufende Cache-Schreibvorgänge; {@link renderFrame} wartet am Ende auf alle. */
   readonly writes: CacheWrites;
+  /** Diagnosen aus dem Zusammensetzen (z. B. Filter an Compositor-Gruppen). */
+  readonly diagnostics: Diagnostic[];
 }
 
 /**
@@ -173,7 +214,7 @@ function findNode(nodes: readonly EvaluatedNode[], id: string): EvaluatedNode | 
 }
 
 async function renderMask(ctx: PlanContext, node: EvaluatedNode): Promise<CompositorNode[]> {
-  const scene: EvaluatedScene = { ...ctx.scene, nodes: [node] };
+  const scene: EvaluatedScene = { ...ctx.scene, background: 'transparent', nodes: [node] };
   return buildTree(ctx, planFrame(scene, ctx.env.registry, { renderer2d: renderer2dOf(ctx.project) }));
 }
 
@@ -188,15 +229,92 @@ async function flattenToImage(ctx: PlanContext, tree: CompositorNode[]): Promise
   );
 }
 
+/**
+ * Eigengröße einer Node für Transform-Ursprung und Box, wie sie das 2D-Backend misst:
+ * Text über den Textmesser, Rasterbilder über die Asset-Maße.
+ */
+function measuredOf(env: RenderEnvironment, node: EvaluatedNode): { width: number; height: number } | undefined {
+  switch (node.type) {
+    case 'text':
+    case 'rich-text': {
+      const m = env.measurer?.measure(node);
+      return m === undefined ? undefined : { width: m.width, height: m.height };
+    }
+    case 'image':
+    case 'video':
+    case 'svg':
+    case 'sprite': {
+      const asset = node.props['asset'];
+      const dims = typeof asset === 'string' ? env.assets.get(asset)?.dimensions : undefined;
+      if (dims === undefined) return undefined;
+      if (node.type !== 'sprite') return { width: dims.width, height: dims.height };
+      return { width: dims.width / Math.max(1, getNumber(node, 'columns', 1)), height: dims.height / Math.max(1, getNumber(node, 'rows', 1)) };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Box für Reveal-Clips: die lokale Box, bei Gruppen ohne Maße die Hülle der Kinder (wie im 2D-Backend). */
+function contentBox(env: RenderEnvironment, node: EvaluatedNode): Rect {
+  const box = localBox(node, measuredOf(env, node));
+  if ((box.width > 0 && box.height > 0) || (node.type !== 'group' && node.type !== 'layer')) return box;
+  let union: Rect | undefined;
+  for (const child of node.children) {
+    const measured = measuredOf(env, child);
+    union = unionRect(union, transformRect(localMatrix(child, measured), contentBox(env, child)));
+  }
+  return union ?? box;
+}
+
+async function maskOf(ctx: PlanContext, node: EvaluatedNode): Promise<{ image: RgbaImage; mode: 'alpha' | 'luminance'; invert: boolean } | undefined> {
+  if (node.mask === undefined) return undefined;
+  // Masken-Node liegt im lokalen Raum der Node (Semantik 1.4); der Compositor transformiert die Maske mit.
+  const image = await flattenToImage(ctx, await renderMask(ctx, node.mask.node));
+  return { image, mode: node.mask.mode, invert: node.mask.invert };
+}
+
 async function buildGroup(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
   const childTree = await buildTree(ctx, children);
-  let mask: { image: RgbaImage; mode: 'alpha' | 'luminance'; invert: boolean } | undefined;
-  if (node.mask !== undefined) {
-    // Masken-Node liegt im lokalen Raum der Gruppe (Semantik 1.4); der Compositor transformiert die Maske mit.
-    const maskImage = await flattenToImage(ctx, await renderMask(ctx, node.mask.node));
-    mask = { image: maskImage, mode: node.mask.mode, invert: node.mask.invert };
+  const mask = await maskOf(ctx, node);
+  const ignored = ['filters', 'shadow'].filter((k) => {
+    const v = node.props[k];
+    return Array.isArray(v) ? v.length > 0 : v !== undefined;
+  });
+  if (ignored.length > 0) {
+    ctx.diagnostics.push({
+      code: 'OV_COMPOSITE_UNSUPPORTED',
+      severity: 'warning',
+      errorClass: 'CompositorError',
+      problem: `${node.type} "${node.id}" is composited across renderer backends; its ${ignored.join(' and ')} are not applied.`,
+      nodeId: node.id,
+      frame: ctx.scene.frame,
+      suggestions: ['Use a layer node with effects (blur, glow, color-grade …) instead of filters/shadow.', 'Or keep all children of the group in one 2D backend.'],
+    });
   }
-  return { kind: 'group', node, children: childTree, ...(mask !== undefined ? { mask } : {}) };
+  return {
+    kind: 'group',
+    node,
+    children: childTree,
+    ...(mask !== undefined ? { mask } : {}),
+    ...(node.reveal !== undefined ? { reveal: { reveal: node.reveal, box: contentBox(ctx.env, node) } } : {}),
+  };
+}
+
+/** Isolierte Node: Das Backend hat sie transformiert; der Compositor wendet Reveal, Maske und Blend Mode an. */
+async function buildIsolate(ctx: PlanContext, node: EvaluatedNode, children: readonly LayerPlan[]): Promise<CompositorNode> {
+  const childTree = await buildTree(ctx, children);
+  const mask = await maskOf(ctx, node);
+  const s = ctx.scale;
+  const matrix = multiply(scaleMatrix(s, s), multiply(localMatrix(node, measuredOf(ctx.env, node)), scaleMatrix(1 / s, 1 / s)));
+  return {
+    kind: 'isolate',
+    node,
+    children: childTree,
+    matrix,
+    ...(mask !== undefined ? { mask } : {}),
+    ...(node.reveal !== undefined ? { reveal: { reveal: node.reveal, box: contentBox(ctx.env, node) } } : {}),
+  };
 }
 
 async function buildTree(ctx: PlanContext, plan: readonly LayerPlan[]): Promise<CompositorNode[]> {
@@ -204,6 +322,10 @@ async function buildTree(ctx: PlanContext, plan: readonly LayerPlan[]): Promise<
   for (const layer of plan) {
     if (layer.kind === 'render') {
       out.push({ kind: 'image', image: await renderLayerCached(ctx, layer.backend, layer.nodes, layer.id) });
+      continue;
+    }
+    if (layer.mode === 'isolate') {
+      out.push(await buildIsolate(ctx, layer.node, layer.children));
       continue;
     }
     const blur = layer.node.props['motionBlur'];
@@ -224,11 +346,11 @@ async function motionBlurGroup(ctx: PlanContext, node: EvaluatedNode, samples: n
   const images: RgbaImage[] = [];
   for (let i = 0; i < samples; i++) {
     const offset = (i / (samples - 1) - 0.5) * shutter;
-    const sub = offset === 0 ? ctx.scene : evaluateScene(ctx.project, ctx.compositionId, ctx.scene.frame + offset, { registry: ctx.env.registry });
+    const sub = offset === 0 ? ctx.scene : resolveAnimatedImages(ctx.env.assets, evaluateScene(ctx.project, ctx.compositionId, ctx.scene.frame + offset, { registry: ctx.env.registry }));
     const subNode = findNode(sub.nodes, node.id);
     if (subNode === undefined) continue;
     const subCtx: PlanContext = { ...ctx, scene: sub };
-    const children = planFrame({ ...sub, nodes: subNode.children }, ctx.env.registry, { renderer2d: renderer2dOf(ctx.project) });
+    const children = planFrame({ ...sub, background: 'transparent', nodes: subNode.children }, ctx.env.registry, { renderer2d: renderer2dOf(ctx.project) });
     const group = await buildGroup(subCtx, { ...subNode, props: { ...subNode.props, motionBlur: undefined } }, children);
     images.push(await flattenToImage(subCtx, [group]));
   }
@@ -254,7 +376,7 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
     }
   };
   const scale = options.scale ?? 1;
-  const scene = await time('timelineEvaluator', () => evaluateScene(project, options.compositionId, options.frame, { registry: env.registry }));
+  const scene = await time('timelineEvaluator', () => resolveAnimatedImages(env.assets, evaluateScene(project, options.compositionId, options.frame, { registry: env.registry })));
   const size = outputSize(scene, scale);
   const bounds = await time('bounds', () => computeBounds(scene, env.measurer));
   const diagnostics: Diagnostic[] = [...scene.diagnostics, ...analyzeScene(scene, bounds)];
@@ -271,7 +393,7 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
   const plan = await time('framePlan', () => planFrame(scene, env.registry, { renderer2d: renderer2dOf(project) }));
   const counters = { rendered: 0, cached: 0 };
   const writes = new CacheWrites();
-  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal, writes };
+  const ctx: PlanContext = { env, scene, width: size.width, height: size.height, scale, debug: options.debug, project, compositionId: options.compositionId, counters, signal: options.signal, writes, diagnostics };
   let image: RgbaImage;
   try {
     const tree = await time('renderers', () => buildTree(ctx, plan));
@@ -280,8 +402,6 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
       const debug = options.debug;
       tree.push({ kind: 'image', image: await time('debugOverlay', () => overlays.debugOverlay(scene, bounds, debug, { ...size, scale })) });
     }
-    const settings = isRecord(project['settings']) ? project['settings'] : {};
-    const outputSpace = settings['outputColorSpace'] === 'rec709' ? 'rec709' : 'srgb';
     image = await time('compositor', () =>
       env.composite({
         width: size.width,
@@ -289,7 +409,7 @@ export async function renderFrame(env: RenderEnvironment, project: Readonly<Reco
         scale,
         background: scene.background,
         workingSpace: scene.colorSpace,
-        outputSpace,
+        outputSpace: scene.outputColorSpace ?? 'srgb',
         layers: tree,
         frame: scene.frame,
         seed: scene.seed,

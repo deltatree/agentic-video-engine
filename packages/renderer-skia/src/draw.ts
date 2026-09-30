@@ -414,7 +414,8 @@ function drawContent(canvas: Canvas, node: EvaluatedNode, box: Box, ctx: DrawCon
     }
     case 'video': {
       const img = ctx.resources.videoFrames.get(node);
-      if (img !== undefined) drawImageInBox(canvas, ctx, img, { x: 0, y: 0, width: img.width(), height: img.height() }, box, node.props['fit'] ?? 'fill', 'linear');
+      // `smoothing` tragen animierte Bilder, die als Video gezeichnet werden (Story 17.4).
+      if (img !== undefined) drawImageInBox(canvas, ctx, img, { x: 0, y: 0, width: img.width(), height: img.height() }, box, node.props['fit'] ?? 'fill', node.props['smoothing'] ?? 'linear');
       return;
     }
     case 'svg': {

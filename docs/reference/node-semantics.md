@@ -28,7 +28,7 @@ Ein Renderer, der davon abweicht, meldet das als Capability-Einschränkung.
 | Typ | Box |
 |---|---|
 | `rect`, `ellipse`, `image`, `video`, `svg`, `sprite`, `lottie`, `shader`, `particles`, `html`, `scene3d`, `blender` | `(0, 0, width, height)` |
-| `group`, `layer` | `(0, 0, width ?? 0, height ?? 0)` |
+| `group`, `layer`, `sequence` | `(0, 0, width ?? 0, height ?? 0)` |
 | `line` | Hülle von `from` und `to` |
 | `polyline`, `polygon` | Hülle der Punkte |
 | `path` | Hülle aller Koordinaten (`pathBounds`) |
@@ -41,12 +41,33 @@ Fehlen bei `image`, `video`, `svg`, `sprite` die Maße, gilt die Eigengröße de
 | Property | Bedeutung | Standard |
 |---|---|---|
 | `opacity` | Multipliziert die Deckkraft der Node und aller Kinder (als Gruppe). | 1 |
-| `blendMode` | Mischt die Node mit dem, was darunter im selben Layer liegt (sRGB-Raum). | `normal` |
+| `zIndex` | Zeichenreihenfolge unter Geschwistern (animierbar). Höhere Werte liegen oben; gleiche Werte behalten die Reihenfolge im Dokument (stabile Sortierung). Die ausgewertete Szene, der Planner und der Szenenbaum nutzen die sortierte Reihenfolge. | 0 |
+| `blendMode` | Mischt die Node mit allem, was unter ihr liegt, auch mit Layern anderer Backends und mit der Hintergrundfarbe der Composition (im Arbeitsfarbraum). Gruppen und `layer` sind isoliert: Ihre Kinder mischen nur mit Inhalt derselben Gruppe. Siehe 1.6. | `normal` |
 | `filters` | Liste, in Reihenfolge angewendet. `blur.radius` ist die Standardabweichung in Pixeln (wie CSS `blur()`). `brightness`, `contrast`, `saturate`, `grayscale`, `sepia`, `invert`, `hue-rotate` wie CSS. | – |
 | `shadow` | Schlagschatten der ganzen Node. `blur` ist die Standardabweichung. | – |
-| `mask` | Die Masken-Node liegt im **lokalen Koordinatensystem der maskierten Node** (sie bewegt sich mit). `alpha`: Deckkraft der Maske; `luminance`: Helligkeit × Alpha. `invert` kehrt um. | `alpha` |
+| `mask` | Die Masken-Node liegt im **lokalen Koordinatensystem der maskierten Node** (sie bewegt sich mit). `alpha`: Deckkraft der Maske; `luminance`: Helligkeit × Alpha. `invert` kehrt um. Masken- und maskierte Node dürfen verschiedene Backends nutzen (1.6). | `alpha` |
 | `clip` (nur `group`) | Beschneidet Kinder auf die Box der Gruppe. | `false` |
-| `reveal` (aus Übergängen) | Beschneidet die Node auf `revealShape(reveal, box)` in lokalen Box-Koordinaten. | – |
+| `reveal` (aus Übergängen) | Beschneidet die Node auf `revealShape(reveal, box)` in lokalen Box-Koordinaten. Bei Gruppen ohne Maße ist `box` die Hülle der Kinder. Gilt für alle Node-Typen, auch `layer`, `scene3d`, `html`, `blender` (1.6). | – |
+
+### 1.6 Compositing über Backend-Grenzen (Frame Plan)
+
+Der Planner (`planFrame`) teilt die Szene in Layer; jedes Backend rendert seine Layer, der Compositor setzt sie zusammen.
+Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Regeln:
+
+- **Gruppen** mit Nachfahren aus mehreren Backends, und Gruppen, deren Kinder ein Backend ohne eigene Gruppen-Unterstützung brauchen (`scene3d`, `html`, `blender`), setzt der Compositor zusammen. Er wendet in dieser Reihenfolge an: Kinder → `colorSpace` (nur `layer`) → `effects` → `crop` → `clip` → Maske → Reveal → Transform → `opacity` → `blendMode`. `filters` und `shadow` einer solchen Gruppe wirken dort nicht (Warnung `OV_COMPOSITE_UNSUPPORTED`; stattdessen `layer.effects` verwenden).
+- **Isolierte Nodes:** Eine Node wird isoliert, wenn ihr Backend eine Eigenschaft nicht über die Layer-Grenze anwenden kann:
+  - `scene3d`, `html`, `blender` mit `blendMode ≠ normal`, `mask` oder Reveal;
+  - 2D-Nodes (Skia, PixiJS) mit `blendMode ≠ normal`, wenn unter ihnen Inhalt außerhalb ihres Layers liegt (ein anderer Layer oder die Hintergrundfarbe der Composition);
+  - 2D-Nodes, deren Masken-Node ein anderes Backend braucht.
+
+  Das Backend rendert die Node dann ohne diese Eigenschaften (mit Transform und Opacity), der Compositor wendet Reveal, Maske (mit der Node-Matrix transformiert) und Blend Mode auf den fertigen Layer an. Reveal-Kanten werden mit 4 × 4 Stichproben geglättet.
+- Blend Modes innerhalb eines 2D-Layers ohne Hintergrundfarbe rechnet das Backend selbst (Skia/PixiJS).
+
+### 1.7 Farbräume
+
+- Backends liefern sRGB-kodierte Pixel (1.1). Der Compositor mischt im **Arbeitsfarbraum**: `composition.colorSpace`, sonst `settings.workingColorSpace`, sonst `srgb`. Effekte rechnen immer in linearem Licht.
+- `layer.colorSpace` erklärt, wie die Pixel der Kinder kodiert sind: `linear` (lineares Licht) oder `rec709` (BT.709-OETF). Der Compositor liest sie mit dieser Kodierung statt sRGB und überführt sie in den Arbeitsfarbraum. `srgb` ist der Standard und ändert nichts.
+- `settings.outputColorSpace` kodiert die Ausgabe-Pixel: `srgb` (Standard), `rec709` oder `linear` (lineares Licht in 8 Bit; für Weiterverarbeitung, sichtbar gröbere Abstufung in dunklen Tönen). Der Wert geht in den Frame-Schlüssel ein. Das Video-Tag (`color_trc`) setzt `renderProfile.colorSpace`; beide sollten übereinstimmen.
 
 ### 1.5 Füllung und Kontur
 
@@ -66,7 +87,12 @@ Fehlen bei `image`, `video`, `svg`, `sprite` die Maße, gilt die Eigengröße de
 ### Struktur
 
 - **group**: zeichnet Kinder in Reihenfolge. Transform, Opacity, Filter, Maske wirken auf das Gruppenbild.
-- **layer**: wie `group`, bildet aber immer einen eigenen Compositor-Layer. Zusätzlich `colorSpace`, `crop`, `effects`, `motionBlur`.
+- **layer**: wie `group`, bildet aber immer einen eigenen Compositor-Layer. Zusätzlich `colorSpace` (1.7), `crop`, `effects`, `motionBlur`.
+- **sequence**: spielt ihre Kinder nacheinander ab und wird vor dem Rendern zu einer `group` (T9). Jedes Kind braucht `timing.duration` (eine `composition-ref` ohne Dauer nimmt die Dauer ihrer Composition); fehlt sie, wird das Kind mit `OV_SEQUENCE_DURATION` übersprungen. `timing.from` der Kinder wird ersetzt (`OV_SEQUENCE_FROM_IGNORED`). Zwischen Kind i und i + 1 gilt `transitions[i] ?? between ?? { type: 'cut' }`:
+  - `cut`: Kind i + 1 beginnt am Ende von Kind i.
+  - Übergang mit `type` (wie `transition`: `fade`, `slide-*`, `wipe-*`, `zoom-in`, `zoom-out`, `blur`, `iris`) und `duration` d: Kind i + 1 beginnt d vor dem Ende von Kind i (d wird auf die kürzere der beiden Dauern begrenzt). Kind i + 1 erhält den Übergang als `in` und liegt über Kind i, das bis zum Ende der Überlappung stehen bleibt (Überblendung; bei deckenden Clips exakt ein Crossfade). Bei `slide-*` erhält Kind i denselben Übergang als `out` (Push: beide Clips bewegen sich in dieselbe Richtung).
+  - Eigene `transition`-Einträge der Kinder gelten an Stellen ohne Sequenz-Übergang (z. B. `in` des ersten und `out` des letzten Kinds).
+  - Die Gesamtdauer ist die Summe der Kinddauern minus der Überlappungen.
 - **composition-ref**, **component**, **subtitles**: werden vor dem Rendern expandiert. Renderer sehen sie nie.
 
 ### Formen
@@ -94,7 +120,7 @@ Fehlen bei `image`, `video`, `svg`, `sprite` die Maße, gilt die Eigengröße de
 
 ### Medien
 
-- **image**: `fit` Standard `fill` bei gesetzten Maßen. `contain`/`cover` zentrieren. `smoothing` Standard `linear`.
+- **image**: `fit` Standard `fill` bei gesetzten Maßen. `contain`/`cover` zentrieren. `smoothing` Standard `linear`. Animierte Bilder (GIF, APNG, animiertes WebP) normalisiert die Asset-Pipeline zu einem verlustfreien Video; die Node zeigt dann den Frame zur lokalen Zeit, in einer Endlosschleife über die Dauer des Bildes (Video-Frame-Pfad wie bei `video`, `loop: true`, stumm). Animiertes WebP braucht ein FFmpeg, das animiertes WebP dekodiert (FFmpeg 6.1 kann das nicht; der Import meldet dann einen Fehler).
 - **video**: Quellzeit = `startFrom + localTime · playbackRate`; mit `loop` modulo Dauer, sonst geklemmt. Das Bild liefert `AssetResolver.videoFrame(asset, sekunden)`.
 - **svg**: Asset oder `markup` in die Box skaliert (`fit` Standard `contain`).
 - **sprite**: Rasterbild mit `columns × rows` Zellen, zeilenweise nummeriert. Index = `frame`, sonst `floor(localTime · frameRate)`; mit `loop` modulo `frameCount`, sonst geklemmt.

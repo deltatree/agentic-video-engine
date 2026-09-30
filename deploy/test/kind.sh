@@ -20,8 +20,9 @@ REGISTRY="${REGISTRY:-ghcr.io/deltatree}"
 TAG="${TAG:-$(node -p "require('${root}/package.json').version")}"
 CLUSTER="${CLUSTER:-openvideo-test}"
 NS=openvideo
-API_TOKEN=local-api-token        # aus deploy/k8s/overlays/local/secret.yaml
-WORKER_TOKEN=local-worker-token
+API_TOKEN=local-api-token-0123456789        # aus deploy/k8s/overlays/local/secret.yaml
+# Rolle "submit" am Koordinator (Jobs einreichen und abfragen, Story 16.3).
+SUBMIT_TOKEN=local-submit-token-0123456789
 
 KIND_VERSION=v0.33.0
 KIND_SHA256=aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
@@ -164,9 +165,9 @@ const chunks = [];
 for (let s = 0; s < frames; s += 20) chunks.push({ compositionId: 'main', start: s, end: s + 20, scale: 1, step: 1, offset: 0 });
 require('node:fs').writeFileSync(out, JSON.stringify({ project, files: [], chunks }));
 EOF
-load_job="$(curl -fsS -H "Authorization: Bearer ${WORKER_TOKEN}" -H 'content-type: application/json' --data-binary "@$work/load.json" http://127.0.0.1:18080/v1/jobs | json 'r.jobId')"
+load_job="$(curl -fsS -H "Authorization: Bearer ${SUBMIT_TOKEN}" -H 'content-type: application/json' --data-binary "@$work/load.json" http://127.0.0.1:18080/v1/jobs | json 'r.jobId')"
 [ -n "$load_job" ] || fail "coordinator did not accept the job"
-curl -fsS -H "Authorization: Bearer ${WORKER_TOKEN}" http://127.0.0.1:18080/v1/queue; echo
+curl -fsS -H "Authorization: Bearer ${SUBMIT_TOKEN}" http://127.0.0.1:18080/v1/queue; echo
 max=0
 for _ in $(seq 1 90); do
   replicas="$(kubectl -n "$NS" get deployment worker-cpu -o jsonpath='{.spec.replicas}')"
@@ -181,7 +182,7 @@ kubectl -n "$NS" get hpa
 log "Warten, bis die Worker den Job fertig gerendert haben"
 jstate=""
 for _ in $(seq 1 300); do
-  jstatus="$(curl -fsS -H "Authorization: Bearer ${WORKER_TOKEN}" "http://127.0.0.1:18080/v1/jobs/${load_job}")"
+  jstatus="$(curl -fsS -H "Authorization: Bearer ${SUBMIT_TOKEN}" "http://127.0.0.1:18080/v1/jobs/${load_job}")"
   jstate="$(json 'r.state' <<<"$jstatus")"
   [ "$jstate" = running ] || break
   sleep 2

@@ -144,6 +144,29 @@ interface RunResult {
   readonly frames: number;
 }
 
+
+/** Variablen, die Blender erbt (N1). */
+const BLENDER_ENV_NAMES: readonly string[] = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'LD_LIBRARY_PATH', 'DISPLAY', 'XDG_RUNTIME_DIR', 'OCIO', 'SYSTEMROOT', 'WINDIR'];
+/** Präfixe für Blender, GPU-Treiber und Mesa (z. B. `BLENDER_USER_SCRIPTS`, `CUDA_VISIBLE_DEVICES`). */
+const BLENDER_ENV_PREFIXES: readonly string[] = ['BLENDER_', 'CUDA_', 'NVIDIA_', '__GLX_', '__EGL_', 'MESA_', 'EGL_', 'LIBGL_', 'VK_', 'OMP_'];
+
+/**
+ * Minimale Umgebung für den Blender-Prozess (N1, Story 16.5): nur Laufzeit-, Grafik- und
+ * Blender-Variablen. Tokens und S3-Schlüssel (`OPENVIDEO_*`, `AWS_*`) bleiben draußen.
+ *
+ * @example
+ * ```ts
+ * blenderEnv({ PATH: '/usr/bin', OPENVIDEO_WORKER_TOKEN: 'secret', CUDA_VISIBLE_DEVICES: '0' }); // { PATH: '/usr/bin', CUDA_VISIBLE_DEVICES: '0' }
+ * ```
+ */
+export function blenderEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (BLENDER_ENV_NAMES.includes(name) || BLENDER_ENV_PREFIXES.some((p) => name.startsWith(p))) out[name] = value;
+  }
+  return out;
+}
 /**
  * Erzeugt das Blender-Backend. Blender wird erst beim ersten Render gesucht; `versions()` ist ohne Blender leer;
  * `check()` braucht kein Blender.
@@ -176,6 +199,8 @@ export function createBlenderBackend(options: BlenderBackendOptions): BlenderBac
       launches++;
       const child = spawn(path, ['-b', '--factory-startup', '-noaudio', '--python-exit-code', '1', '--python', BLENDER_SCRIPT_PATH, '--', jobPath], {
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Minimale Umgebung (N1): keine Tokens oder S3-Schlüssel an Blender und seine Python-Skripte.
+        env: blenderEnv(process.env),
       });
       running.add(child);
       const stderr: string[] = [];

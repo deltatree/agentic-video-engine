@@ -36,24 +36,26 @@ export interface LocalServicesOptions {
    * nie für `serve`, `dev`, `studio` oder `mcp` (B6). Standard `false`.
    */
   readonly allowOutsidePaths?: boolean;
-  /** Umgebungsvariablen (Standard `process.env`), z. B. `OPENVIDEO_CONTAINER_IMAGE`. */
+  /** Umgebungsvariablen (Standard `process.env`), z. B. `OPENVIDEO_ALLOW_HTML_SCRIPTS`, `OPENVIDEO_COORDINATOR_URL`. */
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** Fabrik für Render-Umgebungen (Standard {@link createNodeEnvironment}); Tests ersetzen sie. */
   readonly createEnvironment?: (options: NodeEnvironmentOptions) => Promise<NodeEnvironment>;
 }
 
 /**
- * Dürfen HTML-Skripte laufen (ADR 0008)? Nur mit `--trusted` oder im Container
- * (`OPENVIDEO_CONTAINER_IMAGE` gesetzt).
+ * Dürfen HTML-Skripte laufen (ADR 0008, Story 16.1)? Nur ausdrücklich: mit `--trusted` oder
+ * `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`. `OPENVIDEO_CONTAINER_IMAGE` erlaubt nichts mehr (H1): die
+ * Variable steht in jedem Image, auch im API-Pod. Auch mit Erlaubnis laufen Skripte nur, wenn
+ * Chromium mit der OS-Sandbox startet; sonst bricht der Browser-Host mit `OV_BROWSER_NO_OS_SANDBOX` ab.
  *
  * @example
  * ```ts
- * htmlScriptsAllowed('container', process.env); // true nur im Container-Image
+ * htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: '1' }); // true
+ * htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-render-cpu:1' }); // false
  * ```
  */
 export function htmlScriptsAllowed(isolation: 'container' | 'trusted', env: Readonly<Record<string, string | undefined>>): boolean {
-  const image = env['OPENVIDEO_CONTAINER_IMAGE'];
-  return isolation === 'trusted' || (image !== undefined && image !== '');
+  return isolation === 'trusted' || env['OPENVIDEO_ALLOW_HTML_SCRIPTS'] === '1';
 }
 
 /** Eine zwischengespeicherte Umgebung mit Referenzzähler. */
@@ -92,7 +94,8 @@ export async function createLocalServices(options: LocalServicesOptions): Promis
   const allowHtmlScripts = htmlScriptsAllowed(isolation, options.env ?? process.env);
   // Im Cluster rendern die Worker am Koordinator; der Cache muss dann der gemeinsame S3-Speicher sein.
   const coordinatorUrl = nonEmpty((options.env ?? process.env)['OPENVIDEO_COORDINATOR_URL']);
-  const coordinatorToken = nonEmpty((options.env ?? process.env)['OPENVIDEO_WORKER_TOKEN']);
+  // Rolle `submit` (Story 16.3); ein gemeinsames Token (`openvideo coordinator --token`) bleibt als Rückfall.
+  const coordinatorToken = nonEmpty((options.env ?? process.env)['OPENVIDEO_SUBMIT_TOKEN']) ?? nonEmpty((options.env ?? process.env)['OPENVIDEO_WORKER_TOKEN']);
   const create = options.createEnvironment ?? createNodeEnvironment;
   // LRU mit Referenzzählung (B14): Die Map-Reihenfolge ist die Nutzungsreihenfolge.
   const envs = new Map<string, EnvEntry>();
@@ -247,14 +250,15 @@ function projectDirOf(env: RenderEnvironment): string {
 
 /**
  * Chunk-Runner mit Pull-Workern am Koordinator (`OPENVIDEO_COORDINATOR_URL`, Kubernetes).
+ * Der Runner prüft die Frames der Worker im Speicher der Umgebung (Präfix und SHA-256, T8).
  *
  * @example
  * ```ts
- * const runChunks = remoteRunner(env, project, 'http://coordinator:8080', process.env.OPENVIDEO_WORKER_TOKEN);
+ * const runChunks = remoteRunner(env, project, 'http://coordinator:8080', process.env.OPENVIDEO_SUBMIT_TOKEN);
  * ```
  */
 export function remoteRunner(env: RenderEnvironment, project: Readonly<Record<string, unknown>>, coordinatorUrl: string, token: string | undefined): ChunkRunner {
-  return createRemoteChunkRunner({ coordinatorUrl, projectDir: projectDirOf(env), project, telemetry: env.telemetry, ...(token !== undefined ? { token } : {}) });
+  return createRemoteChunkRunner({ coordinatorUrl, store: env.cache.store, projectDir: projectDirOf(env), project, telemetry: env.telemetry, ...(token !== undefined ? { token } : {}) });
 }
 
 /**

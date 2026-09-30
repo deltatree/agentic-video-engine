@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { FileStore, createCache } from '@agentic-video/cache';
-import { SCHEMA_VERSION } from '@agentic-video/core';
+import { SCHEMA_VERSION, sha256Hex } from '@agentic-video/core';
 import { createNodeEnvironment, renderVideo, type NodeEnvironment } from '@agentic-video/render';
-import { createRemoteChunkRunner, startCoordinator, type Coordinator } from '@agentic-video/scheduler';
+import { createRemoteChunkRunner, inputKey, startCoordinator, type Coordinator } from '@agentic-video/scheduler';
 import { createTelemetry } from '@agentic-video/telemetry';
 import { runWorkerHttp } from '@agentic-video/worker';
 
@@ -58,7 +58,7 @@ describe('Koordinator und HTTP-Worker (Story 10.3)', () => {
     const dir = tmp('ov-remote-');
     const store = new FileStore(join(dir, 'shared'));
     const journalDir = join(dir, 'journal');
-    const token = 'secret-token';
+    const token = 'secret-token-0123456789abcdef';
     const first = await startCoordinator({ port: 0, host: '127.0.0.1', store, journalDir, token, leaseSeconds: 10 });
     let current: Coordinator = first;
     const stop = new AbortController();
@@ -67,7 +67,7 @@ describe('Koordinator und HTTP-Worker (Story 10.3)', () => {
     const telemetry = createTelemetry({ serviceName: 'caller', exporter: 'memory', logSink: (l) => lines.push(l) });
     const env = await envFor(dir, store, telemetry);
     let restart: Promise<void> | undefined;
-    const runChunks = createRemoteChunkRunner({ coordinatorUrl: first.url, token, projectDir: join(dir, 'project-src'), project, pollIntervalMs: 50, telemetry });
+    const runChunks = createRemoteChunkRunner({ coordinatorUrl: first.url, token, store, projectDir: join(dir, 'project-src'), project, pollIntervalMs: 50, telemetry });
     // Projektordner ohne Dateien: das IR reicht für dieses Projekt.
     const { mkdirSync } = await import('node:fs');
     mkdirSync(join(dir, 'project-src'));
@@ -139,4 +139,35 @@ describe('Koordinator und HTTP-Worker (Story 10.3)', () => {
     expect(status.chunks[0]).toMatchObject({ state: 'queued', attempts: 1 });
     await coordinator.close();
   });
+
+  it('schreibt Frames nur unter jobs/<jobId>/frames/ und prüft den Hash der Eingaben (Story 16.2)', async () => {
+    const dir = tmp('ov-jobkeys-');
+    const store = new FileStore(join(dir, 'shared'));
+    const coordinator = await startCoordinator({ port: 0, host: '127.0.0.1', store, journalDir: join(dir, 'journal'), leaseSeconds: 10 });
+    const post = (path: string, body: unknown) => fetch(`${coordinator.url}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    const status = async (jobId: string) => (await (await fetch(`${coordinator.url}/v1/jobs/${jobId}`)).json()) as { state: string; chunks: { state: string; result?: { keys: string[] } }[]; diagnostics: { code: string }[] };
+    let stop = new AbortController();
+    let worker = runWorkerHttp({ coordinatorUrl: coordinator.url, store, worker: 'w', signal: stop.signal, pollIntervalMs: 20, telemetry: quiet() });
+    try {
+      const good = (await (await post('/v1/jobs', { project, files: [], chunks: [{ compositionId: 'main', start: 0, end: 3, scale: 1, step: 1, offset: 0 }] })).json()) as { jobId: string };
+      await expect.poll(async () => (await status(good.jobId)).state, { timeout: 30_000 }).toBe('done');
+      const keys = (await status(good.jobId)).chunks[0]?.result?.keys ?? [];
+      expect(keys).toHaveLength(3);
+      for (const key of keys) expect(key).toMatch(new RegExp(`^jobs/${good.jobId}/frames/[0-9a-f]{64}$`, 'u'));
+
+      // Ein manipuliertes Projekt im Speicher: der Worker rendert es nicht. Erst manipulieren, dann einen Worker starten.
+      stop.abort();
+      await worker;
+      const other = { ...project, metadata: { title: 'Tampered' } };
+      const submitted = (await (await post('/v1/jobs', { project: other, files: [], chunks: [{ compositionId: 'main', start: 0, end: 1, scale: 1, step: 1, offset: 0 }] })).json()) as { jobId: string };
+      await store.put(inputKey(sha256Hex(new TextEncoder().encode(JSON.stringify(other)))), new TextEncoder().encode(JSON.stringify({ ...project, metadata: { title: 'Evil' } })));
+      stop = new AbortController();
+      worker = runWorkerHttp({ coordinatorUrl: coordinator.url, store, worker: 'w2', signal: stop.signal, pollIntervalMs: 20, telemetry: quiet() });
+      await expect.poll(async () => (await status(submitted.jobId)).diagnostics.map((d) => d.code), { timeout: 30_000 }).toContain('OV_SCHEDULER_CONTENT_MISMATCH');
+    } finally {
+      stop.abort();
+      await worker;
+      await coordinator.close();
+    }
+  }, 60_000);
 });

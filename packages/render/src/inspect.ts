@@ -27,6 +27,8 @@ export interface SceneTreeNode {
   readonly type: string;
   readonly bounds?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly opacity?: number;
+  /** Gesetztes `zIndex` (≠ 0). Die Reihenfolge der Kinder ist bereits die effektive Zeichenreihenfolge. */
+  readonly zIndex?: number;
   readonly text?: { readonly content: string; readonly lines?: number; readonly overflow?: boolean };
   readonly source?: { readonly file: string; readonly line: number; readonly column: number };
   readonly localFrame: number;
@@ -54,6 +56,7 @@ export function sceneTree(scene: EvaluatedScene, bounds: readonly NodeBounds[]):
       id: n.id,
       type: n.type,
       ...(b !== undefined ? { bounds: { x: round(b.bounds.x), y: round(b.bounds.y), width: round(b.bounds.width), height: round(b.bounds.height) }, opacity: round(b.opacity) } : {}),
+      ...(typeof n.props['zIndex'] === 'number' && n.props['zIndex'] !== 0 ? { zIndex: n.props['zIndex'] } : {}),
       ...(text !== undefined ? { text: { content: text, ...(b?.text !== undefined ? { lines: b.text.lines, overflow: b.text.overflow } : {}) } } : {}),
       ...(n.source !== undefined ? { source: n.source } : {}),
       localFrame: round(n.time.localFrame),

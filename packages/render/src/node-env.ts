@@ -213,7 +213,7 @@ export async function createNodeEnvironment(options: NodeEnvironmentOptions): Pr
   const settings = isRecord(project['settings']) ? project['settings'] : {};
   const defaultFont = typeof settings['defaultFont'] === 'string' ? settings['defaultFont'] : undefined;
   const canvasKit = await loadCanvasKitNode();
-  const versions: Record<string, string> = { openvideo: OPENVIDEO_VERSION, compositor: 'openvideo-compositor-1' };
+  const versions: Record<string, string> = { openvideo: OPENVIDEO_VERSION, compositor: 'openvideo-compositor-2' };
   if (!registry.backends.has('skia')) registry.registerBackend(createSkiaBackend({ canvasKit, fonts, ...(defaultFont !== undefined ? { defaultFont } : {}) }));
   if (registry.components.size === 0) registerComponents(registry);
   if (!registry.expanders.has('subtitles')) {

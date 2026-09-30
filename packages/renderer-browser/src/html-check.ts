@@ -35,7 +35,8 @@ export function checkResult(diagnostics: readonly Diagnostic[]): BackendCheck {
 /**
  * Prüft eine html-Node (IR) für das `browser`-Backend.
  *
- * - `<script>` im Inhalt → `OV_HTML_SCRIPT` (info): Skripte laufen nur in der Sandbox (ADR 0008).
+ * - `<script>` im Inhalt → `OV_HTML_SCRIPT` (info): Skripte laufen nur ausdrücklich erlaubt und
+ *   nur mit OS-Sandbox (ADR 0008, Story 16.1).
  * - `mask` an der html-Node → `OV_BROWSER_UNSUPPORTED` (error).
  *
  * @example
@@ -53,9 +54,9 @@ export function checkHtmlNode(node: Readonly<Record<string, unknown>>): BackendC
       code: 'OV_HTML_SCRIPT',
       severity: 'info',
       errorClass: 'BrowserRendererError',
-      problem: 'HTML content contains <script>; scripts run only in the sandboxed render host with virtual time and no network.',
+      problem: 'HTML content contains <script>; scripts run only when explicitly allowed (--trusted or OPENVIDEO_ALLOW_HTML_SCRIPTS=1) and only if Chromium runs with the OS sandbox, with virtual time and no network.',
       ...where,
-      suggestions: ['Render through the Agent API or MCP (container sandbox, ADR 0008), or use the CLI with --trusted for your own projects.', 'Drive animation from window.openvideo.onFrame or CSS animations instead of real timers.'],
+      suggestions: ['Use the CLI with --trusted for your own projects, or set OPENVIDEO_ALLOW_HTML_SCRIPTS=1 on a render host with the Chromium OS sandbox (ADR 0008).', 'Drive animation from window.openvideo.onFrame or CSS animations instead of real timers.'],
     });
   }
   if (node['mask'] !== undefined) {

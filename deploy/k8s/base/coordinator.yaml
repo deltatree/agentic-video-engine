@@ -45,13 +45,14 @@ spec:
           command: [node, /app/deploy/s3-bucket.mjs]
           envFrom:
             - configMapRef: { name: openvideo-config }
+          # Nur dieser Init-Container bekommt die Admin-Identität (Bucket anlegen).
           env:
             - name: OPENVIDEO_S3_ACCESS_KEY_ID
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-access-key-id }
+                secretKeyRef: { name: openvideo-secrets, key: s3-admin-access-key-id }
             - name: OPENVIDEO_S3_SECRET_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-secret-access-key }
+                secretKeyRef: { name: openvideo-secrets, key: s3-admin-secret-access-key }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -69,15 +70,22 @@ spec:
           env:
             - name: OPENVIDEO_JOURNAL_DIR
               value: /data/journal
+            # Getrennte Rollen (Story 16.3): API (submit), Worker (worker), KEDA (metrics).
+            - name: OPENVIDEO_SUBMIT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: submit-token }
             - name: OPENVIDEO_WORKER_TOKEN
               valueFrom:
                 secretKeyRef: { name: openvideo-secrets, key: worker-token }
+            - name: OPENVIDEO_METRICS_TOKEN
+              valueFrom:
+                secretKeyRef: { name: openvideo-secrets, key: metrics-token }
             - name: OPENVIDEO_S3_ACCESS_KEY_ID
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-access-key-id }
+                secretKeyRef: { name: openvideo-secrets, key: s3-api-access-key-id }
             - name: OPENVIDEO_S3_SECRET_ACCESS_KEY
               valueFrom:
-                secretKeyRef: { name: openvideo-secrets, key: s3-secret-access-key }
+                secretKeyRef: { name: openvideo-secrets, key: s3-api-secret-access-key }
           ports:
             - { name: queue-cpu, containerPort: 8080 }
             - { name: queue-gpu, containerPort: 8081 }

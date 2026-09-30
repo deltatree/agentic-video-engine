@@ -60,6 +60,26 @@ export function atempoChain(rate: number): string[] {
 }
 
 /**
+ * Demuxer, die `decodeAudio` für Eingaben zulässt (M3, Story 16.5): nur Container mit eingebetteten
+ * Daten. Formate, die andere Dateien oder URLs nachladen (`hls`, `concat`, `dash`, Playlists,
+ * `image2`-Muster), fehlen absichtlich.
+ */
+export const AUDIO_INPUT_FORMATS: readonly string[] = ['wav', 'w64', 'mp3', 'flac', 'ogg', 'aac', 'aiff', 'caf', 'mov', 'mp4', 'm4a', 'matroska', 'webm', 'avi', 'mpegts', 'mpeg', 'asf', 'flv', 'ac3', 'eac3', 'dts', 'wv', 'amr', 'au', 'ape', 'tta', 'loas'];
+
+/**
+ * FFmpeg-Eingabeoptionen für eine lokale Mediendatei: nur Protokolle `file` und `pipe`, nur
+ * Demuxer aus {@link AUDIO_INPUT_FORMATS}. Gehören direkt vor `-i`.
+ *
+ * @example
+ * ```ts
+ * const args = [...safeInputArgs(), '-i', 'music.mp3'];
+ * ```
+ */
+export function safeInputArgs(): string[] {
+  return ['-protocol_whitelist', 'file,pipe', '-format_whitelist', AUDIO_INPUT_FORMATS.join(',')];
+}
+
+/**
  * Dekodiert eine Audio- oder Videodatei zu Float32 je Kanal.
  *
  * @example
@@ -83,7 +103,7 @@ export async function decodeAudio(path: string, options: DecodeOptions = {}): Pr
     '-hide_banner', '-loglevel', 'error', '-nostdin',
     ...(options.start !== undefined && options.start > 0 ? ['-ss', options.start.toFixed(6)] : []),
     ...(options.duration !== undefined ? ['-t', Math.max(0, options.duration).toFixed(6)] : []),
-    '-i', path,
+    ...safeInputArgs(), '-i', path,
     '-map', '0:a:0', '-vn', '-sn',
     ...(filters.length > 0 ? ['-af', filters.join(',')] : []),
     '-ac', String(channels), '-ar', String(sampleRate),

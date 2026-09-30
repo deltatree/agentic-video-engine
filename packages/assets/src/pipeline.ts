@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path';
 import { ASSET_TYPES, OpenVideoError, contentHash, isRecord, sha256Hex, type AssetRecord, type AssetResolver, type Diagnostic, type RgbaImage } from '@agentic-video/core';
 import type { Cache } from '@agentic-video/cache';
-import { VideoFrameReader, locateFfmpeg, runProcess } from '@agentic-video/ffmpeg';
+import { VideoFrameReader, locateFfmpeg, probeMedia, runProcess } from '@agentic-video/ffmpeg';
 import { detectFormat, sniffFormat, type DetectedFormat } from './detect.js';
 import { fetchAsset, type FetchOptions } from './fetcher.js';
 import { assertFfmpegInput, inspectAsset, type AssetMetadata } from './inspect.js';
@@ -131,6 +131,17 @@ async function normalizedPath(path: string, hash: string, detected: DetectedForm
   if (options.stats !== undefined) options.stats.normalized++;
   await tier.put(key, new Uint8Array(await readFile(outFile)));
   return outFile;
+}
+
+/**
+ * Animierte Bilder bekommen Dauer und Bildrate aus dem normalisierten Video, damit `image`-Nodes
+ * sie frame-genau und in einer Schleife abspielen können (Story 17.4).
+ */
+async function withAnimationTiming(meta: AssetMetadata, detected: DetectedFormat, normalized: string): Promise<AssetMetadata> {
+  if (detected.type !== 'image' || meta.animated !== true || meta.duration !== undefined) return meta;
+  const info = await probeMedia(normalized);
+  const fps = info.video?.fps?.value;
+  return { ...meta, ...(info.duration !== undefined ? { duration: info.duration } : {}), ...(fps !== undefined ? { frameRate: fps } : {}) };
 }
 
 /** Eingabe für {@link importAsset}. */
@@ -343,8 +354,9 @@ export async function resolveProjectAssets(projectDir: string, project: Readonly
       }
       const declaredType = ASSET_TYPES.find((t) => t === a['type']) ?? 'data';
       const detected: DetectedFormat = detectFormat(src, bytes) ?? { type: declaredType, format: extname(src).slice(1), mimeType: 'application/octet-stream' };
-      const meta = await cachedMetadata(path, bytes, hash, detected, options);
-      const normalized = await normalizedPath(path, hash, detected, meta, options, workDir);
+      const rawMeta = await cachedMetadata(path, bytes, hash, detected, options);
+      const normalized = await normalizedPath(path, hash, detected, rawMeta, options, workDir);
+      const meta = await withAnimationTiming(rawMeta, detected, normalized);
       if (normalized !== path || sniffFormat(src, bytes) !== undefined) ffmpegSafe.add(id);
       const license = isRecord(a['license']) ? Object.fromEntries(Object.entries(a['license']).map(([k, v]) => [k, String(v)])) : undefined;
       records.set(id, {

@@ -119,6 +119,28 @@ export function missingError(provider: string, problem: string, hints: readonly 
   return new OpenVideoError({ code: 'OV_SPEECH_MISSING', errorClass: 'SpeechError', problem, details: { provider }, suggestions: hints });
 }
 
+/** Variablen, die Sprach-Programme erben (N1). Tokens und S3-Schlüssel (`OPENVIDEO_*`, `AWS_*`) bleiben draußen. */
+const TOOL_ENV_NAMES: readonly string[] = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'LD_LIBRARY_PATH', 'PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV', 'SYSTEMROOT', 'WINDIR'];
+/** Präfixe für Einstellungen der Programme selbst (espeak-ng, Piper, whisper.cpp, OpenMP, CUDA). */
+const TOOL_ENV_PREFIXES: readonly string[] = ['ESPEAK_', 'PIPER_', 'WHISPER_', 'GGML_', 'OMP_', 'CUDA_', 'NVIDIA_'];
+
+/**
+ * Minimale Umgebung für Piper, whisper.cpp, espeak-ng und eigene Sprach-Programme (N1, Story 16.5).
+ *
+ * @example
+ * ```ts
+ * toolEnv({ PATH: '/usr/bin', OPENVIDEO_WORKER_TOKEN: 'secret' }); // { PATH: '/usr/bin' }
+ * ```
+ */
+export function toolEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (TOOL_ENV_NAMES.includes(name) || TOOL_ENV_PREFIXES.some((p) => name.startsWith(p))) out[name] = value;
+  }
+  return out;
+}
+
 /**
  * Startet ein Programm, sammelt stdout/stderr und bricht nach `timeoutMs` ab.
  * Fehler (Start, Exit-Code ≠ 0, Timeout) werden zu {@link OpenVideoError} mit stderr-Auszug
@@ -131,7 +153,7 @@ export function missingError(provider: string, problem: string, hints: readonly 
  */
 export function runTool(binary: string, args: readonly string[], options: RunToolOptions): Promise<ToolResult> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const child = spawn(binary, args, { stdio: ['pipe', 'pipe', 'pipe'], env: toolEnv(process.env) });
     let stdout = '';
     let stderr = '';
     let settled = false;

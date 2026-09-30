@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,12 +15,16 @@ import {
   createWhisperCppProvider,
   estimateWords,
   locateBinary,
+  normalizeWav,
+  normalizeWavArgs,
   parseTranscriptJson,
   parseWhisperJson,
   registerSpeechProviders,
   runTool,
   secondsTime,
+  SPEECH_INPUT_FORMATS,
   synthesizeVoices,
+  toolEnv,
   transcribe,
   wavInfo,
 } from '@agentic-video/speech';
@@ -103,6 +108,36 @@ describe('Hilfsfunktionen', () => {
     expect((slow as OpenVideoError).diagnostic.code).toBe('OV_SPEECH_TIMEOUT');
     const missing = await runTool('/nope/tool', [], { provider: 'x', timeoutMs: 1000, hints: [] }).catch((e: unknown) => e);
     expect((missing as OpenVideoError).diagnostic.code).toBe('OV_SPEECH_MISSING');
+  });
+
+  it('runTool startet Programme mit minimaler Umgebung ohne Geheimnisse (Story 16.5, N1)', async () => {
+    process.env['OPENVIDEO_TEST_SECRET'] = 'must-not-leak';
+    process.env['ESPEAK_DATA_PATH'] = '/opt/espeak-data';
+    try {
+      const { stdout } = await runTool(node, ['-e', 'process.stdout.write(JSON.stringify(process.env))'], { provider: 'x', timeoutMs: 10_000, hints: [] });
+      const seen: unknown = JSON.parse(stdout);
+      expect(seen).toMatchObject({ PATH: process.env['PATH'], ESPEAK_DATA_PATH: '/opt/espeak-data' });
+      expect(Object.keys(seen as Record<string, unknown>)).not.toContain('OPENVIDEO_TEST_SECRET');
+    } finally {
+      delete process.env['OPENVIDEO_TEST_SECRET'];
+      delete process.env['ESPEAK_DATA_PATH'];
+    }
+    expect(toolEnv({ PATH: '/bin', AWS_SECRET_ACCESS_KEY: 'k', OPENVIDEO_S3_SECRET_ACCESS_KEY: 'k', OMP_NUM_THREADS: '2' })).toEqual({ PATH: '/bin', OMP_NUM_THREADS: '2' });
+  });
+
+  it('normalizeWav liest nur lokale Dateien in erlaubten Formaten (Story 16.5, M3)', async () => {
+    const args = normalizeWavArgs('in.wav', 'out.wav', 48000);
+    expect(args.slice(args.indexOf('-protocol_whitelist'), args.indexOf('-i'))).toEqual(['-protocol_whitelist', 'file,pipe', '-format_whitelist', SPEECH_INPUT_FORMATS.join(',')]);
+    expect(SPEECH_INPUT_FORMATS).not.toContain('concat');
+  });
+
+  it.skipIf(!ffmpegOk)('normalizeWav lehnt eine concat-Liste ab (braucht FFmpeg)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ov-speech-wl-'));
+    execFileSync(locateFfmpeg().ffmpeg, ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.5', join(dir, 'real.wav')]);
+    writeFileSync(join(dir, 'list.wav'), "ffconcat version 1.0\nfile 'real.wav'\n");
+    await expect(normalizeWav(join(dir, 'list.wav'), join(dir, 'out.wav'), 16000)).rejects.toBeInstanceOf(OpenVideoError);
+    await normalizeWav(join(dir, 'real.wav'), join(dir, 'ok.wav'), 16000);
+    expect(existsSync(join(dir, 'ok.wav'))).toBe(true);
   });
 });
 

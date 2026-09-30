@@ -1,0 +1,32 @@
+# Dependabot (Story 16.6): hält gepinnte Actions (Commit-SHA mit Tag-Kommentar), npm-Abhängigkeiten
+# und die per Digest gepinnten Basis-Images aktuell. Jede Änderung läuft durch die CI.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: deps
+  - package-ecosystem: docker
+    directory: /deploy/docker
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: deps

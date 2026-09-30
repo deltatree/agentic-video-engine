@@ -17,7 +17,7 @@ Frame 471 ist bitgleich, egal ob Frame 470 vorher gerendert wurde.
 
 | Bereich | Umfang |
 |---|---|
-| Beschreibung | Composition IR (JSON Schema), TSX-SDK, 30 Node-Typen, Komponenten, 15 Templates |
+| Beschreibung | Composition IR (JSON Schema), TSX-SDK, 31 Node-Typen, Komponenten, 15 Templates |
 | Animation | Keyframes, Springs, Expressions, Motion Paths, Text-Animation, Übergänge |
 | 2D | Skia/CanvasKit, PixiJS, SVG, Lottie, Datenvisualisierung |
 | 3D | Three.js (WebGL2/WebGPU), glTF, Licht, Kamera, Partikel; Blender Cycles und Eevee |
@@ -25,7 +25,7 @@ Frame 471 ist bitgleich, egal ob Frame 470 vorher gerendert wurde.
 | Bild | eigener Compositor: 17 Blend Modes, Masken, Effekte, Color Grading, Farbräume |
 | Ton | Mix und Mastering, Voiceover (Piper, espeak-ng), Untertitel mit Wort-Timing (whisper.cpp) |
 | Ausgabe | MP4, WebM, MOV/ProRes, GIF, Bildfolgen, Alpha; Render-Manifest mit Frame-Hashes |
-| Agents | HTTP-API, MCP-Server, CLI – dieselben 24 Operationen, strukturierte Fehler mit Vorschlägen |
+| Agents | HTTP-API, MCP-Server, CLI – dieselben 30 Operationen, typisierte Patches, Selbstbeschreibung, strukturierte Fehler mit Vorschlägen |
 | Skalierung | Frame-Cache nach Inhalts-Hash, Prozess-, Docker- und Kubernetes-Worker, S3-Cache |
 | Studio | visuelle Bearbeitung im Browser; jede Änderung ist ein semantischer Patch |
 
@@ -45,9 +45,9 @@ Mehr steht in [Erste Schritte](docs/guide/getting-started.md).
 
 ## Für Coding Agents
 
-1. Starte die Agent API: `openvideo serve` oder den MCP-Server: `openvideo mcp`.
-2. Lies [docs/ai/AGENTS.md](docs/ai/AGENTS.md) und [llms.txt](llms.txt).
-3. Die Fähigkeiten stehen maschinenlesbar in [docs/ai/capabilities.json](docs/ai/capabilities.json).
+1. Starte die Agent API: `openvideo serve` oder den MCP-Server: `openvideo mcp --project ./hello`. Ohne Server ruft `openvideo op <name> --input '<json>'` jede Operation auf.
+2. Lies [docs/ai/AGENTS.md](docs/ai/AGENTS.md) und [llms.txt](llms.txt) (per MCP auch als Resource `openvideo://agents.md`).
+3. Die Fähigkeiten stehen maschinenlesbar in [docs/ai/capabilities.json](docs/ai/capabilities.json) und kommen live über `capabilities.get` und `schema.get`.
 
 Ein Agent ändert ein Video mit Patches, nicht mit Textersetzung:
 

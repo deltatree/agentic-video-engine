@@ -19,3 +19,4 @@
 | 0015 | [TypeScript 6.0 statt 7.0](0015-typescript-60-statt-70.md) |
 | 0016 | [Paketname @agentic-video, CLI openvideo](0016-paketname-@agentic-video-cli-openvideo.md) |
 | 0017 | [Eigener Schema-Interpreter für Fehlermeldungen](0017-eigener-schema-interpreter-fuer-fehlermeldungen.md) |
+| 0024 | [Der Compositor wendet Eigenschaften über Backend-Grenzen an](0024-compositor-wendet-grenzueberschreitende-eigenschaften-an.md) |

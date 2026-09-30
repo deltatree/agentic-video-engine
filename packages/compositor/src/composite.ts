@@ -9,9 +9,12 @@ import {
   BLEND_MODES,
   getString,
   getTransform,
+  IDENTITY,
   invert,
   isRecord,
+  localBox,
   localMatrix,
+  revealShape,
   multiply,
   OpenVideoError,
   parseColor,
@@ -19,7 +22,10 @@ import {
   type BlendMode,
   type EffectDefinition,
   type EvaluatedNode,
+  type ColorSpace,
   type Matrix2D,
+  type Rect,
+  type Reveal,
   type RgbaImage,
 } from '@agentic-video/core';
 import { blendPixel, separableChannel } from './blend.js';
@@ -34,14 +40,38 @@ export interface CompositorMask {
   readonly invert: boolean;
 }
 
+/** Aufdeck-Clip (Wipe, Iris) mit der lokalen Box der Node in Composition-Einheiten. */
+export interface CompositorReveal {
+  readonly reveal: Reveal;
+  readonly box: Rect;
+}
+
 /**
  * Knoten des Compositor-Baums. `image` ist ein fertig gerenderter Layer in Ausgabegröße.
- * `group` komponiert seine Kinder und wendet Effekte, Crop, Maske, Transform, Opacity und
- * Blend Mode der Node an.
+ *
+ * - `group` komponiert seine Kinder und wendet Farbraum, Effekte, Crop, Clip, Maske, Reveal,
+ *   Transform, Opacity und Blend Mode der Node an. Maske und Reveal liegen im lokalen Raum der Gruppe.
+ * - `isolate` komponiert seine Kinder (die Node, vom Backend schon transformiert und mit Opacity)
+ *   und wendet nur Reveal, Maske und Blend Mode an. `matrix` bildet lokale Pixel (lokale
+ *   Koordinaten × `scale`) auf Ausgabepixel ab; damit folgen Maske und Reveal der Node.
  */
 export type CompositorNode =
   | { readonly kind: 'image'; readonly image: RgbaImage }
-  | { readonly kind: 'group'; readonly node: EvaluatedNode; readonly children: readonly CompositorNode[]; readonly mask?: CompositorMask };
+  | {
+      readonly kind: 'group';
+      readonly node: EvaluatedNode;
+      readonly children: readonly CompositorNode[];
+      readonly mask?: CompositorMask;
+      readonly reveal?: CompositorReveal;
+    }
+  | {
+      readonly kind: 'isolate';
+      readonly node: EvaluatedNode;
+      readonly children: readonly CompositorNode[];
+      readonly matrix: Matrix2D;
+      readonly mask?: CompositorMask;
+      readonly reveal?: CompositorReveal;
+    };
 
 /** Eingabe für {@link compositeFrame}. */
 export interface CompositeInput {
@@ -55,8 +85,8 @@ export interface CompositeInput {
   readonly background: string;
   /** Raum, in dem gemischt wird. */
   readonly workingSpace: 'srgb' | 'linear' | 'rec709';
-  /** Transferfunktion der Ausgabe. Standard `srgb`. */
-  readonly outputSpace?: 'srgb' | 'rec709';
+  /** Transferfunktion der Ausgabe. Standard `srgb`; `linear` schreibt lineares Licht in 8 Bit. */
+  readonly outputSpace?: ColorSpace;
   /** Layer von unten nach oben. */
   readonly layers: readonly CompositorNode[];
   /** Composition-Frame (für `grain`). */
@@ -196,23 +226,89 @@ function applyCrop(image: FloatImage, crop: Readonly<Record<string, unknown>>, s
   }
 }
 
+/** Maskenwert eines Pixels (0..1) aus vormultiplizierten, sRGB-kodierten Werten 0..255. */
+function maskValue(mode: CompositorMask['mode'], r: number, g: number, b: number, a: number, inverted: boolean): number {
+  const v = mode === 'alpha' ? a / 255 : (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return inverted ? 1 - v : v;
+}
+
 /**
  * Multipliziert das Bild mit der Maske. `alpha`: Maskenwert = Alpha;
  * `luminance`: Rec.-709-Luma der sRGB-kodierten, vormultiplizierten Werte (= Helligkeit × Alpha).
- * `invert` nutzt `1 − Maskenwert`.
+ * `invert` nutzt `1 − Maskenwert`. Mit `matrix` (lokale Pixel → Ausgabepixel) wird die Maske
+ * vorher mit der Node transformiert (bilinear, außerhalb transparent).
  */
-function applyMask(image: FloatImage, mask: CompositorMask): void {
-  const m = mask.image.data;
+function applyMask(image: FloatImage, mask: CompositorMask, matrix?: Matrix2D): void {
   const d = image.data;
+  if (matrix !== undefined && !isIdentity(matrix)) {
+    const raw = mask.image.data;
+    const f = createFloatImage(mask.image.width, mask.image.height);
+    for (let i = 0; i < raw.length; i++) f.data[i] = raw[i] ?? 0;
+    const m = transformImage(f, matrix).data;
+    for (let i = 0; i < d.length; i += 4) {
+      const v = maskValue(mask.mode, m[i] ?? 0, m[i + 1] ?? 0, m[i + 2] ?? 0, m[i + 3] ?? 0, mask.invert);
+      if (v === 1) continue;
+      for (let c = 0; c < 4; c++) d[i + c] = (d[i + c] ?? 0) * v;
+    }
+    return;
+  }
+  const m = mask.image.data;
   for (let i = 0; i < d.length; i += 4) {
-    let v = mask.mode === 'alpha' ? (m[i + 3] ?? 0) / 255 : (0.2126 * (m[i] ?? 0) + 0.7152 * (m[i + 1] ?? 0) + 0.0722 * (m[i + 2] ?? 0)) / 255;
-    if (mask.invert) v = 1 - v;
+    const v = maskValue(mask.mode, m[i] ?? 0, m[i + 1] ?? 0, m[i + 2] ?? 0, m[i + 3] ?? 0, mask.invert);
     if (v === 1) continue;
     d[i] = (d[i] ?? 0) * v;
     d[i + 1] = (d[i + 1] ?? 0) * v;
     d[i + 2] = (d[i + 2] ?? 0) * v;
     d[i + 3] = (d[i + 3] ?? 0) * v;
   }
+}
+
+/**
+ * Beschneidet das Bild auf den Aufdeck-Clip. Jede Pixelmitte wird über `matrix`⁻¹ und `1/scale`
+ * in lokale Koordinaten abgebildet; Kantenpixel werden mit 4 × 4 Stichproben geglättet
+ * (Rechteck und Ellipse sind konvex: liegen alle vier Ecken innen, ist das Pixel ganz innen).
+ */
+function applyReveal(image: FloatImage, reveal: CompositorReveal, matrix: Matrix2D, scale: number): void {
+  const inv = invert(matrix);
+  const d = image.data;
+  if (inv === undefined) {
+    d.fill(0);
+    return;
+  }
+  const r = revealShape(reveal.reveal, reveal.box);
+  const cx = r.x + r.width / 2;
+  const cy = r.y + r.height / 2;
+  const rx = r.width / 2;
+  const ry = r.height / 2;
+  const inside = (px: number, py: number): boolean => {
+    const lx = (inv[0] * px + inv[2] * py + inv[4]) / scale;
+    const ly = (inv[1] * px + inv[3] * py + inv[5]) / scale;
+    if (r.shape === 'rect') return lx >= r.x && lx <= r.x + r.width && ly >= r.y && ly <= r.y + r.height;
+    if (!(rx > 0 && ry > 0)) return false;
+    const nx = (lx - cx) / rx;
+    const ny = (ly - cy) / ry;
+    return nx * nx + ny * ny <= 1;
+  };
+  const { width: w, height: h } = image;
+  const n = 4;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const o = (y * w + x) * 4;
+      if ((d[o + 3] ?? 0) === 0) continue;
+      const corners = (inside(x, y) ? 1 : 0) + (inside(x + 1, y) ? 1 : 0) + (inside(x, y + 1) ? 1 : 0) + (inside(x + 1, y + 1) ? 1 : 0);
+      if (corners === 4) continue;
+      let hits = 0;
+      for (let sy = 0; sy < n; sy++) for (let sx = 0; sx < n; sx++) if (inside(x + (sx + 0.5) / n, y + (sy + 0.5) / n)) hits++;
+      const v = hits / (n * n);
+      for (let c = 0; c < 4; c++) d[o + c] = (d[o + c] ?? 0) * v;
+    }
+  }
+}
+
+/** Liest `colorSpace` einer Node (nur gültige Werte). */
+function colorSpaceOf(node: EvaluatedNode): ColorSpace | undefined {
+  const v = node.props['colorSpace'];
+  return v === 'srgb' || v === 'linear' || v === 'rec709' ? v : undefined;
 }
 
 function isIdentity(m: Matrix2D): boolean {
@@ -263,9 +359,21 @@ function transformImage(image: FloatImage, m: Matrix2D): FloatImage {
   return out;
 }
 
-function renderGroup(node: EvaluatedNode, children: readonly CompositorNode[], mask: CompositorMask | undefined, ctx: Ctx): FloatImage {
-  let off = createFloatImage(ctx.width, ctx.height);
+function composeChildren(children: readonly CompositorNode[], ctx: Ctx): FloatImage {
+  const off = createFloatImage(ctx.width, ctx.height);
   for (const child of children) compositeLayer(off, child, ctx);
+  return off;
+}
+
+function renderGroup(node: EvaluatedNode, children: readonly CompositorNode[], mask: CompositorMask | undefined, reveal: CompositorReveal | undefined, ctx: Ctx): FloatImage {
+  let off = composeChildren(children, ctx);
+  // Farbraum des Layers: Die Kinder liefern Werte mit der Kodierung `colorSpace`; sie werden
+  // statt als sRGB mit dieser Kodierung gelesen und in den Arbeitsraum überführt.
+  const layerSpace = node.type === 'layer' ? colorSpaceOf(node) : undefined;
+  if (layerSpace !== undefined && layerSpace !== 'srgb') {
+    convertFloatInPlace(off, ctx.space, 'srgb');
+    convertFloatInPlace(off, layerSpace, ctx.space);
+  }
   const effects = node.props['effects'];
   if (Array.isArray(effects) && effects.length > 0) {
     const list: readonly unknown[] = effects;
@@ -275,13 +383,28 @@ function renderGroup(node: EvaluatedNode, children: readonly CompositorNode[], m
   }
   const crop = node.props['crop'];
   if (isRecord(crop)) applyCrop(off, crop, ctx.scale);
+  if (node.props['clip'] === true) {
+    const box = localBox(node);
+    applyCrop(off, { x: box.x, y: box.y, width: box.width, height: box.height }, ctx.scale);
+  }
   if (mask !== undefined) {
     assertLayerSize(mask.image, ctx, `Mask of group "${node.id}"`);
     applyMask(off, mask);
   }
+  if (reveal !== undefined) applyReveal(off, reveal, IDENTITY, ctx.scale);
   const s = ctx.scale;
   const m = multiply(scaleMatrix(s, s), multiply(localMatrix(node), scaleMatrix(1 / s, 1 / s)));
   return isIdentity(m) ? off : transformImage(off, m);
+}
+
+function renderIsolated(layer: Extract<CompositorNode, { kind: 'isolate' }>, ctx: Ctx): FloatImage {
+  const off = composeChildren(layer.children, ctx);
+  if (layer.reveal !== undefined) applyReveal(off, layer.reveal, layer.matrix, ctx.scale);
+  if (layer.mask !== undefined) {
+    assertLayerSize(layer.mask.image, ctx, `Mask of node "${layer.node.id}"`);
+    applyMask(off, layer.mask, layer.matrix);
+  }
+  return off;
 }
 
 function compositeLayer(target: FloatImage, layer: CompositorNode, ctx: Ctx): void {
@@ -291,17 +414,24 @@ function compositeLayer(target: FloatImage, layer: CompositorNode, ctx: Ctx): vo
     return;
   }
   const mode = blendModeOf(layer.node);
+  if (layer.kind === 'isolate') {
+    // Opacity hat das Backend schon angewendet.
+    blendInto(target, renderIsolated(layer, ctx), mode, 1);
+    return;
+  }
   const opacity = getTransform(layer.node).opacity;
   if (opacity <= 0) return;
-  blendInto(target, renderGroup(layer.node, layer.children, layer.mask, ctx), mode, opacity);
+  blendInto(target, renderGroup(layer.node, layer.children, layer.mask, layer.reveal, ctx), mode, opacity);
 }
 
 /**
  * Komponiert alle Layer eines Frames zu einem Bild (8 Bit, vormultipliziert, kodiert mit
  * `outputSpace`).
  *
- * Reihenfolge je `group`: Kinder in einen Offscreen komponieren → `effects` → `crop` →
- * Maske → Transform (`localMatrix(node)`, mit `scale`) → `opacity` → `blendMode` auf das Ziel.
+ * Reihenfolge je `group`: Kinder in einen Offscreen komponieren → `colorSpace` (nur `layer`) →
+ * `effects` → `crop` → `clip` → Maske → Reveal → Transform (`localMatrix(node)`, mit `scale`) →
+ * `opacity` → `blendMode` auf das Ziel. Je `isolate`: Kinder komponieren → Reveal → Maske →
+ * `blendMode` auf das Ziel.
  *
  * @example
  * ```ts

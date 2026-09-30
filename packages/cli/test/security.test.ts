@@ -101,12 +101,22 @@ describe('A18: Cache-Pfad der lokalen Dienste', () => {
   });
 });
 
-describe('Skripte in HTML nur im Container oder mit --trusted', () => {
-  it('htmlScriptsAllowed', () => {
+describe('Skripte in HTML nur ausdrücklich (Story 16.1, H1)', () => {
+  it('htmlScriptsAllowed: --trusted oder OPENVIDEO_ALLOW_HTML_SCRIPTS=1, nie über das Container-Image', () => {
     expect(htmlScriptsAllowed('container', {})).toBe(false);
     expect(htmlScriptsAllowed('trusted', {})).toBe(true);
-    expect(htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-studio:1' })).toBe(true);
-    expect(htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: '' })).toBe(false);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-studio:1' })).toBe(false);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: '1' })).toBe(true);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: 'true' })).toBe(false);
+    expect(htmlScriptsAllowed('container', { OPENVIDEO_ALLOW_HTML_SCRIPTS: '0' })).toBe(false);
+  });
+
+  it('die Dienste im Image (OPENVIDEO_CONTAINER_IMAGE gesetzt) erlauben keine Skripte', async () => {
+    const made: FakeEnv[] = [];
+    const services = await createLocalServices({ workspaceDir: tmp(), createEnvironment: fakeFactory(made), env: { OPENVIDEO_CONTAINER_IMAGE: 'ghcr.io/x/openvideo-render-cpu:1' } });
+    await services.withEnvironment('/a', project(1), () => Promise.resolve());
+    expect(made[0]?.options.allowHtmlScripts).toBe(false);
+    await services.dispose();
   });
 });
 

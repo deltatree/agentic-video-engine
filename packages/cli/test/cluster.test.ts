@@ -45,7 +45,7 @@ describe('Betrieb im Cluster', () => {
   it('rendert über OPENVIDEO_COORDINATOR_URL mit Pull-Workern dieselben Frames wie lokal', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ov-cluster-'));
     const shared = new FileStore(join(dir, 'shared'));
-    const token = 'cluster-token';
+    const token = 'cluster-token-0123456789abcdef';
     const coordinator = await startCoordinator({ port: 0, host: '127.0.0.1', store: shared, journalDir: join(dir, 'journal'), token });
     const stop = new AbortController();
     const workers = ['w1', 'w2'].map((name) => runWorkerHttp({ coordinatorUrl: coordinator.url, token, store: shared, worker: name, signal: stop.signal, pollIntervalMs: 50, telemetry: quiet() }));
@@ -85,10 +85,10 @@ describe('Betrieb im Cluster', () => {
     const stopped = new Promise<void>((r) => {
       release = r;
     });
-    const running = runCli(['coordinator', '--port', '0', '--token', 't', '--json'], { stdout: (t) => (stdout += t), stderr: () => undefined, cwd: dir, env: { PATH: process.env['PATH'] }, stop: stopped });
+    const running = runCli(['coordinator', '--port', '0', '--token', 'coordinator-token-0123456789', '--json'], { stdout: (t) => (stdout += t), stderr: () => undefined, cwd: dir, env: { PATH: process.env['PATH'] }, stop: stopped });
     for (let i = 0; i < 200 && !stdout.includes('url'); i++) await new Promise((r) => setTimeout(r, 25));
     const { url } = JSON.parse(stdout) as { url: string };
-    const queue = await fetch(`${url}/v1/queue`, { headers: { authorization: 'Bearer t' } });
+    const queue = await fetch(`${url}/v1/queue`, { headers: { authorization: 'Bearer coordinator-token-0123456789' } });
     expect(queue.status).toBe(200);
     release();
     expect(await running).toBe(0);

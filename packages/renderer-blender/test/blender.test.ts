@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { evaluateScene, isOpenVideoError, type AssetRecord, type AssetResolver, type EvaluatedNode, type FontResolver, type RgbaImage } from '@agentic-video/core';
 import { decodePng, encodePng } from '@agentic-video/png';
 import {
+  blenderEnv,
   checkBlenderNode,
   createBlenderBackend,
   describeScene,
@@ -417,5 +418,22 @@ describe('Ohne Blender (Regression: Umgebung darf nicht scheitern)', () => {
   it('liefert leere Versionen statt eines Fehlers', () => {
     const backend = createBlenderBackend({ workDir: '/tmp/ov-no-blender', blenderPath: '/nicht/vorhanden/blender', env: { PATH: '/nicht/vorhanden', HOME: '/nicht/vorhanden' } });
     expect(backend.versions()).toEqual({});
+  });
+});
+
+describe('Minimale Umgebung für Blender (Story 16.5, N1)', () => {
+  it('reicht nur Laufzeit-, Grafik- und Blender-Variablen weiter, keine Tokens oder S3-Schlüssel', () => {
+    const env = blenderEnv({
+      PATH: '/usr/bin',
+      HOME: '/tmp',
+      BLENDER_USER_SCRIPTS: '/scripts',
+      CUDA_VISIBLE_DEVICES: '0',
+      __EGL_VENDOR_LIBRARY_FILENAMES: '/egl.json',
+      OPENVIDEO_WORKER_TOKEN: 'secret',
+      OPENVIDEO_S3_SECRET_ACCESS_KEY: 'secret',
+      AWS_SECRET_ACCESS_KEY: 'secret',
+      NPM_TOKEN: 'secret',
+    });
+    expect(env).toEqual({ PATH: '/usr/bin', HOME: '/tmp', BLENDER_USER_SCRIPTS: '/scripts', CUDA_VISIBLE_DEVICES: '0', __EGL_VENDOR_LIBRARY_FILENAMES: '/egl.json' });
   });
 });

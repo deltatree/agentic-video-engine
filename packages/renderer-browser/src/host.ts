@@ -25,11 +25,13 @@ import { startHostServer, type HostServer } from './server.js';
  * Deshalb löst `--host-resolver-rules` keinen Namen auf (auch kein DNS-Prefetch), der Proxy
  * zeigt auf einen toten Port (nur `127.0.0.1` geht direkt), und WebRTC darf kein UDP ohne
  * Proxy senden. Zusätzlich entfernt ein Init-Skript die WebRTC-Schnittstellen.
+ *
+ * `--enable-unsafe-swiftshader` und `--enable-unsafe-webgpu` stehen nicht hier, sondern in
+ * {@link CHROMIUM_GRAPHICS_ARGS}: Sie gelten nur, sobald ein WebGL-/WebGPU-Layer (`three`, `pixi`)
+ * gerendert wird (Story 16.1). HTML-Layer rastern mit und ohne sie pixelgleich.
  */
 export const CHROMIUM_ARGS: readonly string[] = [
   '--use-angle=swiftshader',
-  '--enable-unsafe-swiftshader',
-  '--enable-unsafe-webgpu',
   '--disable-lcd-text',
   '--force-color-profile=srgb',
   '--disable-gpu-rasterization',
@@ -55,6 +57,55 @@ export const CHROMIUM_ARGS: readonly string[] = [
   '--proxy-bypass-list=127.0.0.1',
   '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
 ];
+
+/**
+ * Zusätzliche Schalter für WebGL (SwiftShader) und WebGPU. Der Host startet Chromium erst mit
+ * ihnen neu, wenn der erste `three`- oder `pixi`-Layer kommt (Story 16.1).
+ */
+export const CHROMIUM_GRAPHICS_ARGS: readonly string[] = ['--enable-unsafe-swiftshader', '--enable-unsafe-webgpu'];
+
+/**
+ * Umgebungsvariablen, die Chromium vom Elternprozess erbt (N1). Alles andere, vor allem
+ * Tokens und S3-Schlüssel (`OPENVIDEO_*`, `AWS_*`), bleibt draußen.
+ */
+const CHILD_ENV_NAMES: readonly string[] = ['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ', 'LD_LIBRARY_PATH', 'FONTCONFIG_FILE', 'FONTCONFIG_PATH', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'XDG_RUNTIME_DIR', 'SYSTEMROOT', 'WINDIR'];
+
+/**
+ * Minimale Umgebung für den Chromium-Prozess (N1): nur die Variablen aus einer festen Liste.
+ *
+ * @example
+ * ```ts
+ * chromiumEnv({ PATH: '/usr/bin', OPENVIDEO_WORKER_TOKEN: 'secret' }); // { PATH: '/usr/bin' }
+ * ```
+ */
+export function chromiumEnv(source: Readonly<Record<string, string | undefined>>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const name of CHILD_ENV_NAMES) {
+    const value = source[name];
+    if (value !== undefined) out[name] = value;
+  }
+  return out;
+}
+
+/**
+ * Prüft, ob Chromium mit der Sandbox des Betriebssystems startet (z. B. nicht als root ohne
+ * User Namespaces). Ohne sie verweigert der Host HTML-Skripte (Story 16.1).
+ *
+ * @example
+ * ```ts
+ * if (!(await probeOsSandbox())) console.warn('HTML scripts are unavailable here.');
+ * ```
+ */
+export async function probeOsSandbox(executablePath?: string): Promise<boolean> {
+  try {
+    const browser = await chromium.launch({ executablePath: resolveExecutable(executablePath), headless: true, chromiumSandbox: true, args: [...CHROMIUM_ARGS], env: chromiumEnv(process.env), ignoreDefaultArgs: [...CHROMIUM_GRAPHICS_ARGS] });
+    await browser.close();
+    return true;
+  } catch {
+    // Ein Startfehler mit Sandbox heißt hier: keine OS-Sandbox verfügbar.
+    return false;
+  }
+}
 
 /** WebRTC-Schnittstellen, die das Init-Skript aus jedem Dokument entfernt (D3). */
 const WEBRTC_GLOBALS: readonly string[] = [
@@ -95,7 +146,8 @@ export interface BrowserHostOptions {
   /**
    * Skripte in HTML-Layern ausführen (ADR 0008). Standard `false`: Layer-Dokumente laufen
    * in einem iframe ohne `allow-scripts` und mit CSP `script-src 'none'`.
-   * Nur im Container oder mit `--trusted` auf `true` setzen.
+   * Nur ausdrücklich (`--trusted`, `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) auf `true` setzen. Startet
+   * Chromium dann nicht mit der OS-Sandbox, bricht der Host mit `OV_BROWSER_NO_OS_SANDBOX` ab.
    */
   readonly allowHtmlScripts?: boolean;
   /** Höchstzahl offener Seiten; die am längsten ungenutzte Größe wird geschlossen (LRU). Standard 4. */
@@ -241,26 +293,36 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
   const diagnostics: Diagnostic[] = [];
   const closeFailures = { count: 0 };
   let osSandbox = true;
+  /** Läuft Chromium mit den Schaltern für WebGL/WebGPU ({@link CHROMIUM_GRAPHICS_ARGS})? */
+  let graphics = false;
   let blocked = 0;
   let closed = false;
   let current: Promise<Session> | undefined;
   let live: Session | undefined;
 
   const launchBrowser = async (): Promise<Browser> => {
-    const launch = (sandbox: boolean) => chromium.launch({ executablePath, headless: true, chromiumSandbox: sandbox, args: [...CHROMIUM_ARGS] });
+    const args = [...CHROMIUM_ARGS, ...(graphics ? CHROMIUM_GRAPHICS_ARGS : [])];
+    // Playwright setzt `--enable-unsafe-swiftshader` selbst; ohne Grafik-Layer wird es abgewählt.
+    const launch = (sandbox: boolean) =>
+      chromium.launch({ executablePath, headless: true, chromiumSandbox: sandbox, args, env: chromiumEnv(process.env), ...(graphics ? {} : { ignoreDefaultArgs: [...CHROMIUM_GRAPHICS_ARGS] }) });
     if (!osSandbox) return launch(false);
     try {
       return await launch(true);
     } catch (error) {
-      // Ohne Namespaces (z. B. in manchen Containern) startet die OS-Sandbox nicht.
-      // Der Container ist dann die Grenze (ADR 0008); der Host meldet das als Diagnose.
+      const reason = error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error);
+      const suggestions = ['Allow unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1, kernel.apparmor_restrict_unprivileged_userns=0) and do not run Chromium as root.'];
+      if (allowScripts) {
+        // Skripte nie ohne OS-Sandbox (Story 16.1, H1): lieber abbrechen als still ungeschützt rendern.
+        throw hostError('OV_BROWSER_NO_OS_SANDBOX', `HTML scripts are enabled, but Chromium could not start with the OS sandbox: ${reason}`, [...suggestions, 'Or render without HTML scripts (drop --trusted / OPENVIDEO_ALLOW_HTML_SCRIPTS).'], error);
+      }
+      // Ohne Skripte ist die Seite statisch (CSP script-src 'none'); die Sandbox fehlt dann nur als zweite Wand.
       osSandbox = false;
       diagnostics.push({
         code: 'OV_BROWSER_NO_OS_SANDBOX',
         severity: 'warning',
         errorClass: 'BrowserRendererError',
-        problem: `Chromium could not start with the OS sandbox and runs without it: ${error instanceof Error ? error.message.split('\n')[0] ?? '' : String(error)}`,
-        suggestions: ['Allow unprivileged user namespaces (sysctl kernel.unprivileged_userns_clone=1) or run the render in the container sandbox (ADR 0008).'],
+        problem: `Chromium could not start with the OS sandbox and runs without it (HTML scripts stay disabled): ${reason}`,
+        suggestions,
       });
       return launch(false);
     }
@@ -304,6 +366,7 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       return session;
     } catch (error) {
       await browser?.close();
+      if (error instanceof OpenVideoError) throw error;
       throw hostError('OV_BROWSER_LAUNCH', `Chromium could not start from "${executablePath}".`, ['Check that Chromium matches playwright-core 1.63 (`npx playwright install chromium`).', 'Check system libraries with `npx playwright install-deps chromium`.'], error);
     }
   };
@@ -320,6 +383,26 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       });
     }
     return current;
+  };
+
+  /**
+   * Startet Chromium einmalig mit {@link CHROMIUM_GRAPHICS_ARGS} neu, sobald ein WebGL-/WebGPU-Layer
+   * kommt. Laufende Aufträge der alten Seiten laufen vorher zu Ende.
+   */
+  const ensureGraphics = async (): Promise<void> => {
+    if (graphics) return;
+    graphics = true;
+    const old = current;
+    current = undefined;
+    const s = await old?.then(
+      (value) => value,
+      () => undefined,
+    );
+    if (s === undefined) return;
+    await Promise.all([...s.pages.values()].map((p) => p.then((e) => e.queue, () => undefined)));
+    s.alive = false;
+    s.pages.clear();
+    await s.browser.close();
   };
 
   const openPage = async (s: Session, width: number, height: number): Promise<PageEntry> => {
@@ -405,6 +488,8 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
       );
       return { width, height, data: premultiply(await upload.bytes) };
     } catch (error) {
+      // Niemand wartet mehr auf den Upload; seine Ablehnung ist erwartet und darf nicht unbehandelt bleiben.
+      upload.bytes.catch(() => undefined);
       upload.cancel(error);
       throw error;
     }
@@ -425,6 +510,7 @@ export async function createBrowserHost(options: BrowserHostOptions): Promise<Br
     async render(kind, payload) {
       if (closed) throw hostError('OV_BROWSER_CLOSED', 'The render host is closed.', ['Create a new host with `createBrowserHost`.']);
       checkSize(payload);
+      if (kind !== 'html') await ensureGraphics();
       const slot = await pageFor(payload.width, payload.height);
       const entry = await slot.entry;
       const run = () => withTimeout(renderOn(entry, kind, payload), timeoutMs, `Rendering the ${kind} layer`);

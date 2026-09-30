@@ -58,7 +58,10 @@ export interface EvaluatedScene {
   readonly seed: number;
   readonly durationFrames: number;
   readonly background: string;
+  /** Arbeitsfarbraum des Compositors: `composition.colorSpace`, sonst `settings.workingColorSpace`, sonst `srgb`. */
   readonly colorSpace: ColorSpace;
+  /** Kodierung der Ausgabe-Pixel aus `settings.outputColorSpace`; fehlt er, gilt `srgb`. */
+  readonly outputColorSpace?: ColorSpace;
   readonly safeArea: { readonly action: number; readonly title: number };
   readonly nodes: readonly EvaluatedNode[];
   readonly diagnostics: readonly Diagnostic[];

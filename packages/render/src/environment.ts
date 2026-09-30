@@ -5,9 +5,22 @@
  * verdrahtet die echten Pakete (Skia, Browser, Blender, Compositor, FFmpeg, Audio, Fonts, Assets).
  * Tests können einzelne Teile ersetzen.
  */
-import type { AssetResolver, DebugOptions, EffectDefinition, EvaluatedNode, EvaluatedScene, FontResolver, NodeBounds, Registry, RgbaImage, TextMeasurer } from '@agentic-video/core';
+import type { AssetResolver, ColorSpace, DebugOptions, EffectDefinition, EvaluatedNode, EvaluatedScene, FontResolver, Matrix2D, NodeBounds, Rect, Registry, Reveal, RgbaImage, TextMeasurer } from '@agentic-video/core';
 import type { Cache } from '@agentic-video/cache';
 import type { Telemetry } from '@agentic-video/telemetry';
+
+/** Maske eines Compositor-Knotens (Vertrag des Pakets `compositor`). */
+export interface CompositorMaskLike {
+  readonly image: RgbaImage;
+  readonly mode: 'alpha' | 'luminance';
+  readonly invert: boolean;
+}
+
+/** Aufdeck-Clip mit lokaler Box (Vertrag des Pakets `compositor`). */
+export interface CompositorRevealLike {
+  readonly reveal: Reveal;
+  readonly box: Rect;
+}
 
 /** Knoten des Compositor-Baums (Vertrag des Pakets `compositor`). */
 export type CompositorNode =
@@ -16,7 +29,17 @@ export type CompositorNode =
       readonly kind: 'group';
       readonly node: EvaluatedNode;
       readonly children: CompositorNode[];
-      readonly mask?: { readonly image: RgbaImage; readonly mode: 'alpha' | 'luminance'; readonly invert: boolean };
+      readonly mask?: CompositorMaskLike;
+      readonly reveal?: CompositorRevealLike;
+    }
+  | {
+      readonly kind: 'isolate';
+      readonly node: EvaluatedNode;
+      readonly children: CompositorNode[];
+      /** Lokale Pixel (lokale Koordinaten × scale) → Ausgabepixel. */
+      readonly matrix: Matrix2D;
+      readonly mask?: CompositorMaskLike;
+      readonly reveal?: CompositorRevealLike;
     };
 
 /** Eine Farbnachschlagetabelle (Vertrag des Pakets `compositor`). */
@@ -30,8 +53,8 @@ export interface CompositeRequest {
   readonly height: number;
   readonly scale: number;
   readonly background: string;
-  readonly workingSpace: 'srgb' | 'linear' | 'rec709';
-  readonly outputSpace?: 'srgb' | 'rec709';
+  readonly workingSpace: ColorSpace;
+  readonly outputSpace?: ColorSpace;
   readonly layers: CompositorNode[];
   readonly frame: number;
   readonly seed: number;

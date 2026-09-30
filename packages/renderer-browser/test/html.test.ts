@@ -3,7 +3,10 @@ import type { EvaluatedNode, RgbaImage } from '@agentic-video/core';
 import { encodePng } from '@agentic-video/png';
 import { createBrowserHost, type BrowserHost } from '../src/host.js';
 import type { BrowserLayerPayload } from '../src/protocol.js';
-import { buildRuntime, expectGolden, hashImage, memoryAssets, node, pixel, testFonts, TEST_FONT } from './helpers.js';
+import { buildRuntime, expectGolden, hashImage, memoryAssets, node, osSandboxAvailable, pixel, testFonts, TEST_FONT } from './helpers.js';
+
+/** HTML-Skripte laufen nur mit OS-Sandbox (Story 16.1); ohne sie werden Skript-Tests übersprungen. */
+const sandbox = await osSandboxAvailable();
 
 const W = 320;
 const H = 180;
@@ -27,7 +30,7 @@ async function render(nodes: EvaluatedNode[], frame: number, extra: Partial<Brow
 beforeAll(async () => {
   buildRuntime();
   const blue = new Uint8Array(4 * 4 * 4).map((_, i) => (i % 4 === 2 || i % 4 === 3 ? 255 : 0));
-  host = await createBrowserHost({ assets: memoryAssets({ dot: { path: 'store/dot.png', bytes: encodePng({ width: 4, height: 4, data: blue }) } }), fonts: testFonts(), width: W, height: H, allowHtmlScripts: true });
+  host = await createBrowserHost({ assets: memoryAssets({ dot: { path: 'store/dot.png', bytes: encodePng({ width: 4, height: 4, data: blue }) } }), fonts: testFonts(), width: W, height: H, allowHtmlScripts: sandbox });
 });
 
 afterAll(async () => {
@@ -101,7 +104,7 @@ describe('Golden: HTML-Layer', () => {
     expectGolden('svg', await render([n], 0));
   });
 
-  it('Canvas-2D-Skript mit window.openvideo', async () => {
+  it.skipIf(!sandbox)('Canvas-2D-Skript mit window.openvideo (braucht OS-Sandbox für Skripte)', async () => {
     const n = html('canvas2d', 12, {
       html: `<canvas id="c" width="320" height="180"></canvas><script>
         const ctx = c.getContext('2d');
@@ -117,7 +120,7 @@ describe('Golden: HTML-Layer', () => {
     expectGolden('canvas2d', await render([n], 12));
   });
 
-  it('WebGL-Skript', async () => {
+  it.skipIf(!sandbox)('WebGL-Skript (braucht OS-Sandbox für Skripte)', async () => {
     const n = html('webgl', 0, {
       html: `<canvas id="c" width="320" height="180"></canvas><script>
         const gl = c.getContext('webgl2', { premultipliedAlpha: true, alpha: true });
@@ -137,7 +140,7 @@ describe('Golden: HTML-Layer', () => {
     expectGolden('webgl', await render([n], 0));
   });
 
-  it('Web Component mit Shadow DOM', async () => {
+  it.skipIf(!sandbox)('Web Component mit Shadow DOM (braucht OS-Sandbox für Skripte)', async () => {
     const n = html('component', 0, {
       html: `<ov-badge label="Web Component"></ov-badge><script>
         customElements.define('ov-badge', class extends HTMLElement {
@@ -163,7 +166,7 @@ describe('Golden: HTML-Layer', () => {
 });
 
 describe('Semantik', () => {
-  it('Uhr: Frame 30 zweimal gerendert → gleiches Bild', async () => {
+  it.skipIf(!sandbox)('Uhr: Frame 30 zweimal gerendert → gleiches Bild (braucht OS-Sandbox für Skripte)', async () => {
     const clock = (frame: number) => html('clock', frame, { html: `<div id=t style="${FONT}font-size:24px"></div><script>t.textContent=Date.now()</script>` });
     const first = await render([clock(30)], 30);
     await render([clock(5)], 5);
@@ -211,13 +214,13 @@ describe('Semantik', () => {
     expect(pixel(image, 102, 22)[3]).toBe(0);
   });
 
-  it('virtuelle Timer: setTimeout(1000) feuert erst bei Frame 30', async () => {
+  it.skipIf(!sandbox)('virtuelle Timer: setTimeout(1000) feuert erst bei Frame 30 (braucht OS-Sandbox für Skripte)', async () => {
     const timer = (frame: number) => html('timer', frame, { html: '<div id=b style="width:100%;height:100%"></div><script>setTimeout(() => { b.style.background = "#f00"; }, 1000)</script>' });
     expect(pixel(await render([timer(29)], 29), 5, 5)[3]).toBe(0);
     expect(pixel(await render([timer(30)], 30), 5, 5)).toEqual([255, 0, 0, 255]);
   });
 
-  it('onFrame und CSS-Variablen erhalten Frame, Zeit und Fortschritt', async () => {
+  it.skipIf(!sandbox)('onFrame und CSS-Variablen erhalten Frame, Zeit und Fortschritt (braucht OS-Sandbox für Skripte)', async () => {
     const bar = (frame: number) =>
       html('bar', frame, {
         html: '<div id=a style="height:20px;background:#00f"></div><div id=b></div><script>openvideo.onFrame(s => { a.style.width = (s.frame * 4) + "px"; })</script>',

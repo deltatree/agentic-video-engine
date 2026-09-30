@@ -2476,6 +2476,51 @@
         }
       ]
     },
+    "zIndex": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "$ref": "#/$defs/remap_2"
+        },
+        {
+          "$ref": "#/$defs/remap_4"
+        },
+        {
+          "type": "object",
+          "required": [
+            "$expr"
+          ],
+          "properties": {
+            "$expr": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Safe expression, e.g. \"sin(time * 2) * 40\"."
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "$ref": "#/$defs/remap_6"
+        },
+        {
+          "type": "object",
+          "required": [
+            "$ref"
+          ],
+          "properties": {
+            "$ref": {
+              "type": "string",
+              "pattern": "^theme\\.[A-Za-z]+\\.[A-Za-z0-9_.-]+$",
+              "description": "Theme token path, e.g. \"theme.colors.primary\"."
+            }
+          },
+          "additionalProperties": false
+        }
+      ],
+      "description": "Draw order among siblings (animatable). Higher values draw on top; equal values keep document order. Default 0."
+    },
     "radiusKeyframes_3": {
       "t": {
         "$ref": "#/$defs/t"
@@ -3377,6 +3422,28 @@
           "additionalProperties": false
         }
       ]
+    },
+    "between": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "cut"
+            }
+          },
+          "additionalProperties": false,
+          "description": "Hard cut: no overlap."
+        },
+        {
+          "$ref": "#/$defs/in"
+        }
+      ],
+      "description": "Transition between two consecutive children. The next child starts `duration` before the previous one ends."
     },
     "stops_2": {
       "type": "object",
@@ -5572,6 +5639,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -5721,6 +5791,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -6322,6 +6395,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -6401,6 +6477,165 @@
       "additionalProperties": false,
       "description": "Nested composition, evaluated at the remapped local time."
     },
+    "Node_sequence": {
+      "type": "object",
+      "required": [
+        "id",
+        "type"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]*(/[A-Za-z0-9_-]+)*$",
+          "description": "Stable identifier: letter first, then letters, digits, \"_\" or \"-\".",
+          "examples": [
+            "headline"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "comment": {
+          "type": "string"
+        },
+        "visible": {
+          "$ref": "#/$defs/visible"
+        },
+        "locked": {
+          "type": "boolean"
+        },
+        "timing": {
+          "$ref": "#/$defs/timing"
+        },
+        "transition": {
+          "$ref": "#/$defs/transition"
+        },
+        "renderer": {
+          "type": "string",
+          "description": "Explicit backend id, e.g. \"skia\" or \"pixi\"."
+        },
+        "meta": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        },
+        "type": {
+          "type": "string",
+          "const": "sequence"
+        },
+        "x": {
+          "$ref": "#/$defs/x"
+        },
+        "y": {
+          "$ref": "#/$defs/y"
+        },
+        "rotation": {
+          "$ref": "#/$defs/rotation"
+        },
+        "scale": {
+          "$ref": "#/$defs/scale"
+        },
+        "skew": {
+          "$ref": "#/$defs/skew"
+        },
+        "origin": {
+          "$ref": "#/$defs/origin"
+        },
+        "opacity": {
+          "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
+        "blendMode": {
+          "enum": [
+            "normal",
+            "multiply",
+            "screen",
+            "overlay",
+            "darken",
+            "lighten",
+            "color-dodge",
+            "color-burn",
+            "hard-light",
+            "soft-light",
+            "difference",
+            "exclusion",
+            "hue",
+            "saturation",
+            "color",
+            "luminosity",
+            "add"
+          ],
+          "description": "Blend mode.",
+          "examples": [
+            "normal"
+          ]
+        },
+        "filters": {
+          "$ref": "#/$defs/filters"
+        },
+        "shadow": {
+          "$ref": "#/$defs/shadow"
+        },
+        "mask": {
+          "type": "object",
+          "required": [
+            "node"
+          ],
+          "properties": {
+            "node": {
+              "$ref": "#/$defs/Node"
+            },
+            "mode": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "const": "alpha"
+                },
+                {
+                  "type": "string",
+                  "const": "luminance"
+                }
+              ]
+            },
+            "invert": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "motionPath": {
+          "$ref": "#/$defs/motionPath"
+        },
+        "width": {
+          "$ref": "#/$defs/radius"
+        },
+        "height": {
+          "$ref": "#/$defs/radius"
+        },
+        "between": {
+          "$ref": "#/$defs/between"
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/between"
+          },
+          "description": "Per gap: item i sits between child i and child i + 1 and overrides `between`."
+        },
+        "children": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Node"
+          },
+          "description": "Child nodes."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Plays its children one after another (each needs timing.duration, or is a composition-ref). Consecutive children overlap by the transition duration and cross over automatically."
+    },
     "Node_component": {
       "type": "object",
       "required": [
@@ -6469,6 +6704,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -6623,6 +6861,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -6849,6 +7090,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -7046,6 +7290,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -7377,6 +7624,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -7740,6 +7990,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -8102,6 +8355,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -8346,6 +8602,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -8660,6 +8919,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -9024,6 +9286,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -9208,6 +9473,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -9391,6 +9659,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -9565,6 +9836,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -9782,6 +10056,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -9961,6 +10238,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -10120,6 +10400,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -10429,6 +10712,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -10595,6 +10881,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -10927,6 +11216,9 @@
         "opacity": {
           "$ref": "#/$defs/opacity"
         },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
+        },
         "blendMode": {
           "enum": [
             "normal",
@@ -11216,6 +11508,9 @@
         },
         "opacity": {
           "$ref": "#/$defs/opacity"
+        },
+        "zIndex": {
+          "$ref": "#/$defs/zIndex"
         },
         "blendMode": {
           "enum": [
@@ -12864,6 +13159,9 @@
         },
         {
           "$ref": "#/$defs/Node_composition_ref"
+        },
+        {
+          "$ref": "#/$defs/Node_sequence"
         },
         {
           "$ref": "#/$defs/Node_component"

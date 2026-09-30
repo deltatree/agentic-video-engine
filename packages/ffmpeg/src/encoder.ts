@@ -335,7 +335,8 @@ function buildArgs(o: EncoderOptions, plan: Plan, caps: FfmpegCapabilities): { a
   const audio: string[] = [];
   if (o.audioPath !== undefined && plan.audioCodec !== undefined) {
     audioEncoder = audioEncoderOf(plan.audioCodec, caps);
-    input.push('-i', o.audioPath);
+    // Nur eine lokale WAV-Datei (Mix aus der Audio-Engine), keine Playlists oder Netzquellen (M3, Story 16.5).
+    input.push('-protocol_whitelist', 'file', '-format_whitelist', 'wav,w64', '-i', o.audioPath);
     audio.push('-map', '0:v:0', '-map', '1:a:0', '-c:a', audioEncoder, ...(plan.audioCodec === 'pcm' ? [] : ['-b:a', `${String(plan.audioBitrate)}k`]), '-shortest');
   } else {
     audio.push('-map', '0:v:0');

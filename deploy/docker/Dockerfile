@@ -3,7 +3,7 @@
 # Offizielle OpenVideo-Images (A44). Ein Dockerfile, mehrere Ziele (`--target`):
 #
 #   base        Node 22, Anwendung (dist + Produktions-node_modules), Schriften, Nutzer, Einstieg `openvideo`
-#   render-cpu  base + FFmpeg 7.1 (Debian 13) + Chromium (Playwright, passend zu playwright-core)
+#   render-cpu  base + FFmpeg 7.1 (Debian 13) + Chromium (Chrome for Testing passend zu playwright-core, SHA256 geprüft)
 #   render-gpu  render-cpu, vorbereitet für NVIDIA (NVENC lädt libnvidia-encode zur Laufzeit)
 #   blender     render-cpu + Blender 4.2 LTS (SHA256 geprüft)
 #   studio      base + gebautes Studio, Befehl `openvideo serve --host 0.0.0.0`
@@ -12,10 +12,11 @@
 # Bauen: `bash deploy/docker/build.sh` (Kontext ist die Wurzel des Repositorys).
 #
 # Reproduzierbarkeit: Basis-Image per Digest, apt nur über snapshot.debian.org mit festem Datum,
-# feste Paketversionen, `npm ci` mit Lockfile, Blender-Archiv mit SHA256, SOURCE_DATE_EPOCH.
+# feste Paketversionen, `npm ci` mit Lockfile, Blender- und Chromium-Archive mit SHA256, SOURCE_DATE_EPOCH.
 #
-# Sicherheit (A24, ADR 0008): Nutzer 65532, keine Capabilities nötig, Root-FS darf read-only sein.
-# Schreibpfade: nur /tmp und /cache.
+# Sicherheit (A24, ADR 0008, Epic 16): Nutzer 65532, keine Capabilities nötig, Root-FS darf read-only sein.
+# Schreibpfade: nur /tmp und /cache. OPENVIDEO_CONTAINER_IMAGE nennt nur das Image (Manifest); HTML-Skripte
+# erlaubt erst OPENVIDEO_ALLOW_HTML_SCRIPTS=1, und auch dann nur mit Chromium-OS-Sandbox.
 
 ARG NODE_IMAGE=node:22-trixie-slim@sha256:b26b04c123d9ff8ab646ceb18b9d75a1173acf64b9a401094b906d27b29338d4
 
@@ -81,6 +82,31 @@ RUN echo "${BLENDER_SHA256}  /tmp/blender.tar.xz" | sha256sum -c - \
  && rm /tmp/blender.tar.xz
 
 # ---------------------------------------------------------------------------------------------
+# chromium-fetch: Chrome for Testing in der Revision von playwright-core, Archive per SHA256 geprüft
+# ---------------------------------------------------------------------------------------------
+# Die Prüfsummen stammen aus zwei unabhängigen Quellen (cdn.playwright.dev und
+# storage.googleapis.com/chrome-for-testing-public) mit identischem Ergebnis. Beim Update von
+# playwright-core: Version und Revision aus node_modules/playwright-core/browsers.json übernehmen
+# und beide Prüfsummen neu bestimmen (`curl -sSL <url> | sha256sum`). Die Stufe render-cpu bricht ab,
+# wenn die Revision nicht zu playwright-core passt.
+FROM os AS chromium-fetch
+ARG CHROMIUM_VERSION=153.0.8010.12
+ARG CHROMIUM_REVISION=1243
+ARG CHROMIUM_SHA256=8aac35011c18f6e2d10696154af89a5728ac2ddd6dc6fad24ffdf243c3fcfd5a
+ARG CHROMIUM_HEADLESS_SHELL_SHA256=a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d
+RUN ov-apt unzip
+ADD --checksum=sha256:${CHROMIUM_SHA256} https://cdn.playwright.dev/builds/cft/${CHROMIUM_VERSION}/linux64/chrome-linux64.zip /tmp/chrome-linux64.zip
+ADD --checksum=sha256:${CHROMIUM_HEADLESS_SHELL_SHA256} https://cdn.playwright.dev/builds/cft/${CHROMIUM_VERSION}/linux64/chrome-headless-shell-linux64.zip /tmp/chrome-headless-shell-linux64.zip
+RUN echo "${CHROMIUM_SHA256}  /tmp/chrome-linux64.zip" | sha256sum -c - \
+ && echo "${CHROMIUM_HEADLESS_SHELL_SHA256}  /tmp/chrome-headless-shell-linux64.zip" | sha256sum -c - \
+ && mkdir -p /opt/ms-playwright/chromium-${CHROMIUM_REVISION} /opt/ms-playwright/chromium_headless_shell-${CHROMIUM_REVISION} \
+ && unzip -q /tmp/chrome-linux64.zip -d /opt/ms-playwright/chromium-${CHROMIUM_REVISION} \
+ && unzip -q /tmp/chrome-headless-shell-linux64.zip -d /opt/ms-playwright/chromium_headless_shell-${CHROMIUM_REVISION} \
+ # Marker, an denen Playwright eine fertige Installation erkennt (kein zweiter Download).
+ && touch /opt/ms-playwright/chromium-${CHROMIUM_REVISION}/INSTALLATION_COMPLETE /opt/ms-playwright/chromium_headless_shell-${CHROMIUM_REVISION}/INSTALLATION_COMPLETE \
+ && rm /tmp/*.zip
+
+# ---------------------------------------------------------------------------------------------
 # base
 # ---------------------------------------------------------------------------------------------
 FROM os AS base
@@ -133,14 +159,18 @@ FROM base AS render-cpu
 ARG IMAGE_REGISTRY=ghcr.io/deltatree
 ARG IMAGE_TAG=dev
 ARG FFMPEG_VERSION=7:7.1.5-0+deb13u1
+ARG CHROMIUM_REVISION=1243
 USER 0:0
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright
-# Playwright installiert genau die Chromium-Revision, die zu playwright-core passt, samt
-# Systembibliotheken (über dieselben Snapshot-Quellen).
-RUN ov-apt ffmpeg=${FFMPEG_VERSION} \
- && node /app/node_modules/playwright-core/cli.js install --with-deps chromium \
+# Chromium kommt geprüft aus chromium-fetch; Playwright installiert nur die Systembibliotheken
+# (über dieselben Snapshot-Quellen) und lädt nichts herunter.
+COPY --from=chromium-fetch /opt/ms-playwright /opt/ms-playwright
+RUN node -e "const b=require('/app/node_modules/playwright-core/browsers.json').browsers.find((x)=>x.name==='chromium');if(b.revision!=='${CHROMIUM_REVISION}'){console.error('playwright-core expects Chromium revision '+b.revision+', the image pins ${CHROMIUM_REVISION}: update chromium-fetch.');process.exit(1)}" \
+ && ov-apt ffmpeg=${FFMPEG_VERSION} \
+ && node /app/node_modules/playwright-core/cli.js install-deps chromium \
  && rm -rf /var/lib/apt/lists/* /var/log/apt /var/log/dpkg.log /var/log/alternatives.log /var/cache/ldconfig/aux-cache /tmp/* \
  && chmod -R a+rX /opt/ms-playwright \
+ && test -x "/opt/ms-playwright/chromium-${CHROMIUM_REVISION}/chrome-linux64/chrome" \
  && ffmpeg -hide_banner -version | head -1
 ENV OPENVIDEO_FFMPEG=/usr/bin/ffmpeg \
     OPENVIDEO_FFPROBE=/usr/bin/ffprobe \

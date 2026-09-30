@@ -90,3 +90,22 @@ export function expectGolden(name: string, image: RgbaImage): void {
   }
   expect(off / (actual.width * actual.height)).toBeLessThanOrEqual(0.005);
 }
+
+let sandboxProbe: Promise<boolean> | undefined;
+
+/**
+ * Startet Chromium hier mit OS-Sandbox? Nur dann laufen HTML-Skripte (Story 16.1); Tests mit
+ * Skripten werden sonst mit dieser Begründung übersprungen (z. B. als root ohne User Namespaces).
+ */
+export function osSandboxAvailable(): Promise<boolean> {
+  sandboxProbe ??= import('../src/host.js').then((m) => m.probeOsSandbox());
+  return sandboxProbe;
+}
+
+/** Kommandozeilen und Umgebungen der Chromium-Kindprozesse dieses Test-Prozesses (Linux, `/proc`). */
+export function chromiumProcesses(): { readonly pid: number; readonly args: string; readonly env: string }[] {
+  const pids = execFileSync('pgrep', ['-P', String(process.pid)], { encoding: 'utf8' }).split('\n').filter((p) => p !== '');
+  return pids
+    .map((pid) => ({ pid: Number(pid), args: readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').join(' '), env: readFileSync(`/proc/${pid}/environ`, 'utf8') }))
+    .filter((p) => p.args.includes('--remote-debugging-pipe'));
+}

@@ -143,6 +143,7 @@ const VisualFields = {
   skew: Type.Optional(AVec2('Skew angles in degrees.')),
   origin: Type.Optional(AVec2('Transform origin relative to the box (0..1). Default { x: 0.5, y: 0.5 }.')),
   opacity: Type.Optional(ANumber({ minimum: 0, maximum: 1 })),
+  zIndex: Type.Optional(ANumber({ description: 'Draw order among siblings (animatable). Higher values draw on top; equal values keep document order. Default 0.' })),
   blendMode: Type.Optional(BlendMode),
   filters: Type.Optional(Type.Array(Filter)),
   shadow: Type.Optional(Shadow),
@@ -217,6 +218,28 @@ export const CompositionRefNode = node(
   'composition-ref',
   { ...VisualFields, ...Size, composition: Id },
   'Nested composition, evaluated at the remapped local time.',
+);
+
+/** Übergang zwischen zwei aufeinanderfolgenden Kindern einer `sequence` (T9). */
+export const SequenceTransition = Type.Union(
+  [
+    Type.Object({ type: Type.Literal('cut') }, { additionalProperties: false, description: 'Hard cut: no overlap.' }),
+    Type.Object({ type: TransitionType, duration: TimeValue, ease: Type.Optional(Easing) }, { additionalProperties: false }),
+  ],
+  { description: 'Transition between two consecutive children. The next child starts `duration` before the previous one ends.' },
+);
+export type SequenceTransition = Static<typeof SequenceTransition>;
+
+export const SequenceNode = node(
+  'sequence',
+  {
+    ...VisualFields,
+    ...Size,
+    between: Type.Optional(SequenceTransition),
+    transitions: Type.Optional(Type.Array(SequenceTransition, { description: 'Per gap: item i sits between child i and child i + 1 and overrides `between`.' })),
+    children: Type.Optional(NodeList),
+  },
+  'Plays its children one after another (each needs timing.duration, or is a composition-ref). Consecutive children overlap by the transition duration and cross over automatically.',
 );
 
 export const ComponentNode = node(
@@ -722,11 +745,50 @@ export const BlenderNode = node(
 // Register
 // ---------------------------------------------------------------------------
 
+/**
+ * Typ des Registers {@link NODE_SCHEMAS}. Explizit, weil der abgeleitete Typ für die
+ * Deklarationsausgabe von TypeScript zu groß wird.
+ */
+export interface NodeSchemas {
+  readonly group: typeof GroupNode;
+  readonly layer: typeof LayerNode;
+  readonly 'composition-ref': typeof CompositionRefNode;
+  readonly sequence: typeof SequenceNode;
+  readonly component: typeof ComponentNode;
+  readonly rect: typeof RectNode;
+  readonly ellipse: typeof EllipseNode;
+  readonly line: typeof LineNode;
+  readonly polyline: typeof PolylineNode;
+  readonly polygon: typeof PolygonNode;
+  readonly path: typeof PathNode;
+  readonly text: typeof TextNode;
+  readonly 'rich-text': typeof RichTextNode;
+  readonly image: typeof ImageNode;
+  readonly video: typeof VideoNode;
+  readonly svg: typeof SvgNode;
+  readonly sprite: typeof SpriteNode;
+  readonly lottie: typeof LottieNode;
+  readonly shader: typeof ShaderNode;
+  readonly particles: typeof ParticlesNode;
+  readonly html: typeof HtmlNode;
+  readonly subtitles: typeof SubtitlesNode;
+  readonly scene3d: typeof Scene3DNode;
+  readonly blender: typeof BlenderNode;
+  readonly camera3d: typeof Camera3DNode;
+  readonly light3d: typeof Light3DNode;
+  readonly mesh3d: typeof Mesh3DNode;
+  readonly model3d: typeof Model3DNode;
+  readonly instances3d: typeof Instances3DNode;
+  readonly particles3d: typeof Particles3DNode;
+  readonly group3d: typeof Group3DNode;
+}
+
 /** Alle eingebauten Node-Schemas nach Typ. */
-export const NODE_SCHEMAS = {
+export const NODE_SCHEMAS: NodeSchemas = {
   group: GroupNode,
   layer: LayerNode,
   'composition-ref': CompositionRefNode,
+  sequence: SequenceNode,
   component: ComponentNode,
   rect: RectNode,
   ellipse: EllipseNode,
@@ -754,7 +816,7 @@ export const NODE_SCHEMAS = {
   instances3d: Instances3DNode,
   particles3d: Particles3DNode,
   group3d: Group3DNode,
-} as const satisfies Record<string, TObject>;
+} satisfies Record<string, TObject>;
 
 /** Name eines eingebauten Node-Typs. */
 export type BuiltinNodeType = keyof typeof NODE_SCHEMAS;
@@ -784,6 +846,7 @@ export type IrNode =
   | NodeOf<'group'>
   | NodeOf<'layer'>
   | NodeOf<'composition-ref'>
+  | NodeOf<'sequence'>
   | NodeOf<'component'>
   | NodeOf<'rect'>
   | NodeOf<'ellipse'>

@@ -10,13 +10,14 @@ Documentation is written in German; identifiers, JSON keys and error messages ar
 - [Recipes](docs/guide/recipes.md): small verified IR snippets for common tasks
 - [Getting started](docs/guide/getting-started.md): install, create, dev, render
 - [Capability manifest](docs/ai/capabilities.json): node types, components, operations, backends, formats (generated)
+- Live self-description: the 30 operations include `capabilities.get` and `schema.get`; the MCP server (`openvideo mcp --project <dir>`) also serves `openvideo://agents.md`, `openvideo://schema.json` and `openvideo://capabilities.json`
 
 ## Reference
 
 - [JSON Schema of the Composition IR](packages/schema/openvideo.schema.json)
 - [Render semantics](docs/reference/node-semantics.md): coordinates, boxes, paint, text, media, 3D
-- [Agent API operations](docs/guide/api.md): all operations with input examples
-- [CLI](docs/guide/cli.md): commands, options, exit codes
+- [Agent API operations](docs/guide/api.md): all 30 operations with input examples and one example per patch kind
+- [CLI](docs/guide/cli.md): commands, options, exit codes; `openvideo op <name> --input <json|@file>` runs any operation
 - [Architecture](_bmad-output/planning-artifacts/architecture/architecture-agentic-video-engine-2026-09-28/ARCHITECTURE-SPINE.md) and [ADRs](docs/adr/README.md)
 - [API reference](docs/api/README.md): TypeScript packages (generated)
 

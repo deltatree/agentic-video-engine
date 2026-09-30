@@ -127,6 +127,7 @@ const NODE_SPECS: Readonly<Record<string, NodeSpec>> = {
   Html: { node: 'html' },
   Subtitles: { node: 'subtitles' },
   CompositionRef: { node: 'composition-ref' },
+  Sequence: { node: 'sequence' },
   Component: { node: 'component' },
   ThreeScene: { node: 'scene3d' },
   BlenderScene: { node: 'blender' },
@@ -155,7 +156,7 @@ const NODE_SPECS: Readonly<Record<string, NodeSpec>> = {
 export const COMPONENT_FOR_NODE_TYPE: Readonly<Record<string, string>> = {
   group: 'Group', layer: 'Layer', rect: 'Rect', ellipse: 'Ellipse', line: 'Line', polyline: 'Polyline', polygon: 'Polygon', path: 'Path',
   text: 'Text', 'rich-text': 'RichText', image: 'Image', video: 'Video', sprite: 'Sprite', lottie: 'Lottie', svg: 'Svg', shader: 'Shader',
-  particles: 'Particles', html: 'Html', subtitles: 'Subtitles', 'composition-ref': 'CompositionRef', component: 'Component',
+  particles: 'Particles', html: 'Html', subtitles: 'Subtitles', 'composition-ref': 'CompositionRef', sequence: 'Sequence', component: 'Component',
   scene3d: 'ThreeScene', blender: 'BlenderScene', camera3d: 'Camera3D', mesh3d: 'Mesh', model3d: 'Model', instances3d: 'Instances',
   particles3d: 'Particles3D', group3d: 'Group3D',
 };
@@ -165,7 +166,7 @@ export const LIGHT_COMPONENTS: Readonly<Record<string, string>> = {
   ambient: 'AmbientLight', directional: 'DirectionalLight', point: 'PointLight', spot: 'SpotLight', hemisphere: 'HemisphereLight',
 };
 
-const CONTAINERS: ReadonlySet<string> = new Set(['group', 'layer', 'component', 'scene3d', 'blender', 'group3d']);
+const CONTAINERS: ReadonlySet<string> = new Set(['group', 'layer', 'sequence', 'component', 'scene3d', 'blender', 'group3d']);
 const FONT_NODES: ReadonlySet<string> = new Set(['text', 'rich-text', 'subtitles']);
 // `name` fehlt bewusst: Bei Komponenten ist `name` fast immer ein Komponenten-Prop
 // (z. B. LowerThird). Das Node-Label ginge sonst still verloren.

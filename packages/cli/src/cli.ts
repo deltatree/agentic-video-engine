@@ -128,6 +128,19 @@ function studioDir(env: Readonly<Record<string, string | undefined>>): string | 
   return candidates.find((c): c is string => c !== undefined && existsSync(join(c, 'index.html')));
 }
 
+/**
+ * Sicherheits-Header der Studio-Dateien (Story 16.7, N3): kein Einbetten in fremde Seiten
+ * (`frame-ancestors 'none'`), kein Referer, Skripte nur von der eigenen Origin. Monaco braucht
+ * Inline-Styles, Worker aus `blob:` und Bilder aus `data:`.
+ */
+export const STUDIO_HEADERS: Readonly<Record<string, string>> = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'x-frame-options': 'DENY',
+  'content-security-policy':
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+};
+
 const MIME: Readonly<Record<string, string>> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.wasm': 'application/wasm' };
 
 interface ServeOptions {
@@ -154,7 +167,7 @@ async function serveServices(services: AgentServices, io: CliIo, options: ServeO
       const rel = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
       const file = resolve(studio, rel);
       if (!file.startsWith(studio + sep) || !existsSync(file)) return false;
-      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'x-content-type-options': 'nosniff' });
+      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', ...STUDIO_HEADERS });
       res.end(await readFile(file));
       return true;
     },
