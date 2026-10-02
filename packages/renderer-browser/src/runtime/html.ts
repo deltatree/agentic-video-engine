@@ -21,7 +21,7 @@
  */
 import { OpenVideoError, type EvaluatedNode } from '@agentic-video/core';
 import { DOCUMENT_NAME_PREFIX, type BrowserLayerPayload, type DocumentConfig, type FrameState, type HtmlRenderOptions } from '../protocol.js';
-import { applyFrame, seekAnimations } from './animations.js';
+import { applyFrame, freezeAnimations, seekAnimations, thawAnimations } from './animations.js';
 import { clearDefs, defineColorMatrices } from './defs.js';
 import { loadFonts } from './fonts.js';
 import { htmlNodeStyle } from './style.js';
@@ -129,6 +129,7 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload, options: Htm
   for (const slot of slots.values()) slot.container.style.display = 'none';
   const used = new Set<string>();
   const docs: Document[] = [document];
+  const frames: { readonly doc: Document; readonly timeMs: number }[] = [];
   let index = 0;
   for (const node of payload.nodes) {
     if (node.type !== 'html') {
@@ -193,6 +194,8 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload, options: Htm
       });
     }
     await loadFonts(doc);
+    // Eingefrorene Animationen des vorigen Frames zurückholen, bevor Skripte oder die Uhr sie sehen.
+    thawAnimations(doc);
     const state: FrameState = { timeMs, frame: node.time.localFrame, fps: payload.fps, progress: node.time.progress, seed: payload.seed, key: node.id };
     if (slot.scripts) {
       const clock = slot.iframe.contentWindow?.__ovClock;
@@ -214,6 +217,7 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload, options: Htm
     }
     slot.now = timeMs;
     docs.push(doc);
+    frames.push({ doc, timeMs });
   }
   // Speicher begrenzen: unbenutzte iframes entfernen, sobald zu viele gehalten werden.
   if (slots.size > MAX_SLOTS) {
@@ -225,4 +229,6 @@ export async function renderHtmlLayer(payload: BrowserLayerPayload, options: Htm
     }
   }
   await Promise.all(docs.map(settle));
+  // Aufnahme ohne aktive Animationen: Pixel hängen dann nicht von der Compositor-Vorgeschichte ab.
+  for (const f of frames) freezeAnimations(f.doc, f.timeMs);
 }

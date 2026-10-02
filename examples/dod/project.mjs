@@ -483,8 +483,9 @@ half4 main(float2 coord) {
 
 /**
  * HTML/CSS-UI: eine App-Karte mit Schaltern und Fortschrittsbalken, nur CSS-Animationen (keine Skripte).
- * Die Karte fährt ohne `scale` ein: Eine Skalierungs-Animation um weitere animierte Elemente liefert im
- * Browser-Renderer je nach vorher gerenderten Frames andere Pixel (Produktfehler, siehe Bericht).
+ * Die Karte fährt ohne `scale` ein: Eine Skalierungs-Animation um weitere animierte Elemente lieferte im
+ * Browser-Renderer je nach vorher gerenderten Frames andere Pixel. Ursache waren die Compositor-Ebenen
+ * animierter Elemente; seit `freezeAnimations` (renderer-browser) zeichnet die Aufnahme ohne sie.
  */
 const UI_HTML = `<div class="card">
   <div class="bar"><span></span><span></span><span></span><b>render-queue.app</b></div>

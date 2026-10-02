@@ -140,7 +140,7 @@ Damit keine Eigenschaft an einer Backend-Grenze verloren geht, gelten diese Rege
 
 ### Browser
 
-- **html**: Chromium rendert `html` + `css` in eine Box `width × height`; die Box wird mit der Node-Matrix platziert. Die Seite erhält pro Frame die Zeit über `window.openvideo` (siehe Browser-Renderer-Doku). CSS-Animationen werden pausiert und auf die lokale Zeit gesetzt. Skripte laufen nur ausdrücklich erlaubt (`--trusted`, ADR 0008); ohne Skripte bleiben `<canvas>` (2D, WebGL, WebGPU) und Custom Elements ohne deklaratives Shadow DOM leer – `openvideo validate` warnt mit `OV_HTML_CANVAS_NO_SCRIPTS` bzw. `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
+- **html**: Chromium rendert `html` + `css` in eine Box `width × height`; die Box wird mit der Node-Matrix platziert. Die Seite erhält pro Frame die Zeit über `window.openvideo` (siehe Browser-Renderer-Doku). CSS-Animationen werden pausiert und auf die lokale Zeit gesetzt; für die Aufnahme werden ihre Werte als Inline-Stile festgeschrieben und die Animationen gelöst, damit die Pixel nie von vorher gerenderten Frames oder von Compositor-Ebenen in Chromium abhängen (vor dem nächsten Frame wiederhergestellt). Skripte laufen nur ausdrücklich erlaubt (`--trusted`, ADR 0008); ohne Skripte bleiben `<canvas>` (2D, WebGL, WebGPU) und Custom Elements ohne deklaratives Shadow DOM leer – `openvideo validate` warnt mit `OV_HTML_CANVAS_NO_SCRIPTS` bzw. `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
 
 ### 3D
 

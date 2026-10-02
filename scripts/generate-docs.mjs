@@ -23,6 +23,8 @@ const root = rootArg >= 0 && process.argv[rootArg + 1] !== undefined ? process.a
 // Backends die Chromium-Version von playwright-core (ADR 0019); so ist die Ausgabe auf jeder Maschine gleich.
 delete process.env.OPENVIDEO_CHROMIUM;
 delete process.env.OPENVIDEO_BROWSER_GPU;
+// Blender: das Backend sucht ohne Umgebung (kein OPENVIDEO_BLENDER, kein PATH, kein ~/.local/opt), damit eine installierte
+// Blender-Version nicht in docs/ai/capabilities.json landet (CI hat Blender, lokale Rechner oft nicht).
 /** Erzeugte Dateien: Pfad relativ zum Repository → Inhalt. */
 const outputs = new Map();
 /** Merkt eine erzeugte Datei vor (geschrieben oder geprüft wird am Ende). */
@@ -48,7 +50,7 @@ const fonts = await loadFontSet({});
 const canvasKit = await loadCanvasKitNode();
 const noAssets = { get: () => undefined, bytes: () => Promise.reject(new Error('none')), videoFrame: () => Promise.reject(new Error('none')), all: () => [] };
 const lazy = createLazyBrowserBackends({ assets: noAssets, fonts, width: 1920, height: 1080 });
-const backends = [createSkiaBackend({ canvasKit, fonts }), lazy.browser, lazy.three, lazy.pixi, createBlenderBackend({ workDir: join(tmpdir(), 'ov-docs-blender') })];
+const backends = [createSkiaBackend({ canvasKit, fonts }), lazy.browser, lazy.three, lazy.pixi, createBlenderBackend({ workDir: join(tmpdir(), 'ov-docs-blender'), env: { HOME: join(tmpdir(), 'ov-docs-no-home') } })];
 
 // Story 19.7: je Node-Typ Property-Typen und ein gültiges JSON-Beispiel (dieselbe Quelle wie capabilities.get).
 const nodeTypes = Object.fromEntries(Object.entries(schema.NODE_SCHEMAS).map(([type, s]) => [type, schema.summarizeNodeType(type, s)]));

@@ -15,6 +15,8 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createLocalServices } from '@agentic-video/cli';
 import { startAgentServer } from '@agentic-video/agent';
+// Nur für die Fehlerdiagnose (Differenzbild bei verschiedenen Frame-Hashes).
+import { decodePng, encodePng } from '@agentic-video/png';
 import { COMPONENTS, SCENES, buildPlan } from './project.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -376,7 +378,10 @@ async function main() {
     step('video.render (B, 2 worker processes)', { workers: WORKERS_B, jobs: jobsB, frames: resultB.frames });
     report.reproduction = reproduction;
     log(`Reproduktion: ${reproduction.frameHashesEqual ? 'alle' : 'NICHT alle'} ${hashesA.length} Frame-Hashes gleich; Video-Bytes ${reproduction.videoBytesEqual ? 'gleich' : 'verschieden'}`);
-    if (!reproduction.frameHashesEqual) throw new Error(`Frame-Hashes verschieden in ${differing.length} Frames, z. B. ${differing.slice(0, 10).join(', ')}`);
+    if (!reproduction.frameHashesEqual) {
+      reproduction.mismatch = await writeMismatch({ api, projectId, manifest: manifestA }, { api: b.api, projectId: projectB, manifest: manifestB }, differing);
+      throw new Error(`Frame-Hashes verschieden in ${differing.length} Frames, z. B. ${differing.slice(0, 10).join(', ')} (Bilder und Angaben: ${relative(repo, join(outDir, 'mismatch'))})`);
+    }
     report.ok = true;
   } catch (error) {
     report.ok = false;
@@ -390,6 +395,111 @@ async function main() {
     writeReport(report);
   }
   process.exitCode = report.ok ? 0 : 1;
+}
+
+/** Höchstzahl abweichender Frames, für die Bilder geschrieben werden. */
+const MISMATCH_FRAMES = 5;
+
+/** Chunk eines Ausgabe-Frames laut Render-Manifest (mit Worker-Prozess). */
+function chunkOf(manifest, frame) {
+  const c = manifest.chunks.find((x) => frame >= x.start && frame < x.end);
+  return c === undefined ? null : { start: c.start, end: c.end, worker: c.worker ?? 'server', hash: c.hash };
+}
+
+/** Pixelvergleich zweier gleich großer RGBA-Bilder: Anzahl, Rechteck, größte Abweichung und Differenzbild. */
+function pixelDiff(a, b) {
+  const data = new Uint8Array(a.width * a.height * 4);
+  let count = 0;
+  let max = 0;
+  let box;
+  for (let i = 0; i < a.data.length; i += 4) {
+    let d = 0;
+    for (let c = 0; c < 4; c++) d = Math.max(d, Math.abs(a.data[i + c] - b.data[i + c]));
+    // Abweichung verstärkt in Rot, Rest als abgedunkeltes Bild A zur Orientierung.
+    data[i] = d > 0 ? Math.min(255, 64 + d * 8) : a.data[i] >> 2;
+    data[i + 1] = d > 0 ? 0 : a.data[i + 1] >> 2;
+    data[i + 2] = d > 0 ? 0 : a.data[i + 2] >> 2;
+    data[i + 3] = 255;
+    if (d === 0) continue;
+    count++;
+    max = Math.max(max, d);
+    const p = i / 4;
+    const x = p % a.width;
+    const y = Math.floor(p / a.width);
+    box = box === undefined ? { x0: x, y0: y, x1: x, y1: y } : { x0: Math.min(box.x0, x), y0: Math.min(box.y0, y), x1: Math.max(box.x1, x), y1: Math.max(box.y1, y) };
+  }
+  return { count, max, box: box === undefined ? null : { x: box.x0, y: box.y0, width: box.x1 - box.x0 + 1, height: box.y1 - box.y0 + 1 }, image: { width: a.width, height: a.height, data } };
+}
+
+/** Sichtbare Nodes (Frame-Inspect), deren Bounds das Rechteck der Abweichung schneiden. */
+function nodesAt(tree, box) {
+  const out = [];
+  const walk = (list) => {
+    for (const n of list) {
+      const r = n.bounds;
+      if (box !== null && r !== undefined && (n.opacity === undefined || n.opacity > 0) && r.x < box.x + box.width && r.x + r.width > box.x && r.y < box.y + box.height && r.y + r.height > box.y) out.push({ id: n.id, type: n.type, bounds: r, localFrame: n.localFrame });
+      walk(n.children ?? []);
+    }
+  };
+  walk(tree);
+  return out;
+}
+
+/**
+ * Diagnose bei verschiedenen Frame-Hashes (Server A gegen B): je abweichendem Frame die Bilder beider
+ * Server (aus ihrem Frame-Cache über frame.render), ein Differenzbild und Angaben zu Chunk, Worker,
+ * Cache, Frame-Schlüssel, Backends und den betroffenen Nodes in `<out>/mismatch/`.
+ */
+async function writeMismatch(sideA, sideB, differing) {
+  const dir = join(outDir, 'mismatch');
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const frames = [];
+  for (const frame of differing.slice(0, MISMATCH_FRAMES)) {
+    const entry = { frame, sides: {} };
+    const images = {};
+    for (const [name, side] of [['a', sideA], ['b', sideB]]) {
+      try {
+        const r = await side.api.call('frame.render', { projectId: side.projectId, frame });
+        const png = Buffer.from(r.image.base64, 'base64');
+        writeFileSync(join(dir, `frame-${frame}-${name}.png`), png);
+        images[name] = decodePng(new Uint8Array(png));
+        entry.sides[name] = {
+          chunk: chunkOf(side.manifest, frame),
+          manifestHash: side.manifest.frameHashes[frame],
+          // `true`: die Pixel stammen aus dem Frame-Cache des Video-Renders (Worker), nicht aus einem neuen Render.
+          fromCache: r.cached,
+          frameKey: r.key,
+          backends: r.manifest.renderBackend,
+          graphics: r.manifest.graphics,
+          chromium: r.manifest.chromiumVersion,
+          diagnostics: r.diagnostics.filter((d) => d.severity !== 'info').map((d) => `${d.code}: ${d.problem}`),
+        };
+      } catch (error) {
+        entry.sides[name] = { chunk: chunkOf(side.manifest, frame), error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+    entry.sameFrameKey = entry.sides.a?.frameKey !== undefined && entry.sides.a.frameKey === entry.sides.b?.frameKey;
+    if (images.a !== undefined && images.b !== undefined && images.a.width === images.b.width && images.a.height === images.b.height) {
+      const d = pixelDiff(images.a, images.b);
+      writeFileSync(join(dir, `frame-${frame}-diff.png`), encodePng(d.image));
+      const inspected = await sideA.api.call('frame.inspect', { projectId: sideA.projectId, frame }).catch((error) => ({ tree: [], error: String(error) }));
+      entry.pixels = { differing: d.count, maxChannelDelta: d.max, box: d.box };
+      entry.nodesInBox = nodesAt(inspected.tree, d.box);
+    }
+    frames.push(entry);
+    log(`Abweichung Frame ${frame}: ${entry.pixels?.differing ?? '?'} Pixel, Rechteck ${JSON.stringify(entry.pixels?.box ?? null)}, Nodes ${(entry.nodesInBox ?? []).map((n) => `${n.id} (${n.type})`).join(', ') || '–'}`);
+  }
+  const info = {
+    differingFrames: differing,
+    renderBackend: { a: sideA.manifest.renderBackend, b: sideB.manifest.renderBackend },
+    graphics: { a: sideA.manifest.graphics, b: sideB.manifest.graphics },
+    chromium: { a: sideA.manifest.chromiumVersion, b: sideB.manifest.chromiumVersion },
+    cache: { a: sideA.manifest.cache, b: sideB.manifest.cache },
+    frames,
+  };
+  writeFileSync(join(dir, 'mismatch.json'), `${JSON.stringify(info, null, 2)}\n`);
+  return { dir: relative(repo, dir), frames: frames.map((f) => ({ frame: f.frame, pixels: f.pixels, sameFrameKey: f.sameFrameKey, nodesInBox: (f.nodesInBox ?? []).map((n) => n.id) })) };
 }
 
 function writeReport(report) {

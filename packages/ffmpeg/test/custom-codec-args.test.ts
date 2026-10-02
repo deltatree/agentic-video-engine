@@ -27,6 +27,18 @@ describe('checkCustomCodecArgs: erlaubte Argumente', () => {
     [['-c:v', 'libx264', '-b:v', '2500k', '-maxrate', '3M', '-bufsize', '6M', '-g', '60', '-keyint_min', '30', '-bf', '3']],
     [['-c:v', 'libx264', '-movflags', '+faststart+frag_keyframe']],
     [['-c:v', 'libaom-av1', '-tiles', '2x2', '-speed', '6', '-preset:v', 'slow']],
+    // Qualitätssteuerung der Hardware-Encoder und Quantisierer-Grenzen.
+    [['-c:v', 'h264_vaapi', '-qp', '24', '-qmin', '10', '-qmax', '40']],
+    [['-c:v', 'h264_videotoolbox', '-q:v', '65']],
+    [['-c:v', 'hevc_nvenc', '-cq', '28', '-minrate', '1M', '-tune', 'hq']],
+    [['-c:v', 'h264_qsv', '-global_quality', '25', '-refs', '3', '-sc_threshold', '0']],
+    // Farbangaben dürfen Plugins selbst setzen.
+    [['-c:v', 'libx264', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-color_range', 'tv']],
+    // Parameterlisten von SVT-AV1 und libaom.
+    [['-c:v', 'libsvtav1', '-svtav1-params', 'tune=0:film-grain=8']],
+    [['-c:v', 'libaom-av1', '-aom-params', 'enable-cdef=1:arnr-strength=4']],
+    // VP9-Feinsteuerung.
+    [['-c:v', 'libvpx-vp9', '-quality', 'good', '-tile-rows', '1', '-lag-in-frames', '25', '-auto-alt-ref', '1', '-aq-mode', '2', '-lossless', '0']],
   ])('%j', (args) => {
     expect(codeOf(args)).toBeUndefined();
   });
@@ -76,6 +88,14 @@ describe('checkCustomCodecArgs: Umgehungen aus dem Review und weitere', () => {
     ['-c ohne Stream (setzt auch Audio)', ['-c', 'libx264']],
     ['kein Encoder', ['-crf', '20']],
     ['leeres Argument', ['-c:v', 'libx264', '']],
+    // Werte der weiteren Optionen werden ebenso geprüft.
+    ['qp keine Zahl', ['-c:v', 'h264_vaapi', '-qp', 'x']],
+    ['qmax mit Nachkommastellen', ['-c:v', 'libx264', '-qmax', '4.5']],
+    ['minrate mit Pfad', ['-c:v', 'libx264', '-minrate', '/tmp/x']],
+    ['color_trc mit Leerzeichen', ['-c:v', 'libx264', '-color_trc', 'bt709 -i x']],
+    ['svtav1 unbekannter Schlüssel', ['-c:v', 'libsvtav1', '-svtav1-params', 'stat-file=/tmp/x']],
+    ['aom unbekannter Schlüssel', ['-c:v', 'libaom-av1', '-aom-params', 'fpf=/tmp/x']],
+    ['tiles ohne Format', ['-c:v', 'libaom-av1', '-tiles', '2']],
   ])('%s', (_name, args) => {
     expect(codeOf(args)).toBe('OV_ENCODE_CODEC_ARGS');
   });

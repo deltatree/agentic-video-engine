@@ -58,7 +58,7 @@ Fingerabdruck der Programmdatei (`custom-<hash>`).
 ```
 
 - CSS-Variablen auf `:root`: `--ov-time` (Sekunden), `--ov-frame`, `--ov-progress` (ohne Einheit).
-- CSS- und Web-Animationen werden pausiert und auf die lokale Zeit gesetzt.
+- CSS- und Web-Animationen werden pausiert und auf die lokale Zeit gesetzt. Für die Aufnahme schreibt die Laufzeit ihre Werte mit `commitStyles()` als Inline-Stile fest und löst sie (`cancel()`); vor dem nächsten Frame stellt sie Inline-Stile und Animationen wieder her. So bekommt kein animiertes Element eine eigene Compositor-Ebene, deren Rasterung von vorherigen Frames und der Last abhängt. Animationen auf Pseudo-Elementen bleiben nur pausiert.
 - `<script>` läuft nur ausdrücklich erlaubt (`--trusted` oder `OPENVIDEO_ALLOW_HTML_SCRIPTS=1`) und nur mit OS-Sandbox (ADR 0008, Story 16.1); `check()` meldet dazu `OV_HTML_SCRIPT` als Info.
 - Skripte laufen nur mit der Host-Option `allowHtmlScripts: true`. Standard ist `false`.
   Dann hat das iframe `sandbox="allow-same-origin"` und die CSP `script-src 'none'`.

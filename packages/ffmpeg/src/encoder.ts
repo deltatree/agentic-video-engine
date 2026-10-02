@@ -423,8 +423,13 @@ interface VideoArgs {
 /** Baut die Video-Encoder-Argumente (nach den Eingaben). */
 function videoArgs(plan: Plan, caps: FfmpegCapabilities, hw: HardwareFamily | undefined): VideoArgs {
   const q = plan.quality;
+  // Ab FFmpeg 7.1 übernimmt der Encoder Primaries und Transfer aus den gefilterten Frames und
+  // überschreibt damit -color_primaries/-color_trc; Rohvideo-Frames tragen dort „unknown“. Nur
+  // Matrix und Range handelt der Filtergraph aus. setparams schreibt beide Werte in die Frames,
+  // damit die Metadaten mit FFmpeg 6.1 und 7.1 gleich ankommen.
+  const colorTags = `setparams=color_primaries=bt709:color_trc=${TRC[plan.colorSpace]}`;
   const yuv = (pix: string, extra: readonly string[] = []) => [
-    '-vf', `scale=out_color_matrix=bt709:out_range=tv,format=${pix}`,
+    '-vf', `scale=out_color_matrix=bt709:out_range=tv,format=${pix},${colorTags}`,
     '-pix_fmt', pix,
     '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', TRC[plan.colorSpace], '-color_range', 'tv',
     ...extra,
@@ -446,7 +451,7 @@ function videoArgs(plan: Plan, caps: FfmpegCapabilities, hw: HardwareFamily | un
       case 'vaapi':
         return {
           encoder,
-          args: ['-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=nv12,hwupload', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', TRC[plan.colorSpace], '-c:v', encoder, '-qp', crf, ...tag],
+          args: ['-vf', `scale=out_color_matrix=bt709:out_range=tv,format=nv12,${colorTags},hwupload`, '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', TRC[plan.colorSpace], '-c:v', encoder, '-qp', crf, ...tag],
         };
       case 'videotoolbox':
         return { encoder, args: [...yuv('nv12'), '-c:v', encoder, '-q:v', String(Math.round(q)), ...tag] };

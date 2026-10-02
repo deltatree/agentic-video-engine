@@ -2,8 +2,8 @@
  * Epic 18 im Scheduler: Abbruch und Timeout auf Chunk-Ebene (18.8), Standard-Parallelität (18.7),
  * native Hashes (18.5) und die Review-Befunde M5, m7, m8 am Koordinator.
  */
-import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,21 +96,27 @@ describe('Pool: Chunk-Timeout und Abbruch (Story 18.8)', () => {
     const log = join(tmp('ov-pool-ignore-cancel-'), 'log');
     const signal = { aborted: false };
     const exits: (string | null)[] = [];
-    const started = performance.now();
     const run = runPool([chunk(0, 2)], () => undefined, poolOptions('ignore-cancel', log, {
       signal,
       cancelGraceMs: 500,
       onEvent: (e) => {
-        if (e.type === 'chunk-started') signal.aborted = true;
         if (e.type === 'worker-exited') exits.push(e.signal);
       },
     }));
+    // Erst abbrechen, wenn der Worker den Chunk nachweislich gelesen hat: Unter Last (CI) kann ein frisch
+    // gestarteter Worker sonst schon nach der Frist beendet werden, bevor er überhaupt etwas empfangen hat.
+    await vi.waitFor(() => {
+      expect(existsSync(log) && readFileSync(log, 'utf8').split('\n').includes('chunk')).toBe(true);
+    }, { timeout: 15_000, interval: 50 });
+    signal.aborted = true;
+    const abortedAt = performance.now();
     const error = await failure(run);
     expect(error.diagnostic.code).toBe('OV_RENDER_CANCELLED');
-    expect(performance.now() - started).toBeLessThan(8_000);
+    // Deutlich unter der Standardfrist von 10 s: die Frist von 500 ms hat gegriffen.
+    expect(performance.now() - abortedAt).toBeLessThan(8_000);
     expect(readFileSync(log, 'utf8')).toMatch(/^cancel$/mu);
     expect(exits).toEqual(['SIGKILL']);
-  }, 20_000);
+  }, 40_000);
 
   it('hat eine Standardfrist von 10 s nach cancel', () => {
     expect(DEFAULT_CANCEL_GRACE_MS).toBe(10_000);
