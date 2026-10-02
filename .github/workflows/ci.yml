@@ -211,6 +211,18 @@ jobs:
             apps/*/test/golden/*.actual.png
             apps/*/test/golden/*.diff.png
           if-no-files-found: ignore
+      # DoD-Lauf (examples/dod): Bericht, Einzelbilder, Videos und bei verschiedenen Frame-Hashes
+      # mismatch/ mit den Frames beider Server, Differenzbild und Angaben (Chunk, Worker, Cache, Backends).
+      # Die Render-Caches der Workspaces bleiben draußen (groß und aus dem Bericht ableitbar).
+      - name: DoD-Ausgaben bei Fehlern
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dod-out
+          path: |
+            examples/dod/out/**
+            !examples/dod/out/**/.openvideo/cache/**
+          if-no-files-found: ignore
 
   # Story 22.7 (T3): Die npm-Pakete funktionieren außerhalb des Monorepos (npm pack → leeres Verzeichnis).
   smoke-npx:

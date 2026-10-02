@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import type { OutputFormat, RgbaImage, VideoCodec } from '@agentic-video/core';
 import {
   VideoFrameReader,
@@ -15,6 +15,7 @@ import {
   locateFfmpeg,
   probeCapabilities,
   probeMedia,
+  runProcess,
   toRational,
   type EncoderOptions,
 } from '@agentic-video/ffmpeg';
@@ -69,11 +70,37 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+/** Setzt Umgebungsvariablen für die Dauer von `fn` (undefined = entfernen) und stellt sie danach wieder her. */
+function withEnv<T>(vars: Record<string, string | undefined>, fn: () => T): T {
+  const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  const apply = (values: Record<string, string | undefined>) => {
+    for (const [k, v] of Object.entries(values)) {
+      if (v === undefined) Reflect.deleteProperty(process.env, k);
+      else process.env[k] = v;
+    }
+  };
+  apply(vars);
+  try {
+    return fn();
+  } finally {
+    apply(before);
+  }
+}
+
 describe('locateFfmpeg', () => {
-  it('findet FFmpeg und ffprobe über PATH', () => {
+  it('findet FFmpeg und ffprobe', () => {
     const bins = locateFfmpeg();
     expect(existsSync(bins.ffmpeg)).toBe(true);
     expect(existsSync(bins.ffprobe)).toBe(true);
+  });
+
+  // In CI zeigen OPENVIDEO_FFMPEG/FFPROBE auf das Build; die Suche über PATH lief dort nie.
+  it('findet FFmpeg und ffprobe über PATH, wenn OPENVIDEO_FFMPEG/FFPROBE fehlen', () => {
+    const bins = locateFfmpeg();
+    const found = withEnv({ OPENVIDEO_FFMPEG: undefined, OPENVIDEO_FFPROBE: undefined, PATH: ['', '/nonexistent-ov-dir', dirname(bins.ffmpeg)].join(delimiter) }, () => locateFfmpeg());
+    expect(found.ffmpeg).toBe(join(dirname(bins.ffmpeg), 'ffmpeg'));
+    expect(existsSync(found.ffprobe)).toBe(true);
+    expect(withEnv({ OPENVIDEO_FFMPEG: undefined, OPENVIDEO_FFPROBE: undefined, PATH: '/nonexistent-ov-dir' }, () => errorCode(() => locateFfmpeg()))).toBe('OV_FFMPEG_MISSING');
   });
 
   it('meldet OV_FFMPEG_MISSING mit Installationshinweis', () => {
@@ -96,6 +123,27 @@ describe('locateFfmpeg', () => {
       if (before === undefined) delete process.env['OPENVIDEO_FFMPEG'];
       else process.env['OPENVIDEO_FFMPEG'] = before;
     }
+  });
+});
+
+describe('runProcess', () => {
+  it('meldet ein fehlendes Programm als OV_FFMPEG_MISSING mit Installationshinweis', async () => {
+    const d = await asyncErrorOf(runProcess(join(dir, 'no-such-ffmpeg'), ['-version']));
+    expect(d.code).toBe('OV_FFMPEG_MISSING');
+    expect(d.details?.['binary']).toBe(join(dir, 'no-such-ffmpeg'));
+  });
+
+  it('bricht nach dem Zeitlimit mit OV_FFMPEG_TIMEOUT ab', async () => {
+    const d = await asyncErrorOf(runProcess(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { timeoutMs: 200 }));
+    expect(d.code).toBe('OV_FFMPEG_TIMEOUT');
+    expect(d.details?.['timeoutMs']).toBe(200);
+  });
+
+  it('meldet einen Exit-Code ungleich 0 mit der letzten stderr-Zeile', async () => {
+    const d = await asyncErrorOf(runProcess(process.execPath, ['-e', 'console.error("first"); console.error("broken input"); process.exit(3)']));
+    expect(d.code).toBe('OV_FFMPEG_FAILED');
+    expect(d.details?.['exit']).toBe('exit code 3');
+    expect(d.details?.['lastStderr']).toBe('broken input');
   });
 });
 

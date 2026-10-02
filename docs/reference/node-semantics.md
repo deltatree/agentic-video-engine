@@ -140,7 +140,7 @@ So that no property gets lost at a backend boundary, these rules apply:
 
 ### Browser
 
-- **html**: Chromium renders `html` + `css` into a box `width × height`; the box is placed with the node matrix. The page receives the time per frame via `window.openvideo` (see the browser renderer docs). CSS animations are paused and set to the local time. Scripts run only when explicitly allowed (`--trusted`, ADR 0008); without scripts `<canvas>` (2D, WebGL, WebGPU) and custom elements without declarative shadow DOM stay empty – `openvideo validate` warns with `OV_HTML_CANVAS_NO_SCRIPTS` or `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
+- **html**: Chromium renders `html` + `css` into a box `width × height`; the box is placed with the node matrix. The page receives the time per frame via `window.openvideo` (see the browser renderer docs). CSS animations are paused and set to the local time; for the capture their values are committed as inline styles and the animations released, so the pixels never depend on previously rendered frames or on Chromium's compositor layers (they are restored before the next frame). Scripts run only when explicitly allowed (`--trusted`, ADR 0008); without scripts `<canvas>` (2D, WebGL, WebGPU) and custom elements without declarative shadow DOM stay empty – `openvideo validate` warns with `OV_HTML_CANVAS_NO_SCRIPTS` or `OV_HTML_WEB_COMPONENTS_NO_SCRIPTS`.
 
 ### 3D
 

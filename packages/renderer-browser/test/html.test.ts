@@ -191,6 +191,22 @@ describe('Semantik', () => {
     expect(hashImage(again)).toBe(hashImage(after));
   });
 
+  // DoD-Determinismus (CI, Chromium 153): Eine pausierte Transform-Animation hielt das Element auf
+  // einer eigenen Compositor-Ebene; deren Raster-Skala hängt von der Vorgeschichte ab und wird
+  // asynchron nachgerastert. Die Aufnahme muss dasselbe zeigen wie ein Dokument mit dem festen Wert.
+  it('CSS-Transform-Animation: Pixel wie der statische Wert, auch nach anderen Frames (keine Compositor-Ebene)', async () => {
+    const bar = 'position:absolute;left:20px;top:40px;width:280px;height:24px;border-radius:12px;transform-origin:left;background:linear-gradient(90deg,#ff5a1f,#ffb347)';
+    const animated = (frame: number) => html('grow', frame, { html: '<div class=b></div><div class=c></div>', css: `@keyframes g{from{transform:scaleX(0)}to{transform:scaleX(1)}}@keyframes s{from{transform:scale(0.2)}to{transform:scale(1)}}.b{${bar};animation:g 1s linear both}.c{position:absolute;left:40px;top:90px;width:80px;height:80px;border-radius:50%;transform-origin:0 0;background:radial-gradient(#22d3ee,#8b5cf6);animation:s 1s linear both}` });
+    const still = html('grow-still', 0, { html: '<div class=b></div><div class=c></div>', css: `.b{${bar};transform:scaleX(0.3)}.c{position:absolute;left:40px;top:90px;width:80px;height:80px;border-radius:50%;transform-origin:0 0;background:radial-gradient(#22d3ee,#8b5cf6);transform:scale(0.44)}` });
+    const expected = hashImage(await render([still], 0));
+    // Frame 9 bei 30 fps = 300 ms: scaleX(0.3) und scale(0.44) – einmal direkt, einmal nach größeren Skalen.
+    expect(hashImage(await render([animated(9)], 9))).toBe(expected);
+    for (const f of [20, 25, 29]) await render([animated(f)], f);
+    expect(hashImage(await render([animated(9)], 9))).toBe(expected);
+    for (const f of [1, 4, 7, 8]) await render([animated(f)], f);
+    expect(hashImage(await render([animated(9)], 9))).toBe(expected);
+  });
+
   it('Transparenz: HTML ohne Hintergrund hat Alpha 0 außerhalb des Inhalts', async () => {
     const image = await render([html('transparent', 0, { html: '<div style="margin:40px;width:50px;height:50px;background:#000"></div>' })], 0);
     expect(pixel(image, 5, 5)).toEqual([0, 0, 0, 0]);
