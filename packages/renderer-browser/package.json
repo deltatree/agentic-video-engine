@@ -37,10 +37,10 @@
     "@agentic-video/png": "0.1.0",
     "@agentic-video/renderer-pixi": "0.1.0",
     "@agentic-video/renderer-three": "0.1.0",
-    "playwright-core": "1.63.0"
+    "playwright-core": "1.64.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "playwright": "1.63.0"
+    "playwright": "1.64.0"
   }
 }

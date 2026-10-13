@@ -45,7 +45,7 @@
     "@agentic-video/renderer-browser": "0.1.0",
     "@agentic-video/sandbox": "0.1.0",
     "@agentic-video/mcp": "0.1.0",
-    "playwright-core": "1.63.0",
+    "playwright-core": "1.64.0",
     "@agentic-video/scheduler": "0.1.0",
     "@agentic-video/templates": "0.1.0",
     "@agentic-video/worker": "0.1.0",
