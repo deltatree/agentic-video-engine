@@ -30,13 +30,13 @@
   "devDependencies": {
     "@eslint/js": "^10.0.0",
     "@types/node": "^22.13.0",
-    "@vitest/coverage-v8": "5.0.2",
-    "eslint": "^10.11.0",
+    "@vitest/coverage-v8": "5.0.5",
+    "eslint": "^10.13.0",
     "fast-check": "^4.10.2",
     "typedoc": "0.28.20",
-    "typedoc-plugin-markdown": "4.13.1",
+    "typedoc-plugin-markdown": "4.14.1",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.70.1",
+    "typescript-eslint": "^8.72.0",
     "vitest": "^5.0.2"
   }
 }

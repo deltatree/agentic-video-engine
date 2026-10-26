@@ -39,6 +39,6 @@
     "@agentic-video/render": "0.1.0",
     "@agentic-video/speech": "0.1.0",
     "@agentic-video/telemetry": "0.1.0",
-    "typebox": "^1.3.34"
+    "typebox": "^1.4.3"
   }
 }
