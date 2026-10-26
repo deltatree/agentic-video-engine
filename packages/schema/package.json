@@ -31,7 +31,7 @@
     "openvideo.schema.json"
   ],
   "dependencies": {
-    "typebox": "^1.3.34"
+    "typebox": "^1.4.3"
   },
   "scripts": {
     "build:extra": "node scripts/write-schema.mjs"
